@@ -25,6 +25,9 @@ extern "C" {
 	AIAnnotatorSuite*		sAIAnnotator = nullptr;
 	AIAnnotatorDrawerSuite*	sAIAnnotatorDrawer = nullptr;
 	AIDocumentViewSuite*	sAIDocumentView = nullptr;
+	AIGroupSuite*			sAIGroup = nullptr;
+	AIPlacedSuite*			sAIPlaced = nullptr;
+	ASUserInteractionSuite*	sASUserInteraction = nullptr;
 	EXTERN_TEXT_SUITES
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
 };
@@ -57,6 +60,9 @@ ImportSuite gImportSuites[] =
 	kAIAnnotatorSuite, kAIAnnotatorSuiteVersion, &sAIAnnotator,		// the canvas overlay (Overlay.h)
 	kAIAnnotatorDrawerSuite, kAIAnnotatorDrawerSuiteVersion, &sAIAnnotatorDrawer,
 	kAIDocumentViewSuite, kAIDocumentViewSuiteVersion, &sAIDocumentView,
+	kAIGroupSuite, kAIGroupSuiteVersion, &sAIGroup,
+	kAIPlacedSuite, kAIPlacedSuiteVersion, &sAIPlaced,
+	kASUserInteractionSuite, kASUserInteractionSuiteVersion, &sASUserInteraction,	// alerts off while agents run
 	IMPORT_TEXT_SUITES
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,
 	nullptr, 0, nullptr

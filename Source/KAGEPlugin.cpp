@@ -281,6 +281,13 @@ void KAGEPlugin::RunPending()
 		sAIUndo->SetSilent(false);
 		sAIUndo->SetKind(kAIStandardUndoContext);
 	}
+	// No modal alerts while agents run ("Cut is not available"...): one would
+	// block Illustrator until someone clicks it. The call reports the failure.
+	ASInteractionAllowed interaction = kASInteractWithAll;
+	if (sASUserInteraction) {
+		interaction = sASUserInteraction->GetInteractionAllowed();
+		sASUserInteraction->SetInteractionAllowed(kASInteractWithNone);
+	}
 	while (auto job = PopJob()) {
 		json::Value response;
 		try {
@@ -291,5 +298,6 @@ void KAGEPlugin::RunPending()
 		}
 		job->promise.set_value(std::move(response));
 	}
+	if (sASUserInteraction) sASUserInteraction->SetInteractionAllowed(interaction);
 	fRunning = false;
 }

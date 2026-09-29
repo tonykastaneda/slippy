@@ -13,6 +13,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <unistd.h>
 
 namespace kage {
 
@@ -266,6 +267,13 @@ json::Value ArtSummary(AIArtHandle art, int depth)
 	if (Attr(art, kArtSelected)) v["selected"] = true;
 	if (Attr(art, kArtHidden)) v["hidden"] = true;
 	if (Attr(art, kArtLocked)) v["locked"] = true;
+	if (Attr(art, kArtIsClipMask)) v["clipMask"] = true;
+	AIBoolean clipped = false;
+	if (type == kGroupArt && sAIGroup && !sAIGroup->GetGroupClipped(art, &clipped) && clipped) v["clipped"] = true;
+	if (type == kPlacedArt && sAIPlaced) {
+		ai::FilePath file;
+		if (!sAIPlaced->GetPlacedFileSpecification(art, file)) v["file"] = S(file.GetFullPath());
+	}
 	if (type == kGroupArt || type == kCompoundPathArt) {
 		AIArtHandle child = nullptr;
 		sAIArt->GetArtFirstChild(art, &child);
@@ -1045,18 +1053,208 @@ json::Value ArtTransform(const json::Value& p)
 // paint order), the group goes where the topmost was, and each piece is moved
 // in to the group's bottom in turn. (Invoking the Group menu command from a
 // timer message doesn't take effect, found testing in 30.2.)
-json::Value ArtGroup(const json::Value& p)
+// Front-most first, duplicates dropped.
+std::vector<AIArtHandle> FrontToBack(std::vector<AIArtHandle> arts)
 {
-	std::vector<AIArtHandle> arts = ArtList(p, true);
 	std::sort(arts.begin(), arts.end(), [](AIArtHandle a, AIArtHandle b) {
 		short order = kUnknownOrder;
 		return a != b && !sAIArt->GetArtOrder(a, b, &order) && order == kFirstBeforeSecond;
 	});
 	arts.erase(std::unique(arts.begin(), arts.end()), arts.end());
+	return arts;
+}
+
+// Moves art next to or into 'prep', keeping its stacking order among itself.
+void MoveAll(const std::vector<AIArtHandle>& arts, ai::int16 order, AIArtHandle prep)
+{
+	for (AIArtHandle a : arts) {
+		for (AIArtHandle up = prep; up; sAIArt->GetArtParent(up, &up))
+			if (up == a) Fail(kErrInvalidParams, "can't move art " + ArtId(a) + " into or next to itself");
+	}
+	std::vector<AIArtHandle> list = FrontToBack(arts);
+	// Each move lands right against prep, so go in the order that leaves the
+	// front-most on top.
+	if (order == kPlaceBelow || order == kPlaceInsideOnTop) std::reverse(list.begin(), list.end());
+	for (AIArtHandle a : list) Check(sAIArt->ReorderArt(a, order, prep), "ReorderArt");
+}
+
+// Where art goes: 'into' a group (top, or 'position' "bottom"), or right
+// 'above' / 'below' another object. False when none is given.
+bool Destination(const json::Value& p, ai::int16& order, AIArtHandle& prep)
+{
+	int given = IsId(p.get("into")) + IsId(p.get("above")) + IsId(p.get("below"));
+	if (given > 1) Fail(kErrInvalidParams, "give one of 'into', 'above' or 'below'");
+	if (IsId(p.get("into"))) {
+		prep = ArtById(IdText(p.get("into")));
+		if (ArtType(prep) != kGroupArt) Fail(kErrInvalidParams, "'into' must be a group (a clipping group is fine)");
+		std::string position = p.str("position", "top");
+		if (position != "top" && position != "bottom") Fail(kErrInvalidParams, "'position' must be \"top\" or \"bottom\"");
+		order = position == "top" ? kPlaceInsideOnTop : kPlaceInsideOnBottom;
+	}
+	else if (IsId(p.get("above"))) { prep = ArtById(IdText(p.get("above"))); order = kPlaceAbove; }
+	else if (IsId(p.get("below"))) { prep = ArtById(IdText(p.get("below"))); order = kPlaceBelow; }
+	else return false;
+	return true;
+}
+
+json::Value ArtGroup(const json::Value& p)
+{
+	std::vector<AIArtHandle> arts = FrontToBack(ArtList(p, true));
 	AIArtHandle group = nullptr;
 	Check(sAIArt->NewArt(kGroupArt, kPlaceAbove, arts.front(), &group), "NewArt group");
-	for (AIArtHandle a : arts) Check(sAIArt->ReorderArt(a, kPlaceInsideOnBottom, group), "ReorderArt");
+	MoveAll(arts, kPlaceInsideOnBottom, group);
 	return Finish(group, p);
+}
+
+json::Value ArtMove(const json::Value& p)
+{
+	std::vector<AIArtHandle> arts = ArtList(p, true);
+	ai::int16 order;
+	AIArtHandle prep = nullptr;
+	if (!Destination(p, order, prep)) Fail(kErrInvalidParams, "say where: 'into' (a group id), 'above' or 'below' (an art id)");
+	MoveAll(arts, order, prep);
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : FrontToBack(arts)) out.push(ArtSummary(a, 0));
+	return out;
+}
+
+bool IsLayerGroup(AIArtHandle art)
+{
+	AIBoolean layerGroup = false;
+	sAIArt->IsArtLayerGroup(art, &layerGroup);
+	return layerGroup;
+}
+
+std::vector<AIArtHandle> Children(AIArtHandle group)
+{
+	std::vector<AIArtHandle> out;
+	AIArtHandle child = nullptr;
+	for (sAIArt->GetArtFirstChild(group, &child); child; sAIArt->GetArtSibling(child, &child)) out.push_back(child);
+	return out;
+}
+
+// Turns a clipping group back into a plain one. The mask stays, unpainted,
+// as Object > Clipping Mask > Release leaves it.
+void Unclip(AIArtHandle group)
+{
+	Need(sAIGroup, "The group suite");
+	for (AIArtHandle c : Children(group))   // the masks first, while the group still clips
+		if (Attr(c, kArtIsClipMask)) Check(sAIArt->SetArtUserAttr(c, kArtIsClipMask, 0), "clear clip mask");
+	Check(sAIGroup->SetGroupClipped(group, false), "SetGroupClipped");
+}
+
+json::Value ArtClip(const json::Value& p)
+{
+	Need(sAIGroup, "The group suite");
+	std::vector<AIArtHandle> arts = FrontToBack(ArtList(p, true));
+	AIArtHandle mask = IsId(p.get("mask")) ? ArtById(IdText(p.get("mask"))) : arts.front();
+	if (std::find(arts.begin(), arts.end(), mask) == arts.end()) arts.insert(arts.begin(), mask);
+	if (arts.size() < 2) Fail(kErrInvalidParams, "a clipping mask needs the mask and at least one object to clip");
+	short type = ArtType(mask);
+	if (type != kPathArt && type != kCompoundPathArt && type != kTextFrameArt)
+		Fail(kErrInvalidParams, "the mask (art " + ArtId(mask) + ") must be a path, compound path or text, not " + TypeName(type));
+	if (type == kPathArt) {
+		ai::int16 segments = 0;
+		sAIPath->GetPathSegmentCount(mask, &segments);
+		if (segments < 2) Fail(kErrInvalidParams, "the mask path needs at least two anchor points");
+	}
+	AIArtHandle group = nullptr;
+	Check(sAIArt->NewArt(kGroupArt, kPlaceAbove, arts.front(), &group), "NewArt group");
+	MoveAll(arts, kPlaceInsideOnBottom, group);
+	Check(sAIArt->ReorderArt(mask, kPlaceInsideOnTop, group), "ReorderArt mask");
+	// Like Object > Clipping Mask > Make: the mask loses its paint.
+	json::Value none;
+	none["fill"] = "none";
+	none["stroke"] = "none";
+	ApplyStyle(mask, none);
+	// The group first: Illustrator only takes a mask already inside a clipping group.
+	Check(sAIGroup->SetGroupClipped(group, true), "SetGroupClipped");
+	Check(sAIArt->SetArtUserAttr(mask, kArtIsClipMask, kArtIsClipMask), "set clip mask");
+	return Finish(group, p);
+}
+
+json::Value ArtUnclip(const json::Value& p)
+{
+	json::Value out = json::Value::MakeArray();
+	Need(sAIGroup, "The group suite");
+	for (AIArtHandle g : ArtList(p, true)) {
+		AIBoolean clipped = false;
+		if (ArtType(g) == kGroupArt) sAIGroup->GetGroupClipped(g, &clipped);
+		if (!clipped) Fail(kErrInvalidParams, "art " + ArtId(g) + " isn't a clipping group");
+		Unclip(g);
+		out.push(ArtSummary(g, 1));
+	}
+	return out;
+}
+
+json::Value ArtUngroup(const json::Value& p)
+{
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle g : ArtList(p, true)) {
+		if (ArtType(g) != kGroupArt) Fail(kErrInvalidParams, "art " + ArtId(g) + " isn't a group");
+		if (IsLayerGroup(g)) Fail(kErrInvalidParams, "art " + ArtId(g) + " is a layer's own group - use layer.set");
+		AIBoolean clipped = false;
+		if (sAIGroup && !sAIGroup->GetGroupClipped(g, &clipped) && clipped) Unclip(g);
+		std::vector<AIArtHandle> kids = Children(g);
+		if (!kids.empty()) MoveAll(kids, kPlaceAbove, g);
+		Check(sAIArt->DisposeArt(g), "DisposeArt group");
+		for (AIArtHandle k : FrontToBack(kids)) {
+			overlay::Touch(k);
+			out.push(ArtSummary(k, 0));
+		}
+	}
+	return out;
+}
+
+// Scales and centers art on a target's bounds: "fill" covers it (the
+// clipping group crops the rest), "fit" fits inside, "stretch" matches both.
+void FitTo(AIArtHandle art, AIArtHandle target, const std::string& how)
+{
+	AIRealRect a, t;
+	Check(sAIArt->GetArtBounds(art, &a), "GetArtBounds");
+	Check(sAIArt->GetArtBounds(target, &t), "GetArtBounds target");
+	double aw = std::fabs(a.right - a.left), ah = std::fabs(a.top - a.bottom);
+	double tw = std::fabs(t.right - t.left), th = std::fabs(t.top - t.bottom);
+	if (aw <= 0 || ah <= 0) Fail(kErrInvalidParams, "the art has no size to scale");
+	double sx = tw / aw, sy = th / ah;
+	if (how == "fill") sx = sy = std::max(sx, sy);
+	else if (how == "fit") sx = sy = std::min(sx, sy);
+	else if (how != "stretch") Fail(kErrInvalidParams, "'fit' must be \"fill\", \"fit\" or \"stretch\"");
+	double ax = (a.left + a.right) / 2, ay = (a.top + a.bottom) / 2, tx = (t.left + t.right) / 2, ty = (t.top + t.bottom) / 2;
+	AIRealMatrix m;
+	m.a = (AIReal) sx; m.b = 0; m.c = 0; m.d = (AIReal) sy;
+	m.tx = (AIReal) (tx - sx * ax);
+	m.ty = (AIReal) (ty - sy * ay);
+	ai::int32 flags = kTransformObjects | kTransformFillGradients | kTransformFillPatterns | kTransformStrokeGradients | kTransformStrokePatterns | kScaleLines;
+	TransformDeep(art, m, (AIReal) std::sqrt(sx * sy), flags);
+}
+
+json::Value ArtPlace(const json::Value& p)
+{
+	Need(sAIPlaced, "The placed art suite");
+	ActiveDocument();
+	std::string path = ReqStr(p, "path");
+	if (access(path.c_str(), R_OK)) Fail(kErrNotFound, "can't read " + path);
+	// Where it goes and what it fits are checked before placing anything.
+	ai::int16 order = kPlaceAboveAll;
+	AIArtHandle prep = nullptr;
+	if (!Destination(p, order, prep)) Placement(p, order, prep);
+	AIArtHandle target = IsId(p.get("fitTo")) ? ArtById(IdText(p.get("fitTo"))) : nullptr;
+	std::string how = p.str("fit", "fill");
+
+	ai::FilePath file(U(path));
+	AIPlaceRequestData request;
+	request.m_lPlaceMode = kVanillaPlace;
+	request.m_pFilePath = &file;
+	request.m_filemethod = p.boolean("link", true) ? 1 : 0;
+	request.m_disableTemplate = true;
+	request.m_doShowParamDialog = false;
+	Check(sAIPlaced->ExecPlaceRequest(request), "Place");
+	AIArtHandle art = request.m_hNewArt;
+	if (!art) Fail(kErrIllustrator, "Illustrator didn't place " + path);
+	if (prep) Check(sAIArt->ReorderArt(art, order, prep), "ReorderArt");
+	if (target) FitTo(art, target, how);
+	return Finish(art, p);
 }
 
 json::Value ShapeRect(const json::Value& p)
@@ -1122,6 +1320,40 @@ json::Value TextCreate(const json::Value& p)
 	return v;
 }
 
+// Enough of Illustrator's state to tell whether a menu command did anything.
+struct DocState {
+	int documents = 0;
+	AIDocumentHandle active = nullptr;
+	ai::int32 undoSteps = 0, redoSteps = 0;
+	AIBoolean modified = false;
+	std::vector<AIArtHandle> selection;
+	bool operator==(const DocState& o) const
+	{
+		return documents == o.documents && active == o.active && undoSteps == o.undoSteps && redoSteps == o.redoSteps &&
+			modified == o.modified && selection == o.selection;
+	}
+};
+
+DocState CurrentState()
+{
+	DocState s;
+	ai::int32 n = 0;
+	sAIDocumentList->Count(&n);
+	s.documents = n;
+	if (n == 0 || sAIDocument->GetDocument(&s.active) || !s.active) return s;
+	sAIDocument->GetDocumentModified(&s.modified);
+	if (sAIUndo) sAIUndo->CountTransactions(&s.undoSteps, &s.redoSteps);
+	if (sAIMatchingArt) {
+		AIArtHandle** matches = nullptr;
+		ai::int32 count = 0;
+		if (!sAIMatchingArt->GetSelectedArt(&matches, &count) && matches) {
+			for (ai::int32 i = 0; i < count; i++) s.selection.push_back((*matches)[i]);
+			sSPBlocks->FreeBlock(matches);
+		}
+	}
+	return s;
+}
+
 json::Value MenuRun(const json::Value& p)
 {
 	Need(sAICommandManager, "The command manager suite");
@@ -1129,9 +1361,18 @@ json::Value MenuRun(const json::Value& p)
 	AICommandID id = 0;
 	if (sAICommandManager->GetCommandIDFromName(name.c_str(), &id) || !id)
 		Fail(kErrNotFound, "no menu command named '" + name + "' (use the same names as app.executeMenuCommand, e.g. \"group\", \"selectall\", \"outline\")");
+	// Illustrator runs a command that doesn't apply as a no-op (its alert is
+	// suppressed), so compare before and after to say whether anything happened.
+	if (sAIDocument) sAIDocument->SyncDocument();
+	DocState before = CurrentState();
 	Check(sAIMenu->InvokeMenuAction(id), "InvokeMenuAction");
+	if (sAIDocument) sAIDocument->SyncDocument();
 	json::Value v;
 	v["ran"] = name;
+	v["changed"] = !(CurrentState() == before);
+	if (!v.get("changed").asBool())
+		v["note"] = "Illustrator ran it but nothing changed - it probably doesn't apply to the current selection. "
+			"For structure, prefer art.move, art.group, art.ungroup, art.clip, art.unclip and art.place.";
 	return v;
 }
 
@@ -1246,6 +1487,20 @@ std::map<std::string, Command>& Table()
 		{"art.duplicate", {"Duplicate art (default: the selection) in place.", Params({{"ids", "string[]"}, {"id", "string"}}), ArtDuplicate, true}},
 		{"art.arrange", {"Bring to front / send to back within its parent.", Params({{"ids", "string[]"}, {"id", "string"}, {"to", "\"front\" | \"back\""}}), ArtArrange, true}},
 		{"art.group", {"Group art (default: the selection).", Params({{"ids", "string[]"}, {"id", "string"}, {"name", "string"}}), ArtGroup, true}},
+		{"art.move", {"Move art (default: the selection) into a group - including a clipping group - or right above / below another object. Keeps its stacking order.",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"into", "string - group id"}, {"position", "\"top\" | \"bottom\" - inside 'into' (default top)"},
+				{"above", "string - art id"}, {"below", "string - art id"}}), ArtMove, true}},
+		{"art.ungroup", {"Ungroup (default: the selection); a clipping group is released first. Returns the freed objects.",
+			Params({{"ids", "string[]"}, {"id", "string"}}), ArtUngroup, true}},
+		{"art.clip", {"Make a clipping mask: 'mask' (default: the front-most object) clips the rest. Returns the clipping group.",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"mask", "string - art id of a path, compound path or text"}, {"name", "string"}}), ArtClip, true}},
+		{"art.unclip", {"Release a clipping group's mask; the group and the (unpainted) mask path stay.",
+			Params({{"ids", "string[]"}, {"id", "string"}}), ArtUnclip, true}},
+		{"art.place", {"Place a file (image, PDF, .ai...) without a dialog, linked by default. Put it 'into' a group or 'above'/'below' art, and scale it to 'fitTo' an object.",
+			Params({{"path", "string - absolute path"}, {"link", "boolean (default true; false embeds)"}, {"into", "string - group id"},
+				{"position", "\"top\" | \"bottom\""}, {"above", "string - art id"}, {"below", "string - art id"}, {"layer", kWhere},
+				{"fitTo", "string - art id: scale and center on its bounds"}, {"fit", "\"fill\" (cover, default) | \"fit\" (inside) | \"stretch\""},
+				{"name", "string"}, {"select", "boolean"}}), ArtPlace, true}},
 		{"art.delete", {"Delete art.", Params({{"ids", "string[]"}, {"id", "string"}}), ArtDelete, true}},
 		{"shape.rect", {"Rectangle; (x, y) is its top-left corner.", Params({{"x", "number"}, {"y", "number"}, {"width", "number"}, {"height", "number"},
 			{"fill", kPaint}, {"stroke", kPaint}, {"strokeWidth", "number"}, {"name", "string"}, {"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), ShapeRect, true}},
@@ -1256,7 +1511,8 @@ std::map<std::string, Command>& Table()
 				{"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), PathCreate, true}},
 		{"text.create", {"Point text; 'position' is the first baseline's start.", Params({{"position", "[x, y]"}, {"contents", "string (\\n = new paragraph)"},
 			{"size", "number - font size"}, {"name", "string"}, {"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), TextCreate, true}},
-		{"menu.run", {"Run any menu command by name, as app.executeMenuCommand does (\"group\", \"outline\", \"selectall\", \"Live Pathfinder Add\"...).",
+		{"menu.run", {"Run any menu command by name, as app.executeMenuCommand does (\"outline\", \"selectall\", \"Live Pathfinder Add\"...). "
+			"Acts on the selection; 'changed' says whether anything happened. Prefer the art.* commands for grouping, masks and moving art.",
 			Params({{"command", "string"}}), MenuRun, true}},
 		{"action.play", {"Play an action event (e.g. \"adobe_paste\") with typed parameters, no dialog by default.",
 			Params({{"event", "string"}, {"params", "object - 4-char key -> value | {\"type\":\"integer|real|string|boolean|enum\",\"value\":..,\"name\":..}"},

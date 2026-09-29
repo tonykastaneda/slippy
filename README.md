@@ -119,12 +119,23 @@ sets how long the client waits.
 | app | `app.info`, `commands.list` (full parameter docs) |
 | document | `document.list`, `.info`, `.new`, `.open`, `.activate`, `.save`, `.formats`, `.close`, `.redraw` |
 | layer | `layer.list`, `.create`, `.set` (rename / visible / locked / current / delete) |
-| art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.duplicate`, `.arrange`, `.group`, `.delete` |
+| art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.duplicate`, `.arrange`, `.delete` |
+| structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.unclip` |
+| files | `art.place` (link or embed an image / PDF / .ai, into a group or next to an object, scaled to `fitTo` another object) |
 | create | `shape.rect`, `shape.ellipse`, `path.create` (corners or Bézier anchors), `text.create` |
 | escape hatches | `menu.run` (any menu command by name, like `app.executeMenuCommand`), `action.play` (any action event with typed params) |
 | history | `history.undo`, `history.redo` |
 
 - **Saving:** with a `path`, a native `.ai` save is a Save As (the document moves to that path). Any other `format` (names come from `document.formats`, e.g. `"PDF File Format"`, `"svg file format"`) writes a copy. KAGE never shows a save dialog.
+- **Structure without menus:** `art.move`, `art.clip`, `art.ungroup` and
+  `art.place` work on ids, not the selection. For example, to swap art in for a
+  placeholder inside a clipping group, send one batch:
+  `art.place {path, above: <placeholder>, fitTo: <placeholder>}` then
+  `art.delete {id: <placeholder>}`. `art.tree` marks clipping groups
+  (`clipped`), their masks (`clipMask`) and placed files (`file`).
+- **No alerts:** Illustrator's alerts are off while agent calls run, so a
+  command that doesn't apply can't freeze Illustrator behind a dialog.
+  `menu.run` reports `changed: false` (with a note) when nothing happened.
 - **Undo:** every call is one step on Edit > Undo (a batch is one step for all its calls), and `history.undo` works on them.
 - **Coordinates** are Illustrator artwork points, with y growing upward.
   Bounds, artboards and positions all use this one space; `document.info`

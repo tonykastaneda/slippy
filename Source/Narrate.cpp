@@ -163,6 +163,19 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 		std::string as = Named(p, r);
 		return {"Grouped " + (n ? Plural(n, "object", "objects") : std::string("the selection")) + (as.empty() ? "" : " as" + as), "group those"};
 	}
+	if (m == "art.move") {
+		std::string where = p.has("into") ? (p.str("position", "top") == "bottom" ? "to the bottom of a group" : "into a group")
+			: p.has("above") ? "above another object" : "below another object";
+		return {"Moved " + who + " " + where, "move that"};
+	}
+	if (m == "art.ungroup") return {"Ungrouped" + (r.isArray() ? " " + Plural(r.size(), "object", "objects") : std::string()), "ungroup that"};
+	if (m == "art.clip") return {"Made a clipping mask" + Named(p, r), "make the clipping mask"};
+	if (m == "art.unclip") return {"Released a clipping mask", "release the mask"};
+	if (m == "art.place") {
+		std::string path = p.str("path");
+		std::string file = path.substr(path.find_last_of('/') + 1);
+		return {std::string(p.boolean("link", true) ? "Placed " : "Embedded ") + Quote(file) + (p.has("fitTo") ? ", sized to fit" : ""), "place " + Quote(file)};
+	}
 	if (m == "art.delete") {
 		size_t n = r.get("deleted").isNumber() ? (size_t) r.get("deleted").asNumber() : 1;
 		return {"Deleted " + Plural(n, "object", "objects"), "delete that"};
@@ -175,7 +188,11 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 		return {"Drew " + s + Named(p, r), "draw " + s};
 	}
 	if (m == "text.create") return {"Added text " + Quote(p.str("contents")), "add text"};
-	if (m == "menu.run") return {"Ran the menu command " + Quote(p.str("command")), "run " + Quote(p.str("command"))};
+	if (m == "menu.run") {
+		if (r.get("changed").isBool() && !r.get("changed").asBool())
+			return {"Tried " + Quote(p.str("command")) + " - nothing changed", "run " + Quote(p.str("command"))};
+		return {"Ran the menu command " + Quote(p.str("command")), "run " + Quote(p.str("command"))};
+	}
 	if (m == "action.play") return {"Played the action " + Quote(p.str("event")), "play " + Quote(p.str("event"))};
 	if (m == "history.undo") {
 		int n = p.get("steps").isNumber() ? p.get("steps").asInt() : 1;

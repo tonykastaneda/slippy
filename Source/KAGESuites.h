@@ -27,6 +27,9 @@
 #include "AIAnnotator.h"
 #include "AIAnnotatorDrawer.h"
 #include "AIDocumentView.h"
+#include "AIGroup.h"
+#include "AIPlaced.h"
+#include "ASUserInteraction.h"
 #include "ATETextSuitesImportHelper.h"
 #include "AIAssert.hpp"
 
@@ -53,6 +56,9 @@ extern "C" AIFileFormatSuite*		sAIFileFormat;
 extern "C" AIAnnotatorSuite*		sAIAnnotator;
 extern "C" AIAnnotatorDrawerSuite*	sAIAnnotatorDrawer;
 extern "C" AIDocumentViewSuite*	sAIDocumentView;
+extern "C" AIGroupSuite*			sAIGroup;
+extern "C" AIPlacedSuite*			sAIPlaced;
+extern "C" ASUserInteractionSuite*	sASUserInteraction;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.
