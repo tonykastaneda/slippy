@@ -119,7 +119,7 @@ sets how long the client waits.
 | Group | Methods |
 |---|---|
 | app | `app.info`, `commands.list` (full parameter docs) |
-| document | `document.list`, `.info`, `.new`, `.open`, `.activate`, `.save`, `.formats`, `.close`, `.redraw` |
+| document | `document.list`, `.info`, `.new`, `.open`, `.activate`, `.save`, `.export`, `.formats`, `.close`, `.redraw` |
 | layer | `layer.list`, `.create`, `.set` (rename / visible / locked / current / delete) |
 | art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.duplicate`, `.arrange`, `.delete` |
 | structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.unclip` |
@@ -128,6 +128,12 @@ sets how long the client waits.
 | escape hatches | `menu.run` (any menu command by name, like `app.executeMenuCommand`), `action.play` (any action event with typed params) |
 | history | `history.undo`, `history.redo` |
 
+- **Exporting:** `document.export {path}` picks the format from the extension
+  (or `format`: png, jpg, pdf, svg, tiff, psd, webp, eps...). PNG and JPEG
+  render at any size (`scale` 2 = 144 dpi, or `dpi`), of the artboard, all the
+  art (`area: "art"`), or one object (`id`); PNGs are transparent unless
+  `transparent: false`. They're drawn from a PDF copy Illustrator writes, so the
+  document is never touched.
 - **Saving:** with a `path`, a native `.ai` save is a Save As (the document moves to that path). Any other `format` (names come from `document.formats`, e.g. `"PDF File Format"`, `"svg file format"`) writes a copy. Slippy never shows a save dialog.
 - **Structure without menus:** `art.move`, `art.clip`, `art.ungroup` and
   `art.place` work on ids, not the selection. For example, to swap art in for a

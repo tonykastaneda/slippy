@@ -57,7 +57,7 @@ CXXFLAGS := $(ARCH) -std=c++17 -stdlib=libc++ -x objective-c++ -O2 -g \
 	-Wno-deprecated-declarations -Wno-unknown-pragmas \
 	-include $(COMMON)/includes/IllustratorSDKRelease.pch \
 	$(INCLUDES) -MMD -MP
-LDFLAGS  := $(ARCH) -bundle -stdlib=libc++ -framework Cocoa -framework QuartzCore -framework CoreFoundation
+LDFLAGS  := $(ARCH) -bundle -stdlib=libc++ -framework Cocoa -framework QuartzCore -framework CoreFoundation -framework ImageIO
 
 .PHONY: all clean install preview
 all: $(BUILD)/.signed

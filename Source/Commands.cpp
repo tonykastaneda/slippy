@@ -7,6 +7,9 @@
 #include "IAIFilePath.hpp"
 #include "IText.h"
 
+#import <Foundation/Foundation.h>
+#import <ImageIO/ImageIO.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -310,6 +313,7 @@ AILayerHandle LayerByParam(const json::Value& p)
 // above everything in the current layer.
 void Placement(const json::Value& p, ai::int16& order, AIArtHandle& prep)
 {
+	ActiveDocument();   // new art needs a document: say so plainly
 	order = kPlaceAboveAll;
 	prep = nullptr;
 	if (IsId(p.get("parent"))) {
@@ -779,11 +783,192 @@ void SaveAsNative(const std::string& path, const std::string& format)
 	Check(e, "Save As");
 }
 
+// ------------------------------------------------------------------ export
+
+std::string Lower(std::string s)
+{
+	for (char& c : s) c = (char) tolower((unsigned char) c);
+	return s;
+}
+
+// Short names agents use, and Illustrator's own name for each writer.
+const std::map<std::string, std::string>& Writers()
+{
+	static const std::map<std::string, std::string> writers = {
+		{"pdf", "PDF File Format"}, {"svg", "svg file format"}, {"svgz", "svg compressed file format"},
+		{"tiff", "TIFF"}, {"psd", "Photoshop PSD Export"}, {"webp", "WebP"}, {"eps", "Adobe Illustrator EPSF"},
+		{"bmp", "BMP"}, {"tga", "Targa"}, {"dxf", "DXF Export"}, {"dwg", "DWG Export"},
+		{"emf", "Enhanced Metafile"}, {"wmf", "Windows Metafile"}, {"ai", "Adobe Illustrator Any Format Writer"},
+	};
+	return writers;
+}
+
+// "png", "JPG", ".jpeg", or the path's extension when there's no 'format'.
+std::string FormatKind(const json::Value& p, const std::string& path)
+{
+	std::string f = Lower(p.str("format", ""));
+	if (f.empty()) {
+		size_t dot = path.find_last_of('.'), slash = path.find_last_of('/');
+		if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) f = Lower(path.substr(dot + 1));
+	}
+	if (!f.empty() && f[0] == '.') f = f.substr(1);
+	if (f == "jpeg" || f == "jpe") f = "jpg";
+	if (f == "tif") f = "tiff";
+	return f;
+}
+
+bool ValidRect(const AIRealRect& r) { return r.right > r.left && r.top != r.bottom && r.right - r.left < 32000; }
+
+void Grow(AIRealRect& all, const AIRealRect& r, bool& any)
+{
+	if (!ValidRect(r)) return;
+	if (!any) { all = r; any = true; return; }
+	all.left = std::min(all.left, r.left); all.right = std::max(all.right, r.right);
+	all.top = std::max(all.top, r.top); all.bottom = std::min(all.bottom, r.bottom);
+}
+
+AIRealRect ArtboardRect(const json::Value& p)
+{
+	Need(sAIArtboard, "The artboard suite");
+	ai::ArtboardList list;
+	Check(sAIArtboard->GetArtboardList(list), "GetArtboardList");
+	ai::ArtboardID count = 0, index = 0;
+	sAIArtboard->GetCount(list, count);
+	sAIArtboard->GetActive(list, index);
+	if (p.get("artboard").isNumber()) index = (ai::ArtboardID) p.get("artboard").asInt();
+	AIRealRect rect = {0, 0, 0, 0};
+	ai::ArtboardProperties props;
+	AIErr e = index < 0 || index >= count ? kBadParameterErr : sAIArtboard->Init(props);
+	if (!e) e = sAIArtboard->GetArtboardProperties(list, index, props);
+	if (!e) e = sAIArtboard->GetPosition(props, rect);
+	sAIArtboard->Dispose(props);
+	sAIArtboard->ReleaseArtboardList(list);
+	if (e) Fail(kErrNotFound, "no artboard " + std::to_string(index) + " (there are " + std::to_string(count) + ", from 0)");
+	return rect;
+}
+
+// PNG / JPEG at any resolution. Illustrator writes a PDF copy (its own
+// renderer, untouched document), and Core Graphics draws the page at the
+// asked resolution - cropped to the artboard, all the art, or one object.
+json::Value ExportRaster(const json::Value& p, const std::string& path, const std::string& kind)
+{
+	ActiveDocument();
+	double dpi = p.has("dpi") ? ReqNum(p, "dpi") : 72.0 * p.num("scale", 1);
+	if (dpi < 1 || dpi > 2400) Fail(kErrInvalidParams, "'dpi' must be 1 to 2400 ('scale' 1 = 72 dpi, 2 = 144)");
+	bool object = IsId(p.get("id")) || p.has("ids");
+	std::string area = object ? "object" : p.str("area", "artboard");
+	if (area != "artboard" && area != "art" && area != "object") Fail(kErrInvalidParams, "'area' must be \"artboard\" or \"art\"");
+
+	// The artboard (a PDF page) and the part of it to render, in artwork points.
+	json::Value which = p;
+	ai::ArtboardID index = 0;
+	{
+		ai::ArtboardList list;
+		Check(Need(sAIArtboard, "The artboard suite")->GetArtboardList(list), "GetArtboardList");
+		sAIArtboard->GetActive(list, index);
+		sAIArtboard->ReleaseArtboardList(list);
+		if (p.get("artboard").isNumber()) index = (ai::ArtboardID) p.get("artboard").asInt();
+		which["artboard"] = (double) index;
+	}
+	AIRealRect board = ArtboardRect(which), crop = board;
+	bool any = area == "artboard";
+	if (area == "object") {
+		std::vector<AIArtHandle> arts = ArtList(p);
+		for (AIArtHandle a : arts) { AIRealRect r; if (!sAIArt->GetArtBounds(a, &r)) Grow(crop, r, any); }
+	}
+	else if (area == "art") {
+		ai::int32 layers = 0;
+		sAILayer->CountLayers(&layers);
+		for (ai::int32 i = 0; i < layers; i++) {
+			AILayerHandle layer = nullptr;
+			AIArtHandle group = nullptr;
+			AIRealRect r;
+			if (!sAILayer->GetNthLayer(i, &layer) && !sAIArt->GetFirstArtOfLayer(layer, &group) && group && !sAIArt->GetArtBounds(group, &r))
+				Grow(crop, r, any);
+		}
+	}
+	if (!any) Fail(kErrInvalidParams, "there's nothing to export there");
+	// Only what's on the artboard makes it into the PDF page.
+	crop.left = std::max(crop.left, board.left); crop.right = std::min(crop.right, board.right);
+	crop.top = std::min(crop.top, board.top); crop.bottom = std::max(crop.bottom, board.bottom);
+	if (crop.right <= crop.left || crop.top <= crop.bottom) Fail(kErrInvalidParams, "that's outside artboard " + std::to_string(index));
+
+	std::string pdf = path + ".slippy.pdf";
+	WriteTo(pdf, "PDF File Format");
+	NSURL* pdfURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:pdf.c_str()]];
+	CGPDFDocumentRef doc = CGPDFDocumentCreateWithURL((__bridge CFURLRef) pdfURL);
+	unlink(pdf.c_str());
+	CGPDFPageRef page = doc ? CGPDFDocumentGetPage(doc, (size_t) index + 1) : nullptr;
+	if (!page) { if (doc) CGPDFDocumentRelease(doc); Fail(kErrIllustrator, "Illustrator's PDF had no page for artboard " + std::to_string(index)); }
+	CGRect box = CGPDFPageGetBoxRect(page, kCGPDFCropBox);
+
+	double k = dpi / 72.0;
+	size_t w = (size_t) std::max(1.0, std::ceil((crop.right - crop.left) * k)), h = (size_t) std::max(1.0, std::ceil((crop.top - crop.bottom) * k));
+	if ((double) w * h > 400e6) { CGPDFDocumentRelease(doc); Fail(kErrInvalidParams, "that's over 400 megapixels - lower 'scale' or 'dpi'"); }
+	bool transparent = kind == "png" && p.boolean("transparent", true);
+	CGColorSpaceRef rgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+	CGContextRef ctx = CGBitmapContextCreate(nullptr, w, h, 8, 0, rgb, (CGBitmapInfo) kCGImageAlphaPremultipliedLast);
+	CGColorSpaceRelease(rgb);
+	if (!ctx) { CGPDFDocumentRelease(doc); Fail(kErrIllustrator, "not enough memory for a " + std::to_string(w) + " x " + std::to_string(h) + " image"); }
+	if (!transparent) { CGContextSetRGBFillColor(ctx, 1, 1, 1, 1); CGContextFillRect(ctx, CGRectMake(0, 0, w, h)); }
+	CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
+	CGContextScaleCTM(ctx, k, k);
+	// Page space starts at the artboard's bottom-left.
+	CGContextTranslateCTM(ctx, -(box.origin.x + (crop.left - board.left)), -(box.origin.y + (crop.bottom - board.bottom)));
+	CGContextDrawPDFPage(ctx, page);
+	CGImageRef image = CGBitmapContextCreateImage(ctx);
+	CGContextRelease(ctx);
+	CGPDFDocumentRelease(doc);
+
+	NSURL* out = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
+	CGImageDestinationRef dst = CGImageDestinationCreateWithURL((__bridge CFURLRef) out, kind == "png" ? CFSTR("public.png") : CFSTR("public.jpeg"), 1, nullptr);
+	bool ok = false;
+	if (dst && image) {
+		NSMutableDictionary* props = [@{(__bridge NSString*) kCGImagePropertyDPIWidth: @(dpi), (__bridge NSString*) kCGImagePropertyDPIHeight: @(dpi)} mutableCopy];
+		if (kind == "jpg") props[(__bridge NSString*) kCGImageDestinationLossyCompressionQuality] = @(std::max(1.0, std::min(100.0, p.num("quality", 90))) / 100.0);
+		CGImageDestinationAddImage(dst, image, (__bridge CFDictionaryRef) props);
+		ok = CGImageDestinationFinalize(dst);
+	}
+	if (dst) CFRelease(dst);
+	if (image) CGImageRelease(image);
+	if (!ok) Fail(kErrIllustrator, "couldn't write " + path);
+	json::Value v;
+	v["path"] = path;
+	v["format"] = kind;
+	v["width"] = (double) w;
+	v["height"] = (double) h;
+	v["dpi"] = dpi;
+	v["area"] = area;
+	v["artboard"] = (double) index;
+	return v;
+}
+
+json::Value DocumentExport(const json::Value& p)
+{
+	std::string path = ReqStr(p, "path");
+	if (path.empty() || path[0] != '/') Fail(kErrInvalidParams, "'path' must be absolute (start with /)");
+	std::string kind = FormatKind(p, path);
+	if (kind == "png" || kind == "jpg") return ExportRaster(p, path, kind);
+	auto w = Writers().find(kind);
+	std::string format = w != Writers().end() ? w->second : p.str("format", "");
+	if (format.empty()) Fail(kErrInvalidParams, "say which format: png, jpg, pdf, svg, tiff, psd, webp... (or give the path an extension)");
+	ActiveDocument();
+	WriteTo(path, format);
+	json::Value v;
+	v["path"] = path;
+	v["format"] = kind.empty() ? format : kind;
+	return v;
+}
+
 json::Value DocumentSave(const json::Value& p)
 {
 	AIDocumentHandle doc = ActiveDocument();
 	if (p.has("path")) {
 		std::string format = p.has("format") ? p.str("format") : NativeFormat();
+		auto w = Writers().find(Lower(format));
+		if (w != Writers().end() && Lower(format) != "ai") format = w->second;
+		if (Lower(format) == "png" || Lower(format) == "jpg" || Lower(format) == "jpeg")
+			return DocumentExport(p);
 		if (format == NativeFormat()) SaveAsNative(ReqStr(p, "path"), format);
 		else WriteTo(ReqStr(p, "path"), format);
 	}
@@ -1463,6 +1648,12 @@ std::map<std::string, Command>& Table()
 		{"document.activate", {"Bring a document to the front.", Params({{"index", "number - from document.list"}}), DocumentActivate, false}},
 		{"document.save", {"Save; with 'path': native .ai is a Save As (the document moves there), any other 'format' writes a copy.",
 			Params({{"path", "string - optional absolute path"}, {"format", "string - a name from document.formats"}}), DocumentSave, false}},
+		{"document.export", {"Export a copy: png / jpg rendered at any resolution (artboard, all art, or one object), or pdf, svg, tiff, psd, webp... Format from 'format' or the path's extension.",
+			Params({{"path", "string - absolute path"}, {"format", "string - png, jpg, pdf, svg, tiff, psd, webp, eps... (default: the extension)"},
+				{"scale", "number - png/jpg size, 1 = 72 dpi (default 1)"}, {"dpi", "number - png/jpg, instead of scale"},
+				{"area", "\"artboard\" (default) | \"art\" - png/jpg"}, {"artboard", "number - which artboard (default: active)"},
+				{"id", "string - png/jpg: crop to this object (ids: several)"}, {"ids", "string[]"}, {"transparent", "boolean - png (default true)"},
+				{"quality", "number - jpg 1-100 (default 90)"}}), DocumentExport, false}},
 		{"document.formats", {"File formats Illustrator can save or export, by the names document.save takes.", Params({}), DocumentFormats, false}},
 		{"document.close", {"Close a document (default: the active one). Unsaved changes may prompt unless save=true.",
 			Params({{"index", "number"}, {"save", "boolean"}}), DocumentClose, true}},
