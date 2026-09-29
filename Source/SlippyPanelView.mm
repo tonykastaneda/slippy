@@ -101,8 +101,8 @@ CGPathRef EyePath(Face f, bool right, CGFloat D)
 		CGPathAddLineToPoint(p, nullptr, 0, 0.07 * D);
 		CGPathAddLineToPoint(p, nullptr, 0.075 * D, -0.06 * D);
 		break;
-	case Face::Awake:   // o
-		CGPathAddEllipseInRect(p, nullptr, CGRectMake(-0.062 * D, -0.07 * D, 0.124 * D, 0.14 * D));
+	case Face::Awake:   // a solid black eye
+		CGPathAddEllipseInRect(p, nullptr, CGRectMake(-0.087 * D, -0.095 * D, 0.174 * D, 0.19 * D));
 		break;
 	case Face::Ouch: {  // > <
 		CGFloat s = right ? -1 : 1;
@@ -115,7 +115,7 @@ CGPathRef EyePath(Face f, bool right, CGFloat D)
 	return p;
 }
 
-CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Sleep ? 0.045 : f == Face::Awake ? 0.05 : 0.055) * D; }
+CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Sleep ? 0.045 : f == Face::Awake ? 0 : 0.055) * D; }
 
 // The three Z's of the art: offset from the body's center, font size.
 struct ZSpot { CGFloat x, y, size; };
@@ -337,6 +337,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_mark[i].path = p;
 		CGPathRelease(p);
 		_mark[i].lineWidth = EyeWidth(_shown, _D);
+		_mark[i].fillColor = _shown == Face::Awake ? NSColor.blackColor.CGColor : nil;   // open: filled; the rest are strokes
 		_mark[i].bounds = CGRectZero;
 		_eye[i].position = CGPointMake((0.5 + (i ? kEyeX : -kEyeX)) * _D, (kEyeY + EyeLift(_shown)) * _D);
 	}
