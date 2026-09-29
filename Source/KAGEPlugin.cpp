@@ -3,6 +3,7 @@
 #include "Commands.h"
 #include "KAGEPanel.h"
 #include "Mcp.h"
+#include "Overlay.h"
 #include "AppContext.hpp"
 
 #include <dispatch/dispatch.h>
@@ -144,6 +145,7 @@ ASErr KAGEPlugin::StartupPlugin(SPInterfaceMessage* message)
 	runData.itemText = ai::UnicodeString::FromUTF8(kKAGERunItemName);
 	if (sAIMenu->AddMenuItem(fPluginRef, kKAGERunItemName, &runData, 0, &fRunItem)) fRunItem = nullptr;
 	AddPanel();   // never fails startup: without it KAGE still serves agents
+	kage::overlay::Init(fPluginRef);   // likewise optional
 	return kNoErr;
 }
 
@@ -209,6 +211,7 @@ ASErr KAGEPlugin::ShutdownPlugin(SPInterfaceMessage* message)
 	fServer.Stop();
 	gPlugin = nullptr;
 	kage::SetCallObserver(nullptr);
+	kage::overlay::Shutdown();
 	PanelDetach();
 	if (fPanel && sAIPanel) { sAIPanel->Destroy(fPanel); fPanel = nullptr; }
 	return Plugin::ShutdownPlugin(message);
@@ -248,8 +251,18 @@ void KAGEPlugin::Kick()
 	else RunPending();   // no timer suite: run here, inside the app context
 }
 
+ASErr KAGEPlugin::Message(char* caller, char* selector, void* message)
+{
+	if (!strcmp(caller, kCallerAIAnnotation)) return kage::overlay::Annotate(selector, (AIAnnotatorMessage*) message);
+	return Plugin::Message(caller, selector, message);
+}
+
 ASErr KAGEPlugin::GoTimer(AITimerMessage* message)
 {
+	if (kage::overlay::IsTimer(message->timer)) {
+		kage::overlay::Tick();
+		return kNoErr;
+	}
 	if (fTimer && message->timer == fTimer) {
 		if (fRunning) return kNoErr;   // nested event loop; the outer run drains the queue
 		KAGESetTimerActive(fTimer, false);

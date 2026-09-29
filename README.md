@@ -35,18 +35,32 @@ Kage, the mascot, reacts to what agents are doing:
 
 | Mood | Face | When |
 |---|---|---|
-| Asleep | `— —`, Z's drifting up from his head, slow breathing | Nothing happening, paused, or server down (dimmed, no Z's) |
-| Waking | `^ ^` with a hop | The first call after he's been asleep |
-| Working | `o o`, eyes darting around, the odd blink | Calls are coming in; he looks around faster the busier it gets |
-| Ouch | `> <`, a shake and a red flash | A call failed |
-| Dozing | `^ ^`, then `— —` | About 6 s after the last call |
+| Asleep | `— —`, Z's drifting up from his head, slow slumped breathing, the odd snuffle | Nothing happening, paused, or server down (dimmed, no Z's) |
+| Waking | `^ ^`, a stretch, then a hop that squashes on landing | The first call after he's been asleep |
+| Working | `o o`, eyes springing around, blinks (sometimes double), a curious head tilt, a little bounce on each edit | Calls are coming in; he looks around faster the busier it gets |
+| Ouch | `> <`, a flinch, a shake that dies away, a red flash | A call failed |
+| Dozing | `^ ^`, nods off, catches himself, then `— —` | About 6 s after the last call |
 
-Every face change happens through a blink. Each call also sends a ripple out
+Every face change happens through a blink. Moves ease in and out and start
+from wherever Kage is on screen, so one never cuts another off with a jump:
+hops, squash and stretch, and breathing each run on their own layer. Each call also sends a ripple out
 from Kage (teal = read, amber = edit, red = error), kicks its command group's
 bar, and slides into the feed as a plain-English line ("Rotated “Kage” 15°", "Couldn't find that object"), with the time of day. Hover a line for the technical command, how long it took and any full error. The panel also has
 **Pause agents**, which refuses calls, and **Copy connection**, which copies
-the `claude mcp add` line with the token. With macOS Reduce Motion on, the
-faces still change but nothing moves, and the Z's stay still.
+the `claude mcp add` line with the token. With macOS Reduce Motion on, Kage
+moves about a third as much, feed lines fade in without sliding, and the Z's
+light up in place one after another instead of drifting. Launch Illustrator
+with `KAGE_FULL_MOTION=1` in its environment to get full motion anyway.
+
+## Seeing what Kage touches
+
+On the canvas, each call draws a blue box (with corner handles) around the art
+it touched, and Kage's triangle cursor glides there, labelled with the call's
+plain-English line (red when the call failed). A batch gets one box around
+everything it touched. The box fades after a few quiet seconds, then the
+label, then the cursor. It's drawn by an annotator, like Illustrator's own
+selection highlights, so it's never part of the artwork, the file or the undo
+history.
 
 To watch Kage without Illustrator, run `make preview`. It opens the panel in a
 window and feeds it made-up bursts of calls with quiet spells in between, so
@@ -139,6 +153,7 @@ sets how long the client waits.
 | `Source/KAGEPlugin.*` | Plug-in entry. Queues each request, wakes the main thread (GCD), runs the queue in a one-tick timer message, a normal plug-in context |
 | `Source/Commands.*` | The command table: every SDK call, JSON in and out, undo labels |
 | `Source/Narrate.*` | Turns each call into the feed's plain-English line |
+| `Source/Overlay.*` | The canvas overlay: box, cursor and label for what each call touched |
 | `Source/Mcp.*` | MCP over HTTP: handshake, tool list built from the command table, tool calls |
 | `Source/KAGEPanelView.*` | The panel and Kage (Cocoa + Core Animation, no SDK) |
 | `Source/KAGEPanel.*` | Puts the panel view into Illustrator's docked panel |

@@ -24,6 +24,9 @@
 #include "AIRuntime.h"
 #include "AIPanel.h"
 #include "AIFileFormat.h"
+#include "AIAnnotator.h"
+#include "AIAnnotatorDrawer.h"
+#include "AIDocumentView.h"
 #include "ATETextSuitesImportHelper.h"
 #include "AIAssert.hpp"
 
@@ -47,11 +50,16 @@ extern "C" AIUUIDSuite*				sAIUUID;
 extern "C" AIRuntimeSuite*			sAIRuntime;
 extern "C" AIPanelSuite*			sAIPanel;
 extern "C" AIFileFormatSuite*		sAIFileFormat;
+extern "C" AIAnnotatorSuite*		sAIAnnotator;
+extern "C" AIAnnotatorDrawerSuite*	sAIAnnotatorDrawer;
+extern "C" AIDocumentViewSuite*	sAIDocumentView;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.
 int KAGETimerVersion();
-AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer);
+// undoable: run in an undo-tracked context (the calls timer); the overlay's
+// animation timer changes nothing, so it doesn't need one.
+AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable = true);
 AIErr KAGESetTimerActive(AITimerHandle timer, AIBoolean active);
 
 #endif // __KAGE_SUITES_H__

@@ -1,6 +1,7 @@
 #include "IllustratorSDK.h"
 #include "Commands.h"
 #include "Narrate.h"
+#include "Overlay.h"
 #include "KAGESuites.h"
 #include "KAGEID.h"
 #include "IAIFilePath.hpp"
@@ -146,6 +147,7 @@ AIArtHandle ArtById(const std::string& idText)
 	AIArtHandle art = nullptr;
 	if (sAIUUID->StringToUUID(U(idText), id) || sAIUUID->GetArtHandle(id, art) || !art || !sAIArt->ValidArt(art, true))
 		Fail(kErrNotFound, "no art with id " + idText + " in the active document");
+	overlay::Touch(art);
 	return art;
 }
 
@@ -202,6 +204,7 @@ std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing =
 	}
 	else if (selectionIfMissing) {
 		out = SelectedArt();
+		for (AIArtHandle a : out) overlay::Touch(a);
 		if (out.empty()) Fail(kErrInvalidParams, "pass 'id' or 'ids', or select something first");
 	}
 	else Fail(kErrInvalidParams, "pass 'id' or 'ids'");
@@ -441,6 +444,7 @@ json::Value Finish(AIArtHandle art, const json::Value& p)
 	if (p.get("name").isString()) sAIArt->SetArtName(art, U(p.get("name").asString()));
 	ApplyStyle(art, p);
 	if (p.boolean("select", false)) sAIArt->SetArtUserAttr(art, kArtSelected, kArtSelected);
+	overlay::Touch(art);
 	return ArtSummary(art, 0);
 }
 
@@ -954,6 +958,7 @@ json::Value ArtDuplicate(const json::Value& p)
 	for (AIArtHandle a : ArtList(p, true)) {
 		AIArtHandle copy = nullptr;
 		Check(sAIArt->DuplicateArt(a, kPlaceAbove, a, &copy), "DuplicateArt");
+		overlay::Touch(copy);
 		out.push(ArtSummary(copy, 0));
 	}
 	return out;
@@ -1299,16 +1304,16 @@ CallObserver gObserver;
 json::Value RunOne(const json::Value& call)
 {
 	auto start = std::chrono::steady_clock::now();
+	overlay::BeginCall();
 	json::Value response = RunOneUntimed(call);
-	if (gObserver) {
-		double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-		std::string method = call.isObject() && call.get("method").isString() ? call.get("method").asString() : "(invalid)";
-		auto it = Table().find(method);
-		const json::Value& err = response.get("error");
-		std::string message = err.isNull() ? "" : err.get("message").isString() ? err.get("message").asString() : "error";
-		gObserver(method, err.isNull(), it != Table().end() && it->second.changesDocument, ms,
-			Narrate(method, call.get("params"), response.get("result"), message));
-	}
+	double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	std::string method = call.isObject() && call.get("method").isString() ? call.get("method").asString() : "(invalid)";
+	auto it = Table().find(method);
+	const json::Value& err = response.get("error");
+	std::string message = err.isNull() ? "" : err.get("message").isString() ? err.get("message").asString() : "error";
+	std::string line = Narrate(method, call.get("params"), response.get("result"), message);
+	if (gObserver) gObserver(method, err.isNull(), it != Table().end() && it->second.changesDocument, ms, line);
+	overlay::EndCall(line, err.isNull());
 	return response;
 }
 
@@ -1336,6 +1341,7 @@ json::Value Handle(const json::Value& request)
 		// A batch: one timer message, so the calls land as one undo step.
 		json::Value out = json::Value::MakeArray();
 		bool stopped = false;
+		overlay::BeginBatch();   // one highlight around everything the batch touched
 		for (const json::Value& call : request.asArray()) {
 			if (stopped) {
 				json::Value skipped;
@@ -1350,6 +1356,7 @@ json::Value Handle(const json::Value& request)
 			if (r.has("error") && call.boolean("stopOnError", true)) stopped = true;
 			out.push(r);
 		}
+		overlay::EndBatch();
 		return out;
 	}
 	return RunOne(request);

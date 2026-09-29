@@ -23,6 +23,7 @@ SOURCES := \
 	Source/KAGEPlugin.cpp \
 	Source/KAGESuites.cpp \
 	Source/Commands.cpp \
+	Source/Overlay.cpp \
 	Source/Mcp.cpp \
 	Source/Narrate.cpp \
 	Source/Server.cpp \

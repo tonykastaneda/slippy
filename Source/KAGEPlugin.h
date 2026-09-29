@@ -35,6 +35,7 @@ protected:
 	virtual ASErr ShutdownPlugin(SPInterfaceMessage* message);
 	virtual ASErr GoMenuItem(AIMenuMessage* message);
 	virtual ASErr GoTimer(AITimerMessage* message);
+	virtual ASErr Message(char* caller, char* selector, void* message);   // + the overlay's annotator
 
 private:
 	AIMenuItemHandle fPanelItem = nullptr;

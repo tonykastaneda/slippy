@@ -22,6 +22,9 @@ extern "C" {
 	AIRuntimeSuite*			sAIRuntime = nullptr;
 	AIPanelSuite*			sAIPanel = nullptr;
 	AIFileFormatSuite*		sAIFileFormat = nullptr;
+	AIAnnotatorSuite*		sAIAnnotator = nullptr;
+	AIAnnotatorDrawerSuite*	sAIAnnotatorDrawer = nullptr;
+	AIDocumentViewSuite*	sAIDocumentView = nullptr;
 	EXTERN_TEXT_SUITES
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
 };
@@ -51,6 +54,9 @@ ImportSuite gImportSuites[] =
 	kAIRuntimeSuite, kAIRuntimeSuiteVersion, &sAIRuntime,
 	kAIPanelSuite, kAIPanelSuiteVersion, &sAIPanel,			// the KAGE panel (checked before use)
 	kAIFileFormatSuite, kAIFileFormatSuiteVersion, &sAIFileFormat,
+	kAIAnnotatorSuite, kAIAnnotatorSuiteVersion, &sAIAnnotator,		// the canvas overlay (Overlay.h)
+	kAIAnnotatorDrawerSuite, kAIAnnotatorDrawerSuiteVersion, &sAIAnnotatorDrawer,
+	kAIDocumentViewSuite, kAIDocumentViewSuiteVersion, &sAIDocumentView,
 	IMPORT_TEXT_SUITES
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,
 	nullptr, 0, nullptr
@@ -82,13 +88,13 @@ int KAGETimerVersion()
 	return gTimerVersion;
 }
 
-AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer)
+AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable)
 {
 	int v = KAGETimerVersion();
 	if (!v) return kCantHappenErr;
 	// Version 6 can run the timer in an undo-tracked context, so agent edits
 	// land on Edit > Undo; older ones get a standard context set in GoTimer.
-	if (v >= 6) return ((const AITimerSuite*) gTimerSuite)->AddTimerWithOptions(self, name, period, kAITimerOptionUndoableContext, timer);
+	if (v >= 6 && undoable) return ((const AITimerSuite*) gTimerSuite)->AddTimerWithOptions(self, name, period, kAITimerOptionUndoableContext, timer);
 	return ((const TimerSuiteV5*) gTimerSuite)->AddTimer(self, name, period, timer);
 }
 

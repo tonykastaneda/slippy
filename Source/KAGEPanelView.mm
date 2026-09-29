@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <string>
 #include <vector>
@@ -22,7 +23,12 @@ NSColor* EditColor() { return NSColor.systemOrangeColor; }
 NSColor* ErrorColor() { return NSColor.systemRedColor; }
 NSColor* KageBlue() { return [NSColor colorWithSRGBRed:0x43 / 255.0 green:0x7B / 255.0 blue:0xFA / 255.0 alpha:1]; }   // from the mascot art
 
-bool ReduceMotion() { return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion; }
+// macOS's Reduce Motion, unless KAGE_FULL_MOTION=1 asks for the full bounce anyway.
+bool ReduceMotion()
+{
+	static const bool full = getenv("KAGE_FULL_MOTION") && !strcmp(getenv("KAGE_FULL_MOTION"), "1");
+	return !full && NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+}
 
 double Random(double lo, double hi) { return lo + (hi - lo) * (arc4random_uniform(10001) / 10000.0); }
 
@@ -47,6 +53,11 @@ NSTextField* Label(CGFloat size, NSFontWeight weight, NSColor* color)
 // ------------------------------------------------------------------ Kage
 // Geometry is in units of the body's diameter D, measured off the mascot art;
 // layer coordinates, so y grows upward.
+//
+// Motion is layered so nothing fights: _root hops, shakes and tilts (pivoting
+// on the ground under Kage), _squash squashes and stretches, _breath breathes
+// on a loop nobody else touches. Every move starts from where Kage is on
+// screen right now, so a new move never pops.
 
 namespace {
 
@@ -91,24 +102,86 @@ CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Sleep ? 0.045 : f == Fa
 struct ZSpot { CGFloat x, y, size; };
 const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.21}};
 
+// How far Kage moves: all the way, or - with Reduce Motion on - a gentle
+// fraction. Kage still breathes, blinks and eases; it just doesn't bounce.
+CGFloat Motion() { return ReduceMotion() ? 0.3 : 1.0; }
+
+CAMediaTimingFunction* Curve(float a, float b, float c, float d) { return [CAMediaTimingFunction functionWithControlPoints:a :b :c :d]; }
+CAMediaTimingFunction* EaseOut() { return Curve(0.22, 1, 0.36, 1); }      // quick start, soft landing
+CAMediaTimingFunction* EaseIn() { return Curve(0.55, 0, 1, 0.45); }       // gravity
+CAMediaTimingFunction* EaseInOut() { return Curve(0.65, 0, 0.35, 1); }
+CAMediaTimingFunction* Overshoot() { return Curve(0.34, 1.56, 0.64, 1); } // a little past, then back
+
+// The value on screen right now, mid-animation included.
+id Current(CALayer* layer, NSString* keyPath)
+{
+	CALayer* shown = layer.presentationLayer;
+	return [(shown ?: layer) valueForKeyPath:keyPath];
+}
+
+// Keyframes from wherever the layer is now through 'values' (the last should
+// be the model value). times has one more entry than values; curves one fewer.
+CAKeyframeAnimation* Play(CALayer* layer, NSString* key, NSString* keyPath, NSArray* values, NSArray<NSNumber*>* times,
+	NSArray<CAMediaTimingFunction*>* curves, double duration)
+{
+	CAKeyframeAnimation* a = [CAKeyframeAnimation animationWithKeyPath:keyPath];
+	NSMutableArray* v = [NSMutableArray arrayWithObject:Current(layer, keyPath)];
+	[v addObjectsFromArray:values];
+	a.values = v;
+	a.keyTimes = times;
+	a.timingFunctions = curves;
+	a.duration = duration;
+	[layer addAnimation:a forKey:key];
+	return a;
+}
+
+// A spring from where the layer is now to 'to', which becomes the model value.
+void Spring(CALayer* layer, NSString* keyPath, id to, CGFloat stiffness, CGFloat damping)
+{
+	id from = Current(layer, keyPath);
+	[CATransaction begin];
+	[CATransaction setDisableActions:YES];
+	[layer setValue:to forKeyPath:keyPath];
+	[CATransaction commit];
+	CASpringAnimation* s = [CASpringAnimation animationWithKeyPath:keyPath];
+	s.fromValue = from;
+	s.toValue = to;
+	s.mass = 1;
+	s.stiffness = stiffness;
+	s.damping = damping;
+	s.duration = s.settlingDuration;
+	[layer addAnimation:s forKey:keyPath];
+}
+
+// Timers keep running while Illustrator tracks the mouse (common modes).
+NSTimer* After(double seconds, void (^block)(NSTimer*))
+{
+	NSTimer* t = [NSTimer timerWithTimeInterval:seconds repeats:NO block:block];
+	[NSRunLoop.mainRunLoop addTimer:t forMode:NSRunLoopCommonModes];
+	return t;
+}
+
 } // namespace
 
 @implementation KAGEMascotView {
-	CALayer* _face;          // body + eyes: hops, breathes, shakes
+	CALayer* _root;          // hops, shakes, tilts; anchored on the ground under Kage
+	CALayer* _squash;        // squash & stretch
+	CALayer* _breath;        // the breathing loop
 	CAShapeLayer* _body;
 	CALayer* _eyes;          // the pair: looks around
 	CAShapeLayer* _eye[2];
-	NSMutableArray<CATextLayer*>* _stillZs;   // Reduce Motion: the art's Z's, still
-	NSMutableArray<CATextLayer*>* _sleepZs;   // Three staggered, continuously drifting Z's
+	NSMutableArray<CATextLayer*>* _zs;
+	BOOL _snoring;
 	CGFloat _D;
 	CGPoint _center;
 	CGPoint _look;           // eye-pair offset, in D
 	Face _shown;
 	Mood _mood;
-	int _blink;              // generation: a newer blink cancels an older one's second half
+	int _blink;              // generation: a newer blink or face change cancels an older one's second half
+	int _moodGen;            // generation: a mood change cancels scheduled steps of the old one
 	double _busy;
 	BOOL _available, _paused;
-	NSTimer* _lookTimer;
+	NSTimer* _idleTimer;     // looks, blinks, tilts, snuffles
 	NSTimer* _sleepTimer;
 }
 
@@ -117,11 +190,16 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	if ((self = [super initWithFrame:frame])) {
 		self.wantsLayer = YES;
 		self.sleepAfter = 6;
-		_face = [CALayer layer];
+		_root = [CALayer layer];
+		_squash = [CALayer layer];
+		_breath = [CALayer layer];
+		for (CALayer* l in @[_root, _squash, _breath]) l.anchorPoint = CGPointMake(0.5, 0);   // pivot on the ground
 		_body = [CAShapeLayer layer];
 		_eyes = [CALayer layer];
-		[_face addSublayer:_body];
-		[_face addSublayer:_eyes];
+		[_root addSublayer:_squash];
+		[_squash addSublayer:_breath];
+		[_breath addSublayer:_body];
+		[_breath addSublayer:_eyes];
 		for (int i = 0; i < 2; i++) {
 			_eye[i] = [CAShapeLayer layer];
 			_eye[i].fillColor = nil;
@@ -130,18 +208,13 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 			_eye[i].lineJoin = kCALineJoinMiter;
 			[_eyes addSublayer:_eye[i]];
 		}
-		[self.layer addSublayer:_face];
-		_stillZs = [NSMutableArray array];
-		_sleepZs = [NSMutableArray array];
+		[self.layer addSublayer:_root];
+		_zs = [NSMutableArray array];
 		for (int i = 0; i < 3; i++) {
 			CATextLayer* z = [self makeZ];
-			z.hidden = YES;
+			z.opacity = 0;
 			[self.layer addSublayer:z];
-			[_stillZs addObject:z];
-			z = [self makeZ];
-			z.hidden = YES;
-			[self.layer addSublayer:z];
-			[_sleepZs addObject:z];
+			[_zs addObject:z];
 		}
 		_shown = Face::Sleep;
 		_mood = Mood::Asleep;
@@ -153,7 +226,7 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 
 - (void)dealloc
 {
-	[_lookTimer invalidate];
+	[_idleTimer invalidate];
 	[_sleepTimer invalidate];
 }
 
@@ -161,12 +234,10 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 {
 	[super viewDidMoveToWindow];
 	if (!self.window) {   // off screen: no timers running for nobody
-		[_lookTimer invalidate]; _lookTimer = nil;
+		[_idleTimer invalidate]; _idleTimer = nil;
 		return;
 	}
-	CGFloat scale = self.window.backingScaleFactor;
-	for (CATextLayer* z in _stillZs) z.contentsScale = scale;
-	for (CATextLayer* z in _sleepZs) z.contentsScale = scale;
+	for (CATextLayer* z in _zs) z.contentsScale = self.window.backingScaleFactor;
 	[self enterMood:_mood];
 }
 
@@ -193,34 +264,31 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	_center = CGPointMake(s.width - _D / 2 - s.width * 0.06, _D / 2 + s.height * 0.05);
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
-	_face.bounds = CGRectMake(0, 0, _D, _D);
-	_face.position = _center;
-	_body.frame = _face.bounds;
-	CGPathRef circle = CGPathCreateWithEllipseInRect(_face.bounds, nullptr);
+	CGRect box = CGRectMake(0, 0, _D, _D);
+	_root.bounds = box;
+	_root.position = CGPointMake(_center.x, _center.y - _D / 2);
+	for (CALayer* l in @[_squash, _breath]) {
+		l.bounds = box;
+		l.position = CGPointMake(_D / 2, 0);
+	}
+	_body.frame = box;
+	CGPathRef circle = CGPathCreateWithEllipseInRect(box, nullptr);
 	_body.path = circle;
 	CGPathRelease(circle);
-	_eyes.bounds = _face.bounds;
-	[self placeEyes];
+	_eyes.bounds = box;
+	_eyes.position = [self eyeSpot];
 	[self drawFace];
-	for (int i = 0; i < 3; i++) {
-		CATextLayer* z = _stillZs[i];
-		CGFloat size = kZs[i].size * _D;
+	for (CATextLayer* z in _zs) {
+		CGFloat size = kZs[2].size * _D;
 		z.fontSize = size * 1.25;
 		z.bounds = CGRectMake(0, 0, size * 1.4, size * 1.6);
-		z.position = CGPointMake(_center.x + kZs[i].x * _D, _center.y + kZs[i].y * _D);
-		z = _sleepZs[i];
-		z.fontSize = kZs[2].size * _D * 1.25;
-		z.bounds = CGRectMake(0, 0, kZs[2].size * _D * 1.4, kZs[2].size * _D * 1.6);
 	}
 	[CATransaction commit];
-	if (_D != oldD && _mood == Mood::Asleep && _available && !_paused && self.window)
-		[self startSnoring];
+	// The Z's follow Kage's size; and the first layout is when they can start.
+	if (_D != oldD) { _snoring = NO; [self snore:[self wantsSnore]]; }
 }
 
-- (void)placeEyes
-{
-	_eyes.position = CGPointMake(_D / 2 + _look.x * _D, _D / 2 + _look.y * _D);
-}
+- (CGPoint)eyeSpot { return CGPointMake(_D / 2 + _look.x * _D, _D / 2 + _look.y * _D); }
 
 // Shape + spot of both eyes for _shown (no animation).
 - (void)drawFace
@@ -245,53 +313,221 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	}];
 }
 
-// ---- faces
+// ---- eyes
 
-// Eyes squeeze shut, change, open - how every face change reads as alive.
+// Lids close fast, then (after 'change', if any) open with a little pop.
+- (void)closeEyes:(double)close hold:(double)hold then:(void (^)(void))change open:(double)open
+{
+	int gen = ++_blink;
+	[CATransaction begin];
+	[CATransaction setCompletionBlock:^{
+		if (gen != self->_blink) return;
+		if (change) change();
+		for (int i = 0; i < 2; i++) {
+			CAKeyframeAnimation* a = Play(self->_eye[i], @"lid", @"transform.scale.y", @[@0.08, @1], @[@0, @(hold / (hold + open)), @1],
+				@[EaseInOut(), Overshoot()], hold + open);
+			a.removedOnCompletion = YES;
+		}
+	}];
+	for (int i = 0; i < 2; i++) {
+		CAKeyframeAnimation* a = Play(_eye[i], @"lid", @"transform.scale.y", @[@0.08], @[@0, @1], @[EaseIn()], close);
+		a.fillMode = kCAFillModeForwards;   // stay shut until the open half takes over
+		a.removedOnCompletion = NO;
+	}
+	[CATransaction commit];
+}
+
+// Every face change reads as alive: eyes squeeze shut, change, pop open.
 - (void)showFace:(Face)face
 {
 	if (face == _shown) return;
 	_shown = face;
-	int gen = ++_blink;
-	if (ReduceMotion() || !self.window) { [self drawFace]; return; }
-	[CATransaction begin];
-	[CATransaction setAnimationDuration:0.07];
-	[CATransaction setCompletionBlock:^{
-		if (gen != self->_blink) return;
-		[self drawFace];
-		[CATransaction begin];
-		[CATransaction setAnimationDuration:0.11];
-		for (int i = 0; i < 2; i++) self->_eye[i].transform = CATransform3DIdentity;
-		[CATransaction commit];
-	}];
-	for (int i = 0; i < 2; i++) _eye[i].transform = CATransform3DMakeScale(1, 0.08, 1);
-	[CATransaction commit];
+	if (!self.window) { [self drawFace]; return; }
+	[self closeEyes:0.07 hold:0.02 then:^{ [self drawFace]; } open:0.16];
 }
 
-- (void)blink
+- (void)blinkTwice:(BOOL)twice
 {
-	if (ReduceMotion() || _shown != Face::Awake) return;
-	int gen = ++_blink;
-	[CATransaction begin];
-	[CATransaction setAnimationDuration:0.06];
-	[CATransaction setCompletionBlock:^{
-		if (gen != self->_blink) return;
-		[CATransaction begin];
-		[CATransaction setAnimationDuration:0.09];
-		for (int i = 0; i < 2; i++) self->_eye[i].transform = CATransform3DIdentity;
-		[CATransaction commit];
-	}];
-	for (int i = 0; i < 2; i++) _eye[i].transform = CATransform3DMakeScale(1, 0.08, 1);
-	[CATransaction commit];
+	if (_shown != Face::Awake) return;
+	[self closeEyes:0.06 hold:0.03 then:nil open:0.12];
+	if (twice) {
+		int mood = _moodGen;
+		[self after:0.28 do:^(KAGEMascotView* me) { if (me->_moodGen == mood) [me closeEyes:0.06 hold:0.03 then:nil open:0.12]; }];
+	}
 }
 
-- (void)lookAt:(CGPoint)look duration:(double)seconds
+- (void)lookAt:(CGPoint)look
 {
 	_look = look;
+	Spring(_eyes, @"position", [NSValue valueWithPoint:[self eyeSpot]], 300, 20);   // darts, overshoots a hair, settles
+}
+
+// ---- body
+
+// Hop: crouch, stretch on the way up, fall with gravity, squash on landing, jiggle.
+- (void)hop:(CGFloat)height squash:(CGFloat)amount duration:(double)duration
+{
+	CGFloat m = Motion(), y = _root.position.y, top = y + height * _D * m, k = amount * m;
+	Play(_root, @"hop", @"position.y", @[@(y), @(top), @(y), @(y)], @[@0, @0.2, @0.5, @0.76, @1],
+		@[EaseInOut(), EaseOut(), EaseIn(), EaseOut()], duration);
+	NSArray* times = @[@0, @0.2, @0.32, @0.5, @0.8, @1];
+	NSArray* curves = @[EaseOut(), EaseOut(), EaseInOut(), EaseIn(), Overshoot()];
+	Play(_squash, @"squash.x", @"transform.scale.x", @[@(1 + k), @(1 - 0.6 * k), @1, @(1 + 1.1 * k), @1], times, curves, duration);
+	Play(_squash, @"squash.y", @"transform.scale.y", @[@(1 - k), @(1 + 0.8 * k), @1, @(1 - 1.1 * k), @1], times, curves, duration);
+}
+
+// A slow stretch, like a yawn, before waking up properly.
+- (void)stretch
+{
+	CGFloat k = 0.1 * Motion();
+	NSArray* times = @[@0, @0.25, @0.75, @1];
+	NSArray* curves = @[EaseInOut(), EaseInOut(), Overshoot()];
+	Play(_squash, @"squash.x", @"transform.scale.x", @[@(1 + 0.5 * k), @(1 - 0.5 * k), @1], times, curves, 0.55);
+	Play(_squash, @"squash.y", @"transform.scale.y", @[@(1 - 0.5 * k), @(1 + k), @1], times, curves, 0.55);
+}
+
+// Asleep, now and then: a small wriggle, getting comfy.
+- (void)snuffle
+{
+	CGFloat k = 0.035 * Motion() + 0.01;
+	NSArray* times = @[@0, @0.3, @0.6, @1];
+	NSArray* curves = @[EaseInOut(), EaseInOut(), EaseOut()];
+	Play(_squash, @"squash.x", @"transform.scale.x", @[@(1 + k), @(1 - 0.4 * k), @1], times, curves, 0.7);
+	Play(_squash, @"squash.y", @"transform.scale.y", @[@(1 - k), @(1 + 0.4 * k), @1], times, curves, 0.7);
+}
+
+// Working, now and then: head on one side, curious, then back.
+- (void)tilt
+{
+	CGFloat angle = (Random(0, 1) < 0.5 ? -1 : 1) * 0.08 * Motion();
+	Spring(_root, @"transform.rotation.z", @(angle), 140, 11);
+	int mood = _moodGen;
+	[self after:Random(0.7, 1.2) do:^(KAGEMascotView* me) {
+		if (me->_moodGen == mood) Spring(me->_root, @"transform.rotation.z", @0, 140, 11);
+	}];
+}
+
+// Breathing: deep and slow asleep (a little slumped), light awake. Settles
+// from the current breath into the new rhythm instead of jumping.
+- (void)breathe
+{
+	bool asleep = _mood == Mood::Asleep || _mood == Mood::Dozing;
+	double inhale = asleep ? 1.5 : 0.55, exhale = asleep ? 2.0 : 0.75, settle = 0.45;
+	struct { NSString* axis; CGFloat base, depth; } axes[] = {
+		{@"x", asleep ? 1.01 : 1.0, asleep ? 0.03 : 0.01},
+		{@"y", asleep ? 0.975 : 1.0, asleep ? 0.045 : 0.018},
+	};
+	for (auto& ax : axes) {
+		NSString* keyPath = [@"transform.scale." stringByAppendingString:ax.axis];
+		CABasicAnimation* into = [CABasicAnimation animationWithKeyPath:keyPath];
+		into.fromValue = Current(_breath, keyPath);
+		into.toValue = @(ax.base);
+		into.duration = settle;
+		into.timingFunction = EaseInOut();
+		CAKeyframeAnimation* loop = [CAKeyframeAnimation animationWithKeyPath:keyPath];
+		loop.values = @[@(ax.base), @(ax.base + ax.depth), @(ax.base)];
+		loop.keyTimes = @[@0, @(inhale / (inhale + exhale)), @1];
+		loop.timingFunctions = @[EaseInOut(), EaseInOut()];
+		loop.duration = inhale + exhale;
+		loop.beginTime = settle;
+		loop.repeatCount = HUGE_VALF;
+		CAAnimationGroup* g = [CAAnimationGroup animation];
+		g.animations = @[into, loop];
+		g.duration = HUGE_VAL;
+		[_breath addAnimation:g forKey:[@"breath." stringByAppendingString:ax.axis]];
+	}
+}
+
+// ---- Z's
+
+- (BOOL)wantsSnore { return _mood == Mood::Asleep && _available && !_paused && self.window && _D >= 1; }
+
+- (void)snore:(BOOL)on
+{
+	if (on == _snoring) return;
+	_snoring = on;
 	[CATransaction begin];
-	[CATransaction setAnimationDuration:ReduceMotion() ? 0 : seconds];
-	[CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
-	[self placeEyes];
+	[CATransaction setDisableActions:YES];
+	for (CATextLayer* z in _zs) {
+		// Freeze each Z where it is, then fade it out (or restart the drift).
+		CATextLayer* shown = z.presentationLayer;
+		if (shown) { z.position = shown.position; z.transform = shown.transform; }
+		CGFloat opacity = shown ? shown.opacity : z.opacity;
+		[z removeAnimationForKey:@"float"];
+		z.opacity = 0;
+		if (!on && opacity > 0) {
+			CABasicAnimation* out = [CABasicAnimation animationWithKeyPath:@"opacity"];
+			out.fromValue = @(opacity);
+			out.toValue = @0;
+			out.duration = 0.35;
+			out.timingFunction = EaseOut();
+			[z addAnimation:out forKey:@"out"];
+		}
+	}
+	[CATransaction commit];
+	if (!on) return;
+	if (ReduceMotion()) [self snoreInPlace];
+	else [self snoreDrifting];
+}
+
+// Each Z rises from beside Kage along a gentle arc, growing, swaying and
+// fading; three of them, a third of a cycle apart, so the trail never jumps.
+- (void)snoreDrifting
+{
+	CGPoint from = CGPointMake(_center.x + kZs[0].x * _D, _center.y + kZs[0].y * _D);
+	CGPoint mid = CGPointMake(_center.x + kZs[1].x * _D, _center.y + kZs[1].y * _D);
+	CGPoint to = CGPointMake(_center.x + kZs[2].x * _D, _center.y + (kZs[2].y + 0.14) * _D);
+	CGMutablePathRef path = CGPathCreateMutable();
+	CGPathMoveToPoint(path, nullptr, from.x, from.y);
+	CGPathAddQuadCurveToPoint(path, nullptr, mid.x + 0.1 * _D, mid.y, to.x, to.y);
+	double cycle = 3.0;
+	for (int i = 0; i < 3; i++) {
+		CATextLayer* z = _zs[i];
+		CAKeyframeAnimation* move = [CAKeyframeAnimation animationWithKeyPath:@"position"];
+		move.path = path;
+		move.calculationMode = kCAAnimationPaced;
+		move.timingFunction = Curve(0.3, 0.1, 0.6, 1);   // lifts off slowly, drifts away
+		CABasicAnimation* grow = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+		grow.fromValue = @(kZs[0].size / kZs[2].size);
+		grow.toValue = @1.08;
+		grow.timingFunction = EaseOut();
+		CAKeyframeAnimation* sway = [CAKeyframeAnimation animationWithKeyPath:@"transform.rotation.z"];
+		sway.values = @[@0.12, @-0.1, @0.08, @-0.04];
+		sway.timingFunctions = @[EaseInOut(), EaseInOut(), EaseInOut()];
+		CAKeyframeAnimation* fade = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+		fade.values = @[@0, @0.9, @0.85, @0];
+		fade.keyTimes = @[@0, @0.18, @0.7, @1];
+		fade.timingFunctions = @[EaseOut(), EaseInOut(), EaseIn()];
+		CAAnimationGroup* g = [CAAnimationGroup animation];
+		g.animations = @[move, grow, sway, fade];
+		g.duration = cycle;
+		g.repeatCount = HUGE_VALF;
+		g.beginTime = CACurrentMediaTime() - i * cycle / 3;
+		[z addAnimation:g forKey:@"float"];
+	}
+	CGPathRelease(path);
+}
+
+// Reduce Motion: the art's three Z's stay put and light up one after
+// another, then fade together - still asleep, still alive, no travel.
+- (void)snoreInPlace
+{
+	double cycle = 3.2;
+	[CATransaction begin];
+	[CATransaction setDisableActions:YES];
+	for (int i = 0; i < 3; i++) {
+		CATextLayer* z = _zs[i];
+		z.position = CGPointMake(_center.x + kZs[i].x * _D, _center.y + kZs[i].y * _D);
+		z.transform = CATransform3DMakeScale(kZs[i].size / kZs[2].size, kZs[i].size / kZs[2].size, 1);
+		double on = 0.1 + i * 0.18;
+		CAKeyframeAnimation* fade = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+		fade.values = @[@0, @0, @0.85, @0.85, @0];
+		fade.keyTimes = @[@0, @(on), @(on + 0.15), @0.78, @0.95];
+		fade.timingFunctions = @[EaseInOut(), EaseOut(), EaseInOut(), EaseIn()];
+		fade.duration = cycle;
+		fade.repeatCount = HUGE_VALF;
+		[z addAnimation:fade forKey:@"float"];
+	}
 	[CATransaction commit];
 }
 
@@ -307,97 +543,40 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 
 - (void)enterMood:(Mood)mood
 {
+	bool changed = mood != _mood;
 	_mood = mood;
-	[_lookTimer invalidate]; _lookTimer = nil;
-	bool asleep = mood == Mood::Asleep;
-	bool snoring = asleep && _available && !_paused;
-	for (CATextLayer* z in _stillZs) z.hidden = !(snoring && ReduceMotion());
-	for (CATextLayer* z in _sleepZs) { [z removeAnimationForKey:@"float"]; z.hidden = YES; }
-	[self breathe:asleep];
+	_moodGen++;
+	if (changed || ![_breath animationForKey:@"breath.y"]) [self breathe];
+	[self snore:[self wantsSnore]];
+	if (mood != Mood::Working && [_root animationForKey:@"transform.rotation.z"]) Spring(_root, @"transform.rotation.z", @0, 140, 14);
+	[self scheduleIdle];
+}
+
+// Little things Kage does on its own: working - looks around (sooner when
+// busy), blinks, tilts its head; asleep - the odd snuffle.
+- (void)scheduleIdle
+{
+	[_idleTimer invalidate];
+	_idleTimer = nil;
 	if (!self.window) return;
-	if (snoring && !ReduceMotion() && _D > 0) [self startSnoring];
-	if (mood == Mood::Working) [self scheduleLook];
-}
-
-// Asleep: slow deep breaths. Awake: a light bob, quicker when busy.
-- (void)breathe:(bool)asleep
-{
-	[_face removeAnimationForKey:@"breath"];
-	if (ReduceMotion()) return;
-	CABasicAnimation* a = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-	if (asleep) { a.fromValue = @0.965; a.toValue = @1.03; a.duration = 1.7; }
-	else { a.fromValue = @0.99; a.toValue = @1.015; a.duration = 1.15; }
-	a.autoreverses = YES;
-	a.repeatCount = HUGE_VALF;
-	a.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-	[_face addAnimation:a forKey:@"breath"];
-}
-
-// Three Z's follow the same gentle arc, offset in time so the trail never jumps.
-- (void)startSnoring
-{
-	CGPoint from = CGPointMake(_center.x + kZs[0].x * _D, _center.y + kZs[0].y * _D);
-	CGPoint mid = CGPointMake(_center.x + kZs[1].x * _D, _center.y + kZs[1].y * _D);
-	CGPoint to = CGPointMake(_center.x + kZs[2].x * _D, _center.y + (kZs[2].y + 0.12) * _D);
-	CGMutablePathRef path = CGPathCreateMutable();
-	CGPathMoveToPoint(path, nullptr, from.x, from.y);
-	CGPathAddQuadCurveToPoint(path, nullptr, mid.x + 0.08 * _D, mid.y, to.x, to.y);
-	[CATransaction begin];
-	[CATransaction setDisableActions:YES];
-	for (int i = 0; i < 3; i++) {
-		CATextLayer* z = _sleepZs[i];
-		[z removeAnimationForKey:@"float"];
-		z.position = from;
-		z.opacity = 0;
-		z.hidden = NO;
-		CAKeyframeAnimation* move = [CAKeyframeAnimation animationWithKeyPath:@"position"];
-		move.path = path;
-		move.calculationMode = kCAAnimationPaced;
-		CABasicAnimation* grow = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-		grow.fromValue = @(kZs[0].size / kZs[2].size);
-		grow.toValue = @1.05;
-		CAKeyframeAnimation* tilt = [CAKeyframeAnimation animationWithKeyPath:@"transform.rotation.z"];
-		tilt.values = @[@0.08, @-0.08, @0.04];
-		CAKeyframeAnimation* fade = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
-		fade.values = @[@0, @0.9, @0.9, @0];
-		fade.keyTimes = @[@0, @0.2, @0.72, @1];
-		CAAnimationGroup* g = [CAAnimationGroup animation];
-		g.animations = @[move, grow, tilt, fade];
-		g.duration = 2.7;
-		g.repeatCount = HUGE_VALF;
-		g.beginTime = CACurrentMediaTime() - i * 0.9;
-		[z addAnimation:g forKey:@"float"];
-	}
-	[CATransaction commit];
-	CGPathRelease(path);
-}
-
-// Working: the eyes dart somewhere new every so often, sooner when busy,
-// with the odd blink.
-- (void)scheduleLook
-{
-	[_lookTimer invalidate];
-	double wait = Random(0.5, 1.5) * (1.0 - 0.6 * _busy);
+	double wait;
+	if (_mood == Mood::Working) wait = Random(0.6, 1.8) * (1.0 - 0.6 * _busy);
+	else if (_mood == Mood::Asleep && _available && !_paused) wait = Random(7, 16);
+	else return;
 	__weak KAGEMascotView* weakSelf = self;
-	_lookTimer = [NSTimer scheduledTimerWithTimeInterval:wait repeats:NO block:^(NSTimer*) {
-		KAGEMascotView* me = weakSelf;
-		if (!me || me->_mood != Mood::Working) return;
-		if (Random(0, 1) < 0.15) [me blink];
-		else [me lookAt:CGPointMake(Random(-0.12, 0.12), Random(-0.07, 0.08)) duration:0.16];
-		[me scheduleLook];
-	}];
+	_idleTimer = After(wait, ^(NSTimer*) { [weakSelf idle]; });
 }
 
-- (void)hop
+- (void)idle
 {
-	if (ReduceMotion()) return;
-	CAKeyframeAnimation* a = [CAKeyframeAnimation animationWithKeyPath:@"position.y"];
-	CGFloat y = _center.y;
-	a.values = @[@(y), @(y + 0.14 * _D), @(y), @(y + 0.04 * _D), @(y)];
-	a.keyTimes = @[@0, @0.35, @0.65, @0.82, @1];
-	a.duration = 0.5;
-	a.additive = NO;
-	[_face addAnimation:a forKey:@"hop"];
+	if (_mood == Mood::Working) {
+		double r = Random(0, 1);
+		if (r < 0.2) [self blinkTwice:Random(0, 1) < 0.25];
+		else if (r < 0.28 && _busy < 0.5) [self tilt];
+		else [self lookAt:CGPointMake(Random(-0.12, 0.12), Random(-0.07, 0.08))];
+	}
+	else if (_mood == Mood::Asleep) [self snuffle];
+	[self scheduleIdle];
 }
 
 - (void)wince
@@ -408,17 +587,21 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{ red = ErrorColor().CGColor; }];
 	flash.fromValue = (__bridge id) red;
 	flash.toValue = (__bridge id) _body.fillColor;
-	flash.duration = 0.8;
+	flash.duration = 0.9;
+	flash.timingFunction = EaseIn();
 	[_body addAnimation:flash forKey:@"flash"];
-	if (!ReduceMotion()) {
-		CAKeyframeAnimation* shake = [CAKeyframeAnimation animationWithKeyPath:@"position.x"];
-		CGFloat x = _center.x;
-		shake.values = @[@(x), @(x - 5), @(x + 5), @(x - 3), @(x + 3), @(x)];
-		shake.duration = 0.35;
-		[_face addAnimation:shake forKey:@"shake"];
-	}
-	[self after:0.75 do:^(KAGEMascotView* me) {
-		if (me->_mood == Mood::Working && me->_shown == Face::Ouch) [me showFace:Face::Awake];
+	// A shake that dies away, and a flinch.
+	CGFloat x = _root.position.x, s = 0.05 * _D * Motion();
+	Play(_root, @"shake", @"position.x", @[@(x - s), @(x + 0.8 * s), @(x - 0.5 * s), @(x + 0.25 * s), @(x)],
+		@[@0, @0.12, @0.32, @0.52, @0.74, @1], @[EaseOut(), EaseInOut(), EaseInOut(), EaseInOut(), EaseOut()], 0.5);
+	CGFloat k = 0.1 * Motion();
+	NSArray* times = @[@0, @0.2, @0.55, @1];
+	NSArray* curves = @[EaseOut(), EaseInOut(), Overshoot()];
+	Play(_squash, @"squash.x", @"transform.scale.x", @[@(1 + k), @(1 - 0.3 * k), @1], times, curves, 0.5);
+	Play(_squash, @"squash.y", @"transform.scale.y", @[@(1 - k), @(1 + 0.3 * k), @1], times, curves, 0.5);
+	int mood = _moodGen;
+	[self after:0.8 do:^(KAGEMascotView* me) {
+		if (me->_moodGen == mood && me->_shown == Face::Ouch) [me showFace:Face::Awake];
 	}];
 }
 
@@ -426,18 +609,28 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 {
 	[_sleepTimer invalidate];
 	__weak KAGEMascotView* weakSelf = self;
-	_sleepTimer = [NSTimer scheduledTimerWithTimeInterval:self.sleepAfter repeats:NO block:^(NSTimer*) { [weakSelf doze]; }];
+	_sleepTimer = After(self.sleepAfter, ^(NSTimer*) { [weakSelf doze]; });
 }
 
-// Quiet for a while: eyes back to center, a content ^ ^, then off to sleep.
+// Quiet for a while: eyes back to center, a content ^ ^, nods off - catches
+// itself - and drifts to sleep.
 - (void)doze
 {
 	if (_mood != Mood::Working) return;
 	[self enterMood:Mood::Dozing];
-	[self lookAt:CGPointZero duration:0.3];
+	int mood = _moodGen;
+	[self lookAt:CGPointZero];
 	[self showFace:Face::Happy];
-	[self after:0.9 do:^(KAGEMascotView* me) {
-		if (me->_mood != Mood::Dozing) return;
+	CGFloat y = _root.position.y, dip = 0.035 * _D * Motion();
+	[self after:0.6 do:^(KAGEMascotView* me) {
+		if (me->_moodGen != mood) return;
+		Play(me->_root, @"nod", @"position.y", @[@(y - dip), @(y - dip), @(y)], @[@0, @0.6, @0.7, @1],
+			@[EaseInOut(), EaseInOut(), Overshoot()], 1.1);
+		Play(me->_root, @"nodTilt", @"transform.rotation.z", @[@(-0.05 * Motion()), @(-0.05 * Motion()), @0], @[@0, @0.6, @0.7, @1],
+			@[EaseInOut(), EaseInOut(), Overshoot()], 1.1);
+	}];
+	[self after:1.9 do:^(KAGEMascotView* me) {
+		if (me->_moodGen != mood) return;
 		[me showFace:Face::Sleep];
 		[me enterMood:Mood::Asleep];
 	}];
@@ -450,10 +643,13 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	if (available == _available && paused == _paused) return;
 	_available = available;
 	_paused = paused;
-	self.alphaValue = available && !paused ? 1.0 : 0.55;
+	[NSAnimationContext runAnimationGroup:^(NSAnimationContext* ctx) {
+		ctx.duration = 0.35;
+		self.animator.alphaValue = available && !paused ? 1.0 : 0.55;
+	}];
 	if (!available || paused) {
 		[_sleepTimer invalidate]; _sleepTimer = nil;
-		[self lookAt:CGPointZero duration:0.3];
+		[self lookAt:CGPointZero];
 		[self showFace:Face::Sleep];
 	}
 	[self enterMood:(!available || paused) ? Mood::Asleep : _mood];
@@ -469,12 +665,16 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	[self ripple:color];
 	[self restartSleepTimer];
 	if (_mood == Mood::Asleep || _mood == Mood::Dozing) {
-		// Waking up: ^ ^ with a hop, then eyes open.
+		// Waking up: a stretch with a content ^ ^, a hop, then eyes open.
 		[self enterMood:Mood::Waking];
+		int mood = _moodGen;
 		[self showFace:Face::Happy];
-		[self hop];
-		[self after:0.55 do:^(KAGEMascotView* me) {
-			if (me->_mood != Mood::Waking) return;
+		[self stretch];
+		[self after:0.45 do:^(KAGEMascotView* me) {
+			if (me->_moodGen == mood) [me hop:0.16 squash:0.12 duration:0.62];
+		}];
+		[self after:1.0 do:^(KAGEMascotView* me) {
+			if (me->_moodGen != mood) return;
 			[me enterMood:Mood::Working];
 			[me showFace:Face::Awake];
 			if (!ok) [me wince];
@@ -483,13 +683,15 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	}
 	if (_mood != Mood::Working) return;
 	if (!ok) { [self wince]; return; }
-	// Notices the call: a quick glance.
-	[self lookAt:CGPointMake(Random(-0.12, 0.12), Random(-0.05, 0.08)) duration:0.1];
+	// Notices the call: a glance, and a little bounce when it changed something.
+	[self lookAt:CGPointMake(Random(-0.12, 0.12), Random(-0.05, 0.08))];
+	if ([color isEqual:EditColor()] && ![_root animationForKey:@"hop"]) [self hop:0.05 squash:0.06 duration:0.4];
+	[self scheduleIdle];   // it just looked; the next idle glance can wait
 }
 
 - (void)ripple:(NSColor*)color
 {
-	if (ReduceMotion() || _D < 1) return;
+	if (_D < 1) return;
 	CAShapeLayer* ring = [CAShapeLayer layer];
 	ring.bounds = CGRectMake(0, 0, _D, _D);
 	ring.position = _center;
@@ -500,20 +702,20 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 	ring.lineWidth = 2;
 	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{ ring.strokeColor = color.CGColor; }];
 	ring.opacity = 0;
-	[self.layer insertSublayer:ring below:_face];
+	[self.layer insertSublayer:ring below:_root];
 
 	[CATransaction begin];
 	[CATransaction setCompletionBlock:^{ [ring removeFromSuperlayer]; }];
 	CABasicAnimation* grow = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
 	grow.fromValue = @1.0;
-	grow.toValue = @1.8;
+	grow.toValue = @(1 + 0.8 * Motion());
 	CABasicAnimation* fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
 	fade.fromValue = @0.9;
 	fade.toValue = @0.0;
 	CAAnimationGroup* g = [CAAnimationGroup animation];
 	g.animations = @[grow, fade];
-	g.duration = 0.7;
-	g.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+	g.duration = 0.75;
+	g.timingFunction = EaseOut();
 	[ring addAnimation:g forKey:@"ripple"];
 	[CATransaction commit];
 }
@@ -587,8 +789,7 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 
 - (void)bump:(int)group color:(NSColor*)color strength:(double)strength
 {
-	CALayer* bar = _bars[group];
-	if (ReduceMotion()) return;
+	CALayer* bar = _bars[group];   // grows in place, so it stays on with Reduce Motion
 	CGFloat current = ((CALayer*)bar.presentationLayer ?: bar).bounds.size.height;
 	CGFloat peak = std::min(self.maxHeight, current + (self.maxHeight - 3) * strength);
 	CAKeyframeAnimation* height = [CAKeyframeAnimation animationWithKeyPath:@"bounds.size.height"];
@@ -786,23 +987,24 @@ const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.2
 {
 	CGFloat width = _feed.bounds.size.width, rowH = 18;
 	bool still = ReduceMotion();
-	row.frame = NSMakeRect(still ? 0 : -24, 0, width, rowH);
-	row.alphaValue = still ? 1 : 0;
+	row.frame = NSMakeRect(still ? 0 : -24, 0, width, rowH);   // Reduce Motion: fades in, no slide
+	row.alphaValue = 0;
 	[_feed addSubview:row];
 	[_rows insertObject:row atIndex:0];
 
 	NSView* drop = _rows.count > kFeedRows ? _rows.lastObject : nil;
 	if (drop) [_rows removeLastObject];
 	[NSAnimationContext runAnimationGroup:^(NSAnimationContext* ctx) {
-		ctx.duration = still ? 0 : 0.28;
-		ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+		ctx.duration = 0.3;
+		ctx.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.22 :1 :0.36 :1];
 		for (NSUInteger i = 0; i < self->_rows.count; i++) {
 			NSView* r = self->_rows[i];
 			NSRect f = NSMakeRect(0, i * (rowH + 4), width, rowH);
-			(still ? r : r.animator).frame = f;
-			(still ? r : r.animator).alphaValue = 1.0 - 0.08 * i;
+			if (still) r.frame = f;
+			else r.animator.frame = f;
+			r.animator.alphaValue = 1.0 - 0.08 * i;
 		}
-		if (drop) (still ? drop : drop.animator).alphaValue = 0;
+		if (drop) drop.animator.alphaValue = 0;
 	} completionHandler:^{ [drop removeFromSuperview]; }];
 }
 
