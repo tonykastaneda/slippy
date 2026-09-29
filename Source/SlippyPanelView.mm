@@ -22,7 +22,7 @@ NSColor* ReadColor() { return NSColor.systemTealColor; }
 NSColor* EditColor() { return NSColor.systemOrangeColor; }
 NSColor* ErrorColor() { return NSColor.systemRedColor; }
 NSColor* SRGB(int rgb) { return [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0 green:((rgb >> 8) & 0xFF) / 255.0 blue:(rgb & 0xFF) / 255.0 alpha:1]; }
-NSColor* SlippyGreen() { return SRGB(0x3DBE5B); }   // Slippy's skin
+NSColor* SlippyGreen() { return SRGB(0x00AB45); }   // Slippy's skin
 
 // macOS's Reduce Motion, unless SLIPPY_FULL_MOTION=1 asks for the full bounce anyway.
 bool ReduceMotion()
@@ -74,11 +74,12 @@ const CGFloat kBumpR = 0.2;
 // Where the eye pair sits for each face: sleepy eyes droop, happy ones lift.
 CGFloat EyeLift(Face f) { return f == Face::Sleep ? -0.03 : f == Face::Happy ? 0.02 : 0.0; }
 
-// The head and both eye bumps as one outline (nonzero fill: the union).
-CGPathRef HeadPath(CGFloat D)
+CGPathRef HeadPath(CGFloat D) { return CGPathCreateWithEllipseInRect(CGRectMake(0, 0.06 * D, D, 0.62 * D), nullptr); }
+
+// The two eye bumps. They ride along with the eyes, so a look moves the whole eye.
+CGPathRef BumpsPath(CGFloat D)
 {
 	CGMutablePathRef p = CGPathCreateMutable();
-	CGPathAddEllipseInRect(p, nullptr, CGRectMake(0, 0.06 * D, D, 0.62 * D));
 	for (CGFloat side : {-1.0, 1.0})
 		CGPathAddEllipseInRect(p, nullptr, CGRectMake((0.5 + side * kEyeX - kBumpR) * D, (kEyeY - kBumpR) * D, 2 * kBumpR * D, 2 * kBumpR * D));
 	return p;
@@ -183,7 +184,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	CALayer* _root;          // hops, shakes, tilts; anchored on the ground under Slippy
 	CALayer* _squash;        // squash & stretch
 	CALayer* _breath;        // the breathing loop
-	CAShapeLayer* _body;     // skin: head + eye rims
+	CAShapeLayer* _body;     // skin: the head
+	CAShapeLayer* _bumps;    // skin: the eye bumps, inside _eyes so they move with the eyes
 	CALayer* _eyes;          // the pair: looks around
 	CALayer* _eye[2];        // one eye: white + mark; blinks squeeze the whole eye
 	CAShapeLayer* _mark[2];  // the eye's stroke: o, —, ^, > <
@@ -212,11 +214,13 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_breath = [CALayer layer];
 		for (CALayer* l in @[_root, _squash, _breath]) l.anchorPoint = CGPointMake(0.5, 0);   // pivot on the ground
 		_body = [CAShapeLayer layer];
+		_bumps = [CAShapeLayer layer];
 		_eyes = [CALayer layer];
 		[_root addSublayer:_squash];
 		[_squash addSublayer:_breath];
 		[_breath addSublayer:_body];
 		[_breath addSublayer:_eyes];
+		[_eyes addSublayer:_bumps];
 		for (int i = 0; i < 2; i++) {
 			_eye[i] = [CALayer layer];
 			_mark[i] = [CAShapeLayer layer];
@@ -225,7 +229,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 			_mark[i].lineCap = kCALineCapButt;
 			_mark[i].lineJoin = kCALineJoinMiter;
 			[_eye[i] addSublayer:_mark[i]];
-			[_eyes addSublayer:_eye[i]];
+			[_eyes addSublayer:_eye[i]];   // over the bumps
 		}
 		[self.layer addSublayer:_root];
 		_zs = [NSMutableArray array];
@@ -294,6 +298,10 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	_body.path = frog;
 	CGPathRelease(frog);
 	_body.frame = box;
+	CGPathRef bumps = BumpsPath(_D);
+	_bumps.frame = box;
+	_bumps.path = bumps;
+	CGPathRelease(bumps);
 	for (int i = 0; i < 2; i++) _eye[i].bounds = CGRectZero;
 	_eyes.bounds = box;
 	_eyes.position = [self eyeSpot];
@@ -331,6 +339,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{
 		self->_body.fillColor = color.CGColor;
+		self->_bumps.fillColor = color.CGColor;
 	}];
 }
 
@@ -465,7 +474,9 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 
 - (void)snore:(BOOL)on
 {
-	if (on == _snoring) return;
+	// Already snoring and still animating: nothing to do. (AppKit drops a layer's
+	// animations when Illustrator docks or re-shows the panel - then restart.)
+	if (on == _snoring && (!on || [_zs[0] animationForKey:@"float"])) return;
 	_snoring = on;
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
@@ -611,6 +622,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	flash.duration = 0.9;
 	flash.timingFunction = EaseIn();
 	[_body addAnimation:flash forKey:@"flash"];
+	[_bumps addAnimation:flash forKey:@"flash"];
 	// A shake that dies away, and a flinch.
 	CGFloat x = _root.position.x, s = 0.05 * _D * Motion();
 	Play(_root, @"shake", @"position.x", @[@(x - s), @(x + 0.8 * s), @(x - 0.5 * s), @(x + 0.25 * s), @(x)],

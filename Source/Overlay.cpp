@@ -23,7 +23,7 @@ const double kCursorHold = 6.0, kCursorFade = 1.0;
 
 const size_t kLabelChars = 48;
 
-const AIRGBColor kGreen = {0x2E2E, 0xA8A8, 0x4E4E};   // a shade darker than SlippyGreen(), to stand out on white
+const AIRGBColor kGreen = {0x0000, 0xABAB, 0x4545};   // SlippyGreen(), #00AB45
 const AIRGBColor kRed = {0xE0E0, 0x4545, 0x4545};
 const AIRGBColor kWhite = {0xFFFF, 0xFFFF, 0xFFFF};
 

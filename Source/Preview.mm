@@ -1,6 +1,7 @@
 // `make preview`: the Slippy panel in a plain window with made-up agent calls,
 // to watch Slippy without installing into Illustrator.
 //   build/SlippyPreview                 live: bursts of calls, quiet spells (he dozes off)
+//   build/SlippyPreview --once          one burst, then quiet
 //   build/SlippyPreview --snapshot DIR  still PNGs of each face (for checking the drawing)
 
 #import "SlippyPanelView.h"
@@ -37,6 +38,7 @@ static void Play(SlippyPanelView* panel, const Fake& f)
 
 @interface Driver : NSObject
 @property (nonatomic, strong) SlippyPanelView* panel;
+@property (nonatomic) BOOL once;
 - (void)burst;
 @end
 
@@ -54,6 +56,7 @@ static void Play(SlippyPanelView* panel, const Fake& f)
 		});
 	}
 	double quiet = n * 0.5 + 2 + arc4random_uniform(8);
+	if (self.once) return;
 	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (quiet * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self burst]; });
 }
 @end
@@ -107,6 +110,7 @@ int main(int argc, const char* argv[])
 		[app activateIgnoringOtherApps:YES];
 		Driver* driver = [Driver new];
 		driver.panel = panel;
+		driver.once = argc == 2 && !strcmp(argv[1], "--once");   // one burst, then quiet: watch Slippy doze off
 		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [driver burst]; });
 		[app run];
 	}
