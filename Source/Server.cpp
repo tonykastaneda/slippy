@@ -108,21 +108,10 @@ std::string Server::TokenFilePath() { return SupportDir() + "/token"; }
 static std::string LoadOrCreateToken()
 {
 	std::string path = Server::TokenFilePath();
-	// Slippy was called KAGE: keep its token so saved agent configs still connect.
-	const char* home = getenv("HOME");
-	std::string before = std::string(home ? home : "/tmp") + "/Library/Application Support/KAGE/token";
-	for (const std::string& from : {path, before}) {
-		std::ifstream in(from);
+	{
+		std::ifstream in(path);
 		std::string t;
-		if (!(in >> t) || t.size() < 32 || t.find_first_not_of("0123456789abcdef") != std::string::npos) continue;
-		if (from != path) {
-			MakeDirs(SupportDir());
-			std::ofstream out(path, std::ios::trunc);
-			out << t << "\n";
-			out.close();
-			chmod(path.c_str(), 0600);
-		}
-		return t;
+		if (in >> t && t.size() >= 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) return t;
 	}
 	MakeDirs(SupportDir());
 	std::string t = NewToken();

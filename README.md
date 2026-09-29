@@ -1,6 +1,6 @@
 # Slippy
 
-(Formerly KAGE.) A native Adobe Illustrator plug-in (C++) that lets agents call Illustrator
+A native Adobe Illustrator plug-in (C++) that lets agents call Illustrator
 directly without ExtendScript/JSX. Agents send JSON-RPC over loopback HTTP, and
 Slippy runs each call through the Illustrator SDK on Illustrator's main thread.
 It has a docked, animated panel that shows what agents are doing live.
@@ -71,8 +71,6 @@ he dozes off.
 ## Connecting an agent
 
 Slippy keeps one token in `~/Library/Application Support/Slippy/token` (mode 0600).
-On first launch it carries over the token from `~/Library/Application Support/KAGE/`,
-so configs saved under the old name still authenticate.
 It stays the same across launches, so saved agent configs keep working. Delete
 the file to rotate it; the next launch makes a new one.
 `~/Library/Application Support/Slippy/session.json` has the current URLs and

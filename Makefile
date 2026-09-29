@@ -98,7 +98,6 @@ $(BUILD)/.signed: $(EXE) Resources/Info.plist $(BUILD)/plugin.pipl $(BUILD)/$(NA
 # Plug-ins.localized is root-owned; after the first sudo install the bundle's
 # own files are ours, so ditto can refresh it in place without sudo.
 install: all
-	rm -rf "$(AI_APP)/Plug-ins.localized/KAGE.aip"   # Slippy's old name: two copies would fight over the port
 	ditto $(BUNDLE) "$(AI_APP)/Plug-ins.localized/$(NAME).aip"
 
 # The panel in a plain window with made-up calls - watch Slippy without Illustrator.
