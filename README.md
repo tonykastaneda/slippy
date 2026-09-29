@@ -31,15 +31,14 @@ Slippy** to show the panel.
 
 ## The panel and Slippy
 
-Slippy the mascot is a cartoon frog's face: a green head with two big white
-eyes on top, pink cheeks and a wide smile. Slippy reacts to what agents are
-doing:
+Slippy the mascot is a frog's face: a green head with two eye bumps on top
+and simple black eyes, no mouth. Slippy reacts to what agents are doing:
 
 | Mood | Face | When |
 |---|---|---|
-| Asleep | eyes shut, Z's drifting up past the left eye, slow slumped breathing, the odd snuffle | Nothing happening, paused, or server down (dimmed, no Z's) |
+| Asleep | `— —`, Z's drifting up past the left eye, slow slumped breathing, the odd snuffle | Nothing happening, paused, or server down (dimmed, no Z's) |
 | Waking | `^ ^`, a stretch, then a hop that squashes on landing | The first call after he's been asleep |
-| Working | eyes open, pupils springing around inside them, blinks (sometimes double), a curious head tilt, a little bounce on each edit | Calls are coming in; he looks around faster the busier it gets |
+| Working | `o o`, eyes springing around together, blinks (sometimes double), a curious head tilt, a little bounce on each edit | Calls are coming in; he looks around faster the busier it gets |
 | Ouch | `> <`, a flinch, a shake that dies away, a red flash | A call failed |
 | Dozing | `^ ^`, nods off, catches himself, then `— —` | About 6 s after the last call |
 

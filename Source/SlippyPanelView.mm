@@ -23,8 +23,6 @@ NSColor* EditColor() { return NSColor.systemOrangeColor; }
 NSColor* ErrorColor() { return NSColor.systemRedColor; }
 NSColor* SRGB(int rgb) { return [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0 green:((rgb >> 8) & 0xFF) / 255.0 blue:(rgb & 0xFF) / 255.0 alpha:1]; }
 NSColor* SlippyGreen() { return SRGB(0x3DBE5B); }   // Slippy's skin
-NSColor* MouthColor() { return SRGB(0x1D2A20); }
-NSColor* CheekColor() { return SRGB(0xFF8FA8); }
 
 // macOS's Reduce Motion, unless SLIPPY_FULL_MOTION=1 asks for the full bounce anyway.
 bool ReduceMotion()
@@ -67,65 +65,42 @@ namespace {
 enum class Face { Sleep, Happy, Awake, Ouch };
 enum class Mood { Asleep, Waking, Working, Dozing };
 
-// Slippy is a frog's face, drawn like a cartoon (think Keroppi): a wide
-// green head with two big white eyes sitting on top, pink cheeks and a wide
-// smile. No body - the face is the character. Units of D, from the box's
-// bottom-left.
-const CGFloat kEyeX = 0.22, kEyeY = 0.70;   // eye centers: 0.5 +/- kEyeX, kEyeY
-const CGFloat kRimR = 0.2, kWhiteR = 0.16, kPupilR = 0.055;
-const CGFloat kLookRange = 0.6;   // how far the pupils roam inside the whites
+// Slippy is a frog's face: a green head with two eye bumps on top, and the
+// eyes sitting in the bumps. No mouth, no body - the eyes do the talking.
+// Units of D, from the box's bottom-left.
+const CGFloat kEyeX = 0.22, kEyeY = 0.70;   // eye (bump) centers: 0.5 +/- kEyeX, kEyeY
+const CGFloat kBumpR = 0.2;
 
-// The head and the green rims around both eyes, as one outline (nonzero fill: the union).
+// Where the eye pair sits for each face: sleepy eyes droop, happy ones lift.
+CGFloat EyeLift(Face f) { return f == Face::Sleep ? -0.03 : f == Face::Happy ? 0.02 : 0.0; }
+
+// The head and both eye bumps as one outline (nonzero fill: the union).
 CGPathRef HeadPath(CGFloat D)
 {
 	CGMutablePathRef p = CGPathCreateMutable();
 	CGPathAddEllipseInRect(p, nullptr, CGRectMake(0, 0.06 * D, D, 0.62 * D));
 	for (CGFloat side : {-1.0, 1.0})
-		CGPathAddEllipseInRect(p, nullptr, CGRectMake((0.5 + side * kEyeX - kRimR) * D, (kEyeY - kRimR) * D, 2 * kRimR * D, 2 * kRimR * D));
+		CGPathAddEllipseInRect(p, nullptr, CGRectMake((0.5 + side * kEyeX - kBumpR) * D, (kEyeY - kBumpR) * D, 2 * kBumpR * D, 2 * kBumpR * D));
 	return p;
 }
 
-CGPathRef MouthPath(CGFloat D)
-{
-	CGMutablePathRef p = CGPathCreateMutable();
-	CGPathMoveToPoint(p, nullptr, 0.3 * D, 0.36 * D);
-	CGPathAddQuadCurveToPoint(p, nullptr, 0.5 * D, 0.17 * D, 0.7 * D, 0.36 * D);
-	return p;
-}
-
-CGPathRef CheeksPath(CGFloat D)
-{
-	CGMutablePathRef p = CGPathCreateMutable();
-	for (CGFloat side : {-1.0, 1.0})
-		CGPathAddEllipseInRect(p, nullptr, CGRectMake((0.5 + side * 0.33 - 0.075) * D, 0.27 * D, 0.15 * D, 0.08 * D));
-	return p;
-}
-
-CGPathRef CirclePath(CGFloat r)
-{
-	return CGPathCreateWithEllipseInRect(CGRectMake(-r, -r, 2 * r, 2 * r), nullptr);
-}
-
-// One eye's mark, centered on (0, 0). Awake is a pupil on the white; the
-// others are drawn on a shut (green) eye. right: the right eye (Ouch mirrors).
+// One eye's stroke, centered on (0, 0). right: the right eye (Ouch mirrors).
 CGPathRef EyePath(Face f, bool right, CGFloat D)
 {
 	CGMutablePathRef p = CGPathCreateMutable();
 	switch (f) {
-	case Face::Sleep:   // a sleepy downward curve
-		CGPathMoveToPoint(p, nullptr, -0.1 * D, 0.02 * D);
-		CGPathAddQuadCurveToPoint(p, nullptr, 0, -0.06 * D, 0.1 * D, 0.02 * D);
+	case Face::Sleep:   // —
+		CGPathMoveToPoint(p, nullptr, -0.105 * D, 0);
+		CGPathAddLineToPoint(p, nullptr, 0.105 * D, 0);
 		break;
 	case Face::Happy:   // ^
-		CGPathMoveToPoint(p, nullptr, -0.085 * D, -0.04 * D);
-		CGPathAddQuadCurveToPoint(p, nullptr, 0, 0.1 * D, 0.085 * D, -0.04 * D);
+		CGPathMoveToPoint(p, nullptr, -0.075 * D, -0.06 * D);
+		CGPathAddLineToPoint(p, nullptr, 0, 0.07 * D);
+		CGPathAddLineToPoint(p, nullptr, 0.075 * D, -0.06 * D);
 		break;
-	case Face::Awake: {  // the pupil
-		CGPathRef dot = CirclePath(kPupilR * D);
-		CGPathAddPath(p, nullptr, dot);
-		CGPathRelease(dot);
+	case Face::Awake:   // o
+		CGPathAddEllipseInRect(p, nullptr, CGRectMake(-0.062 * D, -0.07 * D, 0.124 * D, 0.14 * D));
 		break;
-	}
 	case Face::Ouch: {  // > <
 		CGFloat s = right ? -1 : 1;
 		CGPathMoveToPoint(p, nullptr, -0.06 * D * s, 0.065 * D);
@@ -137,7 +112,7 @@ CGPathRef EyePath(Face f, bool right, CGFloat D)
 	return p;
 }
 
-CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Awake ? 0 : 0.05) * D; }
+CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Sleep ? 0.045 : f == Face::Awake ? 0.05 : 0.055) * D; }
 
 // The three Z's of the art: offset from the body's center, font size.
 struct ZSpot { CGFloat x, y, size; };
@@ -209,12 +184,9 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	CALayer* _squash;        // squash & stretch
 	CALayer* _breath;        // the breathing loop
 	CAShapeLayer* _body;     // skin: head + eye rims
-	CAShapeLayer* _cheeks;
-	CAShapeLayer* _mouth;
 	CALayer* _eyes;          // the pair: looks around
 	CALayer* _eye[2];        // one eye: white + mark; blinks squeeze the whole eye
-	CAShapeLayer* _white[2];
-	CAShapeLayer* _mark[2];  // pupil, or the shut-eye line
+	CAShapeLayer* _mark[2];  // the eye's stroke: o, —, ^, > <
 	NSMutableArray<CATextLayer*>* _zs;
 	BOOL _snoring;
 	CGFloat _D;
@@ -240,25 +212,18 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_breath = [CALayer layer];
 		for (CALayer* l in @[_root, _squash, _breath]) l.anchorPoint = CGPointMake(0.5, 0);   // pivot on the ground
 		_body = [CAShapeLayer layer];
-		_cheeks = [CAShapeLayer layer];
-		_mouth = [CAShapeLayer layer];
-		_mouth.fillColor = nil;
-		_mouth.lineCap = kCALineCapRound;
 		_eyes = [CALayer layer];
 		[_root addSublayer:_squash];
 		[_squash addSublayer:_breath];
 		[_breath addSublayer:_body];
-		[_breath addSublayer:_cheeks];
-		[_breath addSublayer:_mouth];
 		[_breath addSublayer:_eyes];
 		for (int i = 0; i < 2; i++) {
 			_eye[i] = [CALayer layer];
-			_white[i] = [CAShapeLayer layer];
-			_white[i].fillColor = NSColor.whiteColor.CGColor;
 			_mark[i] = [CAShapeLayer layer];
-			_mark[i].lineCap = kCALineCapRound;
-			_mark[i].lineJoin = kCALineJoinRound;
-			[_eye[i] addSublayer:_white[i]];
+			_mark[i].fillColor = nil;
+			_mark[i].strokeColor = NSColor.blackColor.CGColor;
+			_mark[i].lineCap = kCALineCapButt;
+			_mark[i].lineJoin = kCALineJoinMiter;
 			[_eye[i] addSublayer:_mark[i]];
 			[_eyes addSublayer:_eye[i]];
 		}
@@ -328,21 +293,10 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	CGPathRef frog = HeadPath(_D);
 	_body.path = frog;
 	CGPathRelease(frog);
-	CGPathRef mouth = MouthPath(_D), cheeks = CheeksPath(_D), white = CirclePath(kWhiteR * _D);
-	for (CAShapeLayer* l in @[_body, _cheeks, _mouth]) l.frame = box;
-	_mouth.path = mouth;
-	_mouth.lineWidth = 0.04 * _D;
-	_cheeks.path = cheeks;
-	for (int i = 0; i < 2; i++) {
-		_eye[i].bounds = CGRectZero;
-		_eye[i].position = CGPointMake((0.5 + (i ? kEyeX : -kEyeX)) * _D, kEyeY * _D);
-		_white[i].path = white;
-	}
-	CGPathRelease(mouth);
-	CGPathRelease(cheeks);
-	CGPathRelease(white);
+	_body.frame = box;
+	for (int i = 0; i < 2; i++) _eye[i].bounds = CGRectZero;
 	_eyes.bounds = box;
-	_eyes.position = CGPointMake(_D / 2, _D / 2);
+	_eyes.position = [self eyeSpot];
 	[self drawFace];
 	for (CATextLayer* z in _zs) {
 		CGFloat size = kZs[2].size * _D;
@@ -354,25 +308,21 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	if (_D != oldD) { _snoring = NO; [self snore:[self wantsSnore]]; }
 }
 
-// Where the pupils sit in their whites (only open eyes look around).
-- (CGPoint)pupilSpot { return _shown == Face::Awake ? CGPointMake(_look.x * kLookRange * _D, _look.y * kLookRange * _D) : CGPointZero; }
+// The eye pair moves together when Slippy looks around.
+- (CGPoint)eyeSpot { return CGPointMake(_D / 2 + _look.x * _D, _D / 2 + _look.y * _D); }
 
 // Shape + spot of both eyes for _shown (no animation).
 - (void)drawFace
 {
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
-	bool open = _shown == Face::Awake;
 	for (int i = 0; i < 2; i++) {
 		CGPathRef p = EyePath(_shown, i == 1, _D);
 		_mark[i].path = p;
 		CGPathRelease(p);
 		_mark[i].lineWidth = EyeWidth(_shown, _D);
-		_mark[i].fillColor = open ? NSColor.blackColor.CGColor : nil;
-		_mark[i].strokeColor = open ? nil : NSColor.blackColor.CGColor;
 		_mark[i].bounds = CGRectZero;
-		_mark[i].position = [self pupilSpot];
-		_white[i].hidden = !open;   // shut: the green lid shows
+		_eye[i].position = CGPointMake((0.5 + (i ? kEyeX : -kEyeX)) * _D, (kEyeY + EyeLift(_shown)) * _D);
 	}
 	[CATransaction commit];
 }
@@ -381,8 +331,6 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{
 		self->_body.fillColor = color.CGColor;
-		self->_mouth.strokeColor = MouthColor().CGColor;
-		self->_cheeks.fillColor = [CheekColor() colorWithAlphaComponent:0.85].CGColor;
 	}];
 }
 
@@ -432,8 +380,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 - (void)lookAt:(CGPoint)look
 {
 	_look = look;
-	for (int i = 0; i < 2; i++)   // the pupils dart, overshoot a hair, settle
-		Spring(_mark[i], @"position", [NSValue valueWithPoint:[self pupilSpot]], 300, 20);
+	Spring(_eyes, @"position", [NSValue valueWithPoint:[self eyeSpot]], 300, 20);   // darts, overshoots a hair, settles
 }
 
 // ---- body
