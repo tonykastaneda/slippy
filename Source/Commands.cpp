@@ -1,0 +1,1358 @@
+#include "IllustratorSDK.h"
+#include "Commands.h"
+#include "Narrate.h"
+#include "KAGESuites.h"
+#include "KAGEID.h"
+#include "IAIFilePath.hpp"
+#include "IText.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <functional>
+#include <map>
+#include <set>
+
+namespace kage {
+
+namespace {
+
+// ------------------------------------------------------------------ errors
+
+struct CommandError {
+	int code;
+	std::string message;
+	AIErr aiError = kNoErr;
+};
+
+[[noreturn]] void Fail(int code, const std::string& message) { throw CommandError{code, message}; }
+
+std::string ErrText(AIErr e)
+{
+	// Most AIErr values are four-character codes ('PARM', '!sel').
+	char c[5] = {(char) ((e >> 24) & 0xFF), (char) ((e >> 16) & 0xFF), (char) ((e >> 8) & 0xFF), (char) (e & 0xFF), 0};
+	for (int i = 0; i < 4; i++) if (c[i] < 32 || c[i] > 126) return std::to_string((long) e);
+	return std::string("'") + c + "'";
+}
+
+void Check(AIErr e, const char* what)
+{
+	if (e) throw CommandError{kErrIllustrator, std::string(what) + " failed (" + ErrText(e) + ")", e};
+}
+
+template <typename T>
+T* Need(T* suite, const char* name)
+{
+	if (!suite) Fail(kErrUnavailable, std::string(name) + " isn't available in this Illustrator");
+	return suite;
+}
+
+// ------------------------------------------------------------------ strings
+
+ai::UnicodeString U(const std::string& s) { return ai::UnicodeString::FromUTF8(s); }
+std::string S(const ai::UnicodeString& u) { return u.as_UTF8(); }
+
+// ------------------------------------------------------------------ params
+
+const json::Value& Required(const json::Value& p, const char* key)
+{
+	const json::Value& v = p.get(key);
+	if (v.isNull()) Fail(kErrInvalidParams, std::string("missing '") + key + "'");
+	return v;
+}
+
+std::string ReqStr(const json::Value& p, const char* key)
+{
+	const json::Value& v = Required(p, key);
+	if (!v.isString()) Fail(kErrInvalidParams, std::string("'") + key + "' must be a string");
+	return v.asString();
+}
+
+double ReqNum(const json::Value& p, const char* key)
+{
+	const json::Value& v = Required(p, key);
+	if (!v.isNumber()) Fail(kErrInvalidParams, std::string("'") + key + "' must be a number");
+	return v.asNumber();
+}
+
+AIRealPoint Point(const json::Value& v, const char* what)
+{
+	if (!v.isArray() || v.size() != 2 || !v.asArray()[0].isNumber() || !v.asArray()[1].isNumber())
+		Fail(kErrInvalidParams, std::string("'") + what + "' must be [x, y]");
+	AIRealPoint p;
+	p.h = (AIReal) v.asArray()[0].asNumber();
+	p.v = (AIReal) v.asArray()[1].asNumber();
+	return p;
+}
+
+json::Value PointJson(const AIRealPoint& p) { return json::Array{(double) p.h, (double) p.v}; }
+
+json::Value RectJson(const AIRealRect& r)
+{
+	json::Value v;
+	v["left"] = (double) r.left;
+	v["top"] = (double) r.top;
+	v["right"] = (double) r.right;
+	v["bottom"] = (double) r.bottom;
+	v["width"] = (double) (r.right - r.left);
+	v["height"] = (double) std::fabs(r.top - r.bottom);
+	return v;
+}
+
+// ------------------------------------------------------------------ document
+
+AIDocumentHandle ActiveDocument()
+{
+	AIDocumentHandle doc = nullptr;
+	ai::int32 count = 0;
+	sAIDocumentList->Count(&count);
+	if (count == 0 || sAIDocument->GetDocument(&doc) || !doc) Fail(kErrUnavailable, "no document is open");
+	return doc;
+}
+
+std::string DocName(AIDocumentHandle doc)
+{
+	ai::UnicodeString name;
+	if (!sAIDocument->GetDocumentFileNameFromHandle(doc, name)) return S(name);
+	return "";
+}
+
+std::string DocPath(AIDocumentHandle doc)
+{
+	ai::FilePath path;
+	if (!sAIDocument->GetDocumentFileSpecificationFromHandle(doc, path)) return S(path.GetFullPath());
+	return "";
+}
+
+// ------------------------------------------------------------------ art ids
+// Art ids are Illustrator's own UUIDs: stable for the life of the object,
+// scoped to its document, and safe to pass back (a stale id doesn't resolve,
+// it never touches freed memory).
+
+std::string ArtId(AIArtHandle art)
+{
+	if (!sAIUUID) return "";
+	ai::uuid id;
+	ai::UnicodeString s;
+	if (sAIUUID->GetArtUUID(art, id) || sAIUUID->UUIDToString(id, s)) return "";
+	return S(s);
+}
+
+AIArtHandle ArtById(const std::string& idText)
+{
+	Need(sAIUUID, "The UUID suite");
+	ActiveDocument();
+	ai::uuid id;
+	AIArtHandle art = nullptr;
+	if (sAIUUID->StringToUUID(U(idText), id) || sAIUUID->GetArtHandle(id, art) || !art || !sAIArt->ValidArt(art, true))
+		Fail(kErrNotFound, "no art with id " + idText + " in the active document");
+	return art;
+}
+
+// The selected objects an edit should act on: fully selected, topmost (a
+// selected group stands for its contents), never a layer's own group -
+// Illustrator reports those as partially selected, and moving one moves the
+// whole layer.
+std::vector<AIArtHandle> SelectedArt()
+{
+	std::vector<AIArtHandle> all, out;
+	Need(sAIMatchingArt, "The matching art suite");
+	AIArtHandle** matches = nullptr;
+	ai::int32 n = 0;
+	if (!sAIMatchingArt->GetSelectedArt(&matches, &n) && matches) {
+		for (ai::int32 i = 0; i < n; i++) all.push_back((*matches)[i]);
+		sSPBlocks->FreeBlock(matches);
+	}
+	std::set<AIArtHandle> chosen;
+	for (AIArtHandle a : all) {
+		ai::int32 attr = 0;
+		sAIArt->GetArtUserAttr(a, kArtFullySelected, &attr);
+		AIBoolean layerGroup = false;
+		sAIArt->IsArtLayerGroup(a, &layerGroup);
+		if ((attr & kArtFullySelected) && !layerGroup) chosen.insert(a);
+	}
+	for (AIArtHandle a : all) {
+		if (!chosen.count(a)) continue;
+		bool nested = false;
+		AIArtHandle up = nullptr;
+		for (sAIArt->GetArtParent(a, &up); up && !nested; sAIArt->GetArtParent(up, &up)) nested = chosen.count(up) > 0;
+		if (!nested) out.push_back(a);
+	}
+	return out;
+}
+
+// Ids are strings ("476"); agents often send them as numbers, so take both.
+bool IsId(const json::Value& v) { return v.isString() || (v.isNumber() && v.asNumber() == std::floor(v.asNumber())); }
+
+std::string IdText(const json::Value& v)
+{
+	if (v.isString()) return v.asString();
+	if (IsId(v)) return std::to_string((long long) v.asNumber());
+	Fail(kErrInvalidParams, "art ids are strings like \"476\"");
+}
+
+std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing = false)
+{
+	std::vector<AIArtHandle> out;
+	const json::Value& ids = p.get("ids");
+	const json::Value& id = p.get("id");
+	if (IsId(id)) out.push_back(ArtById(IdText(id)));
+	else if (ids.isArray()) {
+		for (const json::Value& v : ids.asArray()) out.push_back(ArtById(IdText(v)));
+	}
+	else if (selectionIfMissing) {
+		out = SelectedArt();
+		if (out.empty()) Fail(kErrInvalidParams, "pass 'id' or 'ids', or select something first");
+	}
+	else Fail(kErrInvalidParams, "pass 'id' or 'ids'");
+	return out;
+}
+
+const char* TypeName(short type)
+{
+	switch (type) {
+	case kGroupArt: return "group";
+	case kPathArt: return "path";
+	case kCompoundPathArt: return "compoundPath";
+	case kPlacedArt: return "placed";
+	case kMysteryPathArt: return "mysteryPath";
+	case kRasterArt: return "raster";
+	case kPluginArt: return "plugin";
+	case kMeshArt: return "mesh";
+	case kTextFrameArt: return "text";
+	case kSymbolArt: return "symbol";
+	case kForeignArt: return "foreign";
+	case kLegacyTextArt: return "legacyText";
+	case kChartArt: return "chart";
+	default: return "unknown";
+	}
+}
+
+short ArtType(AIArtHandle art)
+{
+	short type = kUnknownArt;
+	sAIArt->GetArtType(art, &type);
+	return type;
+}
+
+bool Attr(AIArtHandle art, ai::int32 which)
+{
+	ai::int32 attr = 0;
+	sAIArt->GetArtUserAttr(art, which, &attr);
+	return (attr & which) != 0;
+}
+
+std::string LayerTitle(AILayerHandle layer)
+{
+	ai::UnicodeString t;
+	sAILayer->GetLayerTitle(layer, t);
+	return S(t);
+}
+
+json::Value ArtSummary(AIArtHandle art, int depth)
+{
+	json::Value v;
+	short type = ArtType(art);
+	v["id"] = ArtId(art);
+	v["type"] = TypeName(type);
+	ai::UnicodeString name;
+	ASBoolean isDefault = true;
+	if (!sAIArt->GetArtName(art, name, &isDefault) && !isDefault) v["name"] = S(name);
+	AIRealRect bounds;
+	if (!sAIArt->GetArtBounds(art, &bounds)) v["bounds"] = RectJson(bounds);
+	if (Attr(art, kArtSelected)) v["selected"] = true;
+	if (Attr(art, kArtHidden)) v["hidden"] = true;
+	if (Attr(art, kArtLocked)) v["locked"] = true;
+	if (type == kGroupArt || type == kCompoundPathArt) {
+		AIArtHandle child = nullptr;
+		sAIArt->GetArtFirstChild(art, &child);
+		int count = 0;
+		json::Value children = json::Value::MakeArray();
+		for (; child; sAIArt->GetArtSibling(child, &child)) {
+			count++;
+			if (depth > 0) children.push(ArtSummary(child, depth - 1));
+		}
+		v["childCount"] = count;
+		if (depth > 0) v["children"] = children;
+	}
+	return v;
+}
+
+// ------------------------------------------------------------------ layers
+
+AILayerHandle LayerByParam(const json::Value& p)
+{
+	const json::Value& layer = p.get("layer");
+	if (layer.isNull()) return nullptr;
+	AILayerHandle h = nullptr;
+	if (layer.isNumber()) {
+		if (sAILayer->GetNthLayer(layer.asInt(), &h) || !h) Fail(kErrNotFound, "no layer at index " + std::to_string(layer.asInt()));
+	}
+	else if (layer.isString()) {
+		if (sAILayer->GetLayerByTitle(&h, U(layer.asString())) || !h) Fail(kErrNotFound, "no layer named '" + layer.asString() + "'");
+	}
+	else Fail(kErrInvalidParams, "'layer' must be a layer name or index");
+	return h;
+}
+
+// Where new art goes: inside 'parent' (a group id), on top of 'layer', or
+// above everything in the current layer.
+void Placement(const json::Value& p, ai::int16& order, AIArtHandle& prep)
+{
+	order = kPlaceAboveAll;
+	prep = nullptr;
+	if (IsId(p.get("parent"))) {
+		prep = ArtById(IdText(p.get("parent")));
+		if (ArtType(prep) != kGroupArt) Fail(kErrInvalidParams, "'parent' must be a group");
+		order = kPlaceInsideOnTop;
+	}
+	else if (AILayerHandle layer = LayerByParam(p)) {
+		Check(sAIArt->GetFirstArtOfLayer(layer, &prep), "GetFirstArtOfLayer");
+		order = kPlaceInsideOnTop;
+	}
+}
+
+// ------------------------------------------------------------------ color
+
+json::Value ColorJson(const AIColor& c)
+{
+	char hex[8];
+	auto byte = [](AIReal x) { return (int) std::lround(std::max(0.0, std::min(1.0, (double) x)) * 255); };
+	switch (c.kind) {
+	case kThreeColor: {
+		snprintf(hex, sizeof hex, "#%02X%02X%02X", byte(c.c.rgb.red), byte(c.c.rgb.green), byte(c.c.rgb.blue));
+		return json::Value(hex);
+	}
+	case kFourColor: {
+		json::Value v;
+		v["cmyk"] = json::Array{c.c.f.cyan * 100.0, c.c.f.magenta * 100.0, c.c.f.yellow * 100.0, c.c.f.black * 100.0};
+		return v;
+	}
+	case kGrayColor: {
+		json::Value v;
+		v["gray"] = c.c.g.gray * 100.0;
+		return v;
+	}
+	case kNoneColor: return json::Value("none");
+	case kPattern: return json::Value("pattern");
+	case kGradient: return json::Value("gradient");
+	case kCustomColor: return json::Value("spot");
+	default: return json::Value("other");
+	}
+}
+
+// "#RRGGBB", "none", {"rgb":[0-255 x3]}, {"cmyk":[0-100 x4]}, {"gray":0-100}
+AIColor ParseColor(const json::Value& v, const char* what)
+{
+	AIColor c;
+	c.Init();
+	auto bad = [&]() { Fail(kErrInvalidParams, std::string("'") + what + "' must be \"#RRGGBB\", \"none\", {\"rgb\":[r,g,b]}, {\"cmyk\":[c,m,y,k]} or {\"gray\":n}"); };
+	if (v.isString()) {
+		const std::string& s = v.asString();
+		if (s == "none") { c.kind = kNoneColor; return c; }
+		if (s.size() != 7 || s[0] != '#') bad();
+		unsigned rgb = 0;
+		if (sscanf(s.c_str() + 1, "%6x", &rgb) != 1) bad();
+		c.kind = kThreeColor;
+		c.c.rgb.red = ((rgb >> 16) & 0xFF) / 255.0;
+		c.c.rgb.green = ((rgb >> 8) & 0xFF) / 255.0;
+		c.c.rgb.blue = (rgb & 0xFF) / 255.0;
+		return c;
+	}
+	if (!v.isObject()) bad();
+	auto channels = [&](const json::Value& a, size_t n, double scale, AIReal* out[]) {
+		if (!a.isArray() || a.size() != n) bad();
+		for (size_t i = 0; i < n; i++) {
+			if (!a.asArray()[i].isNumber()) bad();
+			*out[i] = (AIReal) std::max(0.0, std::min(1.0, a.asArray()[i].asNumber() / scale));
+		}
+	};
+	if (v.has("rgb")) {
+		c.kind = kThreeColor;
+		AIReal* out[] = {&c.c.rgb.red, &c.c.rgb.green, &c.c.rgb.blue};
+		channels(v.get("rgb"), 3, 255.0, out);
+	}
+	else if (v.has("cmyk")) {
+		c.kind = kFourColor;
+		AIReal* out[] = {&c.c.f.cyan, &c.c.f.magenta, &c.c.f.yellow, &c.c.f.black};
+		channels(v.get("cmyk"), 4, 100.0, out);
+	}
+	else if (v.has("gray")) {
+		if (!v.get("gray").isNumber()) bad();
+		c.kind = kGrayColor;
+		c.c.g.gray = (AIReal) std::max(0.0, std::min(1.0, v.get("gray").asNumber() / 100.0));
+	}
+	else bad();
+	return c;
+}
+
+json::Value StyleJson(AIArtHandle art)
+{
+	json::Value v;
+	if (!sAIPathStyle) return v;
+	AIPathStyle style;
+	AIBoolean advanced = false;
+	if (sAIPathStyle->GetPathStyle(art, &style, &advanced)) return v;
+	v["fill"] = style.fillPaint ? ColorJson(style.fill.color) : json::Value("none");
+	v["stroke"] = style.strokePaint ? ColorJson(style.stroke.color) : json::Value("none");
+	if (style.strokePaint) v["strokeWidth"] = (double) style.stroke.width;
+	if (style.evenodd) v["evenOdd"] = true;
+	if (advanced) v["advancedFill"] = true;
+	return v;
+}
+
+// fill, stroke, strokeWidth - whichever are present.
+void ApplyStyle(AIArtHandle art, const json::Value& p)
+{
+	if (!p.has("fill") && !p.has("stroke") && !p.has("strokeWidth")) return;
+	Need(sAIPathStyle, "The path style suite");
+	short type = ArtType(art);
+	if (type == kGroupArt || type == kCompoundPathArt) {
+		// Style the paths inside, like the Swatches panel does.
+		AIArtHandle child = nullptr;
+		sAIArt->GetArtFirstChild(art, &child);
+		for (; child; sAIArt->GetArtSibling(child, &child)) ApplyStyle(child, p);
+		return;
+	}
+	if (type != kPathArt) return;
+	AIPathStyle style;
+	AIBoolean advanced = false;
+	Check(sAIPathStyle->GetPathStyle(art, &style, &advanced), "GetPathStyle");
+	if (p.has("fill")) {
+		AIColor c = ParseColor(p.get("fill"), "fill");
+		style.fillPaint = c.kind != kNoneColor;
+		if (style.fillPaint) style.fill.color = c;
+	}
+	if (p.has("stroke")) {
+		AIColor c = ParseColor(p.get("stroke"), "stroke");
+		style.strokePaint = c.kind != kNoneColor;
+		if (style.strokePaint) {
+			style.stroke.color = c;
+			if (style.stroke.width <= 0) style.stroke.width = 1;
+		}
+	}
+	if (p.has("strokeWidth")) style.stroke.width = (AIReal) ReqNum(p, "strokeWidth");
+	Check(sAIPathStyle->SetPathStyle(art, &style), "SetPathStyle");
+}
+
+// Name and style for freshly created art, and its id back.
+json::Value Finish(AIArtHandle art, const json::Value& p)
+{
+	if (p.get("name").isString()) sAIArt->SetArtName(art, U(p.get("name").asString()));
+	ApplyStyle(art, p);
+	if (p.boolean("select", false)) sAIArt->SetArtUserAttr(art, kArtSelected, kArtSelected);
+	return ArtSummary(art, 0);
+}
+
+// ------------------------------------------------------------------ paths
+
+AIArtHandle NewPath(const json::Value& p, const std::vector<AIPathSegment>& segs, bool closed)
+{
+	Need(sAIPath, "The path suite");
+	if (segs.empty() || segs.size() > 32000) Fail(kErrInvalidParams, "a path needs 1 to 32000 points");
+	ai::int16 order;
+	AIArtHandle prep;
+	Placement(p, order, prep);
+	AIArtHandle art = nullptr;
+	Check(sAIArt->NewArt(kPathArt, order, prep, &art), "NewArt");
+	Check(sAIPath->SetPathSegmentCount(art, (ai::int16) segs.size()), "SetPathSegmentCount");
+	Check(sAIPath->SetPathSegments(art, 0, (ai::int16) segs.size(), segs.data()), "SetPathSegments");
+	Check(sAIPath->SetPathClosed(art, closed), "SetPathClosed");
+	return art;
+}
+
+AIPathSegment Corner(double x, double y)
+{
+	AIPathSegment s;
+	s.p.h = s.in.h = s.out.h = (AIReal) x;
+	s.p.v = s.in.v = s.out.v = (AIReal) y;
+	s.corner = true;
+	return s;
+}
+
+json::Value PathJson(AIArtHandle art)
+{
+	json::Value v;
+	if (!sAIPath) return v;
+	ai::int16 count = 0;
+	AIBoolean closed = false;
+	sAIPath->GetPathSegmentCount(art, &count);
+	sAIPath->GetPathClosed(art, &closed);
+	std::vector<AIPathSegment> segs((size_t) count);
+	if (count) sAIPath->GetPathSegments(art, 0, count, segs.data());
+	json::Value list = json::Value::MakeArray();
+	for (const AIPathSegment& s : segs) {
+		json::Value seg;
+		seg["p"] = PointJson(s.p);
+		if (s.in.h != s.p.h || s.in.v != s.p.v) seg["in"] = PointJson(s.in);
+		if (s.out.h != s.p.h || s.out.v != s.p.v) seg["out"] = PointJson(s.out);
+		if (!s.corner) seg["smooth"] = true;
+		list.push(seg);
+	}
+	v["closed"] = (bool) closed;
+	v["segments"] = list;
+	return v;
+}
+
+// ------------------------------------------------------------------ text
+
+std::string TextOf(AIArtHandle art)
+{
+	TextRangeRef ref = nullptr;
+	if (!sAITextFrame || sAITextFrame->GetATETextRange(art, &ref) || !ref) return "";
+	ATE::ITextRange range(ref);
+	ATETextDOM::Int32 size = range.GetSize();
+	std::vector<ASUnicode> buf((size_t) size + 1, 0);
+	range.GetContents((ATETextDOM::Unicode*) buf.data(), size + 1);
+	std::string text = S(ai::UnicodeString(buf.data(), (ai::UnicodeString::size_type) size));
+	for (char& c : text) if (c == '\r') c = '\n';   // Illustrator's paragraph breaks
+	return text;
+}
+
+void SetText(AIArtHandle art, const std::string& text, const json::Value& p)
+{
+	TextRangeRef ref = nullptr;
+	Check(sAITextFrame->GetATETextRange(art, &ref), "GetATETextRange");
+	ATE::ITextRange range(ref);
+	range.Remove();
+	// Illustrator uses \r for paragraph breaks.
+	std::string t = text;
+	for (char& c : t) if (c == '\n') c = '\r';
+	std::basic_string<ASUnicode> u = U(t).as_ASUnicode();
+	range.InsertAfter((const ATETextDOM::Unicode*) u.c_str(), (ATETextDOM::Int32) u.size());
+	if (p.get("size").isNumber()) {
+		TextRangeRef all = nullptr;
+		Check(sAITextFrame->GetATETextRange(art, &all), "GetATETextRange");
+		ATE::ITextRange whole(all);
+		ATE::ICharFeatures features;
+		features.SetFontSize((ATETextDOM::Real) p.get("size").asNumber());
+		whole.SetLocalCharFeatures(features);
+	}
+}
+
+// ------------------------------------------------------------------ commands
+
+struct Command {
+	std::string description;
+	json::Value params;   // name -> "type - meaning"
+	std::function<json::Value(const json::Value&)> run;
+	bool changesDocument;
+};
+
+json::Value Params(std::initializer_list<std::pair<const char*, const char*>> list)
+{
+	json::Value v = json::Value::MakeObject();
+	for (auto& kv : list) v[kv.first] = kv.second;
+	return v;
+}
+
+std::map<std::string, Command>& Table();
+
+json::Value AppInfo(const json::Value&)
+{
+	json::Value v;
+	v["plugin"] = "KAGE";
+	v["version"] = kKAGEVersion;
+	if (sAIRuntime) {
+		ai::UnicodeString name;
+		if (!sAIRuntime->GetAppNameUS(name)) v["app"] = S(name);
+		v["appVersion"] = std::to_string(sAIRuntime->GetAppMajorVersion()) + "." + std::to_string(sAIRuntime->GetAppMinorVersion()) +
+			"." + std::to_string(sAIRuntime->GetAppRevisionVersion());
+	}
+	ai::int32 count = 0;
+	sAIDocumentList->Count(&count);
+	v["documentCount"] = count;
+	json::Value missing = json::Value::MakeArray();
+	if (!sAIPath) missing.push("path");
+	if (!sAIPathStyle) missing.push("pathStyle");
+	if (!sAITextFrame) missing.push("textFrame");
+	if (!sAIUUID) missing.push("uuid");
+	if (!sAIActionManager) missing.push("actionManager");
+	if (!sAICommandManager) missing.push("commandManager");
+	if (!sAITransformArt) missing.push("transformArt");
+	if (!sAIUndo) missing.push("undo");
+	if (!sAIFileFormat) missing.push("fileFormat");
+	v["missingSuites"] = missing;
+	v["timerSuiteVersion"] = KAGETimerVersion();
+	if (sAIUndo && count) {
+		ai::int32 past = 0, future = 0;
+		if (!sAIUndo->CountTransactions(&past, &future)) { v["undoSteps"] = past; v["redoSteps"] = future; }
+	}
+	return v;
+}
+
+json::Value DocumentList(const json::Value&)
+{
+	ai::int32 count = 0;
+	sAIDocumentList->Count(&count);
+	AIDocumentHandle active = nullptr;
+	if (count) sAIDocument->GetDocument(&active);
+	json::Value list = json::Value::MakeArray();
+	for (ai::int32 i = 0; i < count; i++) {
+		AIDocumentHandle doc = nullptr;
+		if (sAIDocumentList->GetNthDocument(&doc, i)) continue;
+		json::Value d;
+		d["index"] = i;
+		d["name"] = DocName(doc);
+		d["path"] = DocPath(doc);
+		d["active"] = doc == active;
+		list.push(d);
+	}
+	return list;
+}
+
+json::Value ArtboardsJson()
+{
+	json::Value list = json::Value::MakeArray();
+	if (!sAIArtboard) return list;
+	ai::ArtboardList abl;
+	if (sAIArtboard->GetArtboardList(abl)) return list;
+	ai::ArtboardID count = 0, active = 0;
+	sAIArtboard->GetCount(abl, count);
+	sAIArtboard->GetActive(abl, active);
+	for (ai::ArtboardID i = 0; i < count; i++) {
+		ai::ArtboardProperties props;
+		if (sAIArtboard->Init(props)) continue;
+		if (!sAIArtboard->GetArtboardProperties(abl, i, props)) {
+			json::Value a;
+			a["index"] = (int) i;
+			ai::UnicodeString name;
+			sAIArtboard->GetName(props, name);
+			a["name"] = S(name);
+			AIRealRect r;
+			if (!sAIArtboard->GetPosition(props, r)) a["bounds"] = RectJson(r);
+			a["active"] = i == active;
+			list.push(a);
+		}
+		sAIArtboard->Dispose(props);
+	}
+	sAIArtboard->ReleaseArtboardList(abl);
+	return list;
+}
+
+json::Value DocumentInfo(const json::Value&)
+{
+	AIDocumentHandle doc = ActiveDocument();
+	json::Value v;
+	v["name"] = DocName(doc);
+	v["path"] = DocPath(doc);
+	AIBoolean modified = false;
+	sAIDocument->GetDocumentModified(&modified);
+	v["modified"] = (bool) modified;
+	ai::int16 model = 0;
+	if (!sAIDocument->GetDocumentColorModel(&model))
+		v["colorModel"] = model == kDocRGBColor ? "rgb" : model == kDocCMYKColor ? "cmyk" : model == kDocGrayColor ? "gray" : "other";
+	v["units"] = "points";
+	v["coordinates"] = "Illustrator artwork coordinates: points, y grows upward. Art bounds, artboard bounds and every position parameter use the same space.";
+	v["artboards"] = ArtboardsJson();
+	ai::int32 layers = 0;
+	sAILayer->CountLayers(&layers);
+	v["layerCount"] = layers;
+	return v;
+}
+
+json::Value DocumentNew(const json::Value& p)
+{
+	// Start from a real preset so every field is set (a half-filled struct
+	// gives garbage artboards).
+	AINewDocumentPreset settings;
+	ai::UnicodeString preset;
+	bool filled = false;
+	std::vector<std::string> names = p.has("preset") ? std::vector<std::string>{ReqStr(p, "preset")}
+		: std::vector<std::string>{"Print", "Art & Illustration", "Web", "Mobile", "Film & Video"};
+	for (const std::string& name : names) {
+		preset = U(name);
+		if (!sAIDocumentList->GetPresetSettings(preset, &settings)) { filled = true; break; }
+	}
+	if (!filled) Fail(kErrInvalidParams, p.has("preset") ? "no new-document preset named '" + p.str("preset") + "'" : "couldn't read any new-document preset");
+	if (p.has("width")) settings.docWidth = (AIReal) ReqNum(p, "width");
+	if (p.has("height")) settings.docHeight = (AIReal) ReqNum(p, "height");
+	if (p.has("title")) settings.docTitle = U(ReqStr(p, "title"));
+	if (p.has("artboards")) settings.docNumArtboards = (ai::int32) ReqNum(p, "artboards");
+	std::string mode = p.str("colorMode", "");
+	if (mode == "rgb") settings.docColorMode = kAIRGBColorModel;
+	else if (mode == "cmyk") settings.docColorMode = kAICMYKColorModel;
+	else if (!mode.empty()) Fail(kErrInvalidParams, "'colorMode' must be \"rgb\" or \"cmyk\"");
+	AIDocumentHandle doc = nullptr;
+	Check(sAIDocumentList->New(preset, &settings, kDialogOff, &doc), "New document");
+	return DocumentInfo(p);
+}
+
+json::Value DocumentOpen(const json::Value& p)
+{
+	ai::FilePath path(U(ReqStr(p, "path")));
+	AIDocumentHandle doc = nullptr;
+	Check(sAIDocumentList->Open(path, kAIUnknownColorModel, kDialogOff, false, &doc), "Open document");
+	return DocumentInfo(p);
+}
+
+AIDocumentHandle DocumentByIndex(const json::Value& p)
+{
+	if (!p.has("index")) return ActiveDocument();
+	AIDocumentHandle doc = nullptr;
+	int index = (int) ReqNum(p, "index");
+	if (sAIDocumentList->GetNthDocument(&doc, index) || !doc) Fail(kErrNotFound, "no document at index " + std::to_string(index));
+	return doc;
+}
+
+json::Value DocumentActivate(const json::Value& p)
+{
+	Check(sAIDocumentList->Activate(DocumentByIndex(p), true), "Activate document");
+	return DocumentInfo(p);
+}
+
+// Illustrator's file formats, by the names WriteDocument takes.
+json::Value DocumentFormats(const json::Value&)
+{
+	Need(sAIFileFormat, "The file format suite");
+	json::Value list = json::Value::MakeArray();
+	ai::int32 count = 0;
+	sAIFileFormat->CountFileFormats(&count);
+	for (ai::int32 i = 0; i < count; i++) {
+		AIFileFormatHandle f = nullptr;
+		const char* name = nullptr;
+		ai::int32 options = 0;
+		if (sAIFileFormat->GetNthFileFormat(i, &f) || sAIFileFormat->GetFileFormatName(f, &name) || !name) continue;
+		sAIFileFormat->GetFileFormatOptions(f, &options);
+		if (!(options & (kFileFormatWrite | kFileFormatExport))) continue;
+		json::Value v;
+		v["name"] = name;
+		ai::UnicodeString ext;
+		if (!sAIFileFormat->GetFileFormatExtension(f, ext)) v["extensions"] = S(ext);
+		v["save"] = (options & kFileFormatWrite) != 0;
+		v["export"] = (options & kFileFormatExport) != 0;
+		list.push(v);
+	}
+	return list;
+}
+
+// The native .ai writer: its name varies by version, so find it by extension
+// ("ai,ait" - the one listed first is what it writes).
+std::string NativeFormat()
+{
+	json::Value formats = DocumentFormats(json::Value());
+	for (const json::Value& f : formats.asArray()) {
+		std::string ext = f.str("extensions");
+		if (f.boolean("save") && ext.substr(0, ext.find_first_of(",;")) == "ai") return f.get("name").asString();
+	}
+	Fail(kErrUnavailable, "couldn't find Illustrator's native save format - see document.formats");
+}
+
+// Save or export to a file: never shows a dialog (a failed write otherwise
+// pops Illustrator's "unknown error" alert and blocks everything behind it).
+void WriteTo(const std::string& pathText, const std::string& format)
+{
+	bool save = false, found = false;
+	json::Value formats = DocumentFormats(json::Value());   // keep it alive while iterating
+	for (const json::Value& f : formats.asArray())
+		if (f.get("name").asString() == format) { found = true; save = f.boolean("save"); }
+	if (!found) Fail(kErrInvalidParams, "no file format named '" + format + "' - see document.formats");
+	ai::FilePath path(U(pathText));
+	ai::int32 options = (save ? kFileFormatWrite : kFileFormatExport) | kFileFormatSuppressUI;
+	Check(sAIDocument->WriteDocumentWithOptions(path, format.c_str(), options, nullptr, false, nullptr), "WriteDocument");
+}
+
+// Native .ai: the AI writer asks for its options (version, PDF compatibility)
+// even with kFileFormatSuppressUI, so play Save As the way a recorded action
+// does, dialog off. Unlike a copy, the document now lives at this path.
+void SaveAsNative(const std::string& path, const std::string& format)
+{
+	Need(sAIActionManager, "The action manager suite");
+	AIActionParamValueRef params = nullptr;
+	Check(sAIActionManager->AINewActionParamValue(&params), "AINewActionParamValue");
+	AIErr e = sAIActionManager->AIActionSetStringUS(params, 'name', U(path));
+	if (!e) e = sAIActionManager->AIActionSetString(params, 'frmt', format.c_str());
+	if (!e) e = sAIActionManager->PlayActionEvent("adobe_saveDocumentAs", kDialogOff, params);
+	sAIActionManager->AIDeleteActionParamValue(params);
+	Check(e, "Save As");
+}
+
+json::Value DocumentSave(const json::Value& p)
+{
+	AIDocumentHandle doc = ActiveDocument();
+	if (p.has("path")) {
+		std::string format = p.has("format") ? p.str("format") : NativeFormat();
+		if (format == NativeFormat()) SaveAsNative(ReqStr(p, "path"), format);
+		else WriteTo(ReqStr(p, "path"), format);
+	}
+	else {
+		if (DocPath(doc).empty()) Fail(kErrInvalidParams, "this document was never saved - pass 'path'");
+		Check(sAIDocumentList->Save(doc), "Save document");
+	}
+	json::Value v;
+	v["saved"] = true;
+	v["path"] = p.has("path") ? p.str("path") : DocPath(doc);
+	return v;
+}
+
+json::Value DocumentClose(const json::Value& p)
+{
+	AIDocumentHandle doc = DocumentByIndex(p);
+	std::string name = DocName(doc);
+	if (p.boolean("save", false)) Check(sAIDocumentList->Save(doc), "Save document");
+	Check(sAIDocumentList->Close(doc), "Close document");
+	json::Value v;
+	v["closed"] = name;
+	return v;
+}
+
+json::Value LayerList(const json::Value&)
+{
+	ActiveDocument();
+	ai::int32 count = 0;
+	sAILayer->CountLayers(&count);
+	AILayerHandle current = nullptr;
+	sAILayer->GetCurrentLayer(&current);
+	json::Value list = json::Value::MakeArray();
+	for (ai::int32 i = 0; i < count; i++) {
+		AILayerHandle layer = nullptr;
+		if (sAILayer->GetNthLayer(i, &layer)) continue;
+		json::Value l;
+		l["index"] = i;
+		l["name"] = LayerTitle(layer);
+		AIBoolean visible = true, editable = true;
+		sAILayer->GetLayerVisible(layer, &visible);
+		sAILayer->GetLayerEditable(layer, &editable);
+		l["visible"] = (bool) visible;
+		l["locked"] = !editable;
+		l["current"] = layer == current;
+		AIArtHandle group = nullptr;
+		if (!sAIArt->GetFirstArtOfLayer(layer, &group) && group) l["id"] = ArtId(group);
+		list.push(l);
+	}
+	return list;
+}
+
+json::Value LayerCreate(const json::Value& p)
+{
+	ActiveDocument();
+	AILayerHandle layer = nullptr;
+	Check(sAILayer->InsertLayer(nullptr, kPlaceAboveAll, &layer), "InsertLayer");
+	if (p.has("name")) Check(sAILayer->SetLayerTitle(layer, U(ReqStr(p, "name"))), "SetLayerTitle");
+	if (p.boolean("current", true)) sAILayer->SetCurrentLayer(layer);
+	json::Value v;
+	v["name"] = LayerTitle(layer);
+	return v;
+}
+
+json::Value LayerSet(const json::Value& p)
+{
+	ActiveDocument();
+	AILayerHandle layer = LayerByParam(p);
+	if (!layer) Fail(kErrInvalidParams, "pass 'layer' (name or index)");
+	if (p.has("name")) Check(sAILayer->SetLayerTitle(layer, U(ReqStr(p, "name"))), "SetLayerTitle");
+	if (p.has("visible")) Check(sAILayer->SetLayerVisible(layer, p.boolean("visible")), "SetLayerVisible");
+	if (p.has("locked")) Check(sAILayer->SetLayerEditable(layer, !p.boolean("locked")), "SetLayerEditable");
+	if (p.boolean("current", false)) Check(sAILayer->SetCurrentLayer(layer), "SetCurrentLayer");
+	if (p.boolean("delete", false)) { Check(sAILayer->DeleteLayer(layer), "DeleteLayer"); return json::Value("deleted"); }
+	json::Value v;
+	v["name"] = LayerTitle(layer);
+	return v;
+}
+
+json::Value ArtTree(const json::Value& p)
+{
+	ActiveDocument();
+	int depth = (int) p.num("depth", 3);
+	if (IsId(p.get("id"))) return ArtSummary(ArtById(IdText(p.get("id"))), depth);
+	json::Value out = json::Value::MakeArray();
+	ai::int32 count = 0;
+	sAILayer->CountLayers(&count);
+	AILayerHandle only = LayerByParam(p);
+	for (ai::int32 i = 0; i < count; i++) {
+		AILayerHandle layer = nullptr;
+		if (sAILayer->GetNthLayer(i, &layer) || (only && layer != only)) continue;
+		AIArtHandle group = nullptr;
+		if (sAIArt->GetFirstArtOfLayer(layer, &group) || !group) continue;
+		json::Value l = ArtSummary(group, depth);
+		l["type"] = "layer";
+		l["name"] = LayerTitle(layer);
+		l["index"] = i;
+		out.push(l);
+	}
+	return out;
+}
+
+json::Value ArtGet(const json::Value& p)
+{
+	AIArtHandle art = ArtById(IdText(Required(p, "id")));
+	json::Value v = ArtSummary(art, (int) p.num("depth", 1));
+	short type = ArtType(art);
+	AILayerHandle layer = nullptr;
+	if (!sAIArt->GetLayerOfArt(art, &layer) && layer) v["layer"] = LayerTitle(layer);
+	AIArtHandle parent = nullptr;
+	if (!sAIArt->GetArtParent(art, &parent) && parent) v["parent"] = ArtId(parent);
+	if (type == kPathArt) {
+		v["style"] = StyleJson(art);
+		json::Value path = PathJson(art);
+		v["closed"] = path.get("closed");
+		v["segments"] = path.get("segments");
+	}
+	if (type == kTextFrameArt) v["contents"] = TextOf(art);
+	return v;
+}
+
+json::Value ArtSelection(const json::Value& p)
+{
+	ActiveDocument();
+	json::Value list = json::Value::MakeArray();
+	for (AIArtHandle a : SelectedArt()) list.push(ArtSummary(a, (int) p.num("depth", 0)));
+	return list;
+}
+
+// Selecting a group or compound path selects everything in it, as clicking
+// it with the Selection tool does.
+void SelectDeep(AIArtHandle art)
+{
+	Check(sAIArt->SetArtUserAttr(art, kArtSelected, kArtSelected), "select");
+	AIArtHandle child = nullptr;
+	sAIArt->GetArtFirstChild(art, &child);
+	for (; child; sAIArt->GetArtSibling(child, &child)) SelectDeep(child);
+}
+
+json::Value ArtSelect(const json::Value& p)
+{
+	ActiveDocument();
+	Need(sAIMatchingArt, "The matching art suite");
+	std::vector<AIArtHandle> arts = p.has("id") || p.has("ids") ? ArtList(p) : std::vector<AIArtHandle>{};
+	if (!p.boolean("add", false)) sAIMatchingArt->DeselectAll();
+	for (AIArtHandle a : arts) SelectDeep(a);
+	return ArtSelection(json::Value());
+}
+
+json::Value ArtDelete(const json::Value& p)
+{
+	std::vector<AIArtHandle> arts = ArtList(p);
+	int n = 0;
+	for (AIArtHandle a : arts) if (sAIArt->ValidArt(a, true)) { Check(sAIArt->DisposeArt(a), "DisposeArt"); n++; }
+	json::Value v;
+	v["deleted"] = n;
+	return v;
+}
+
+json::Value ArtSet(const json::Value& p)
+{
+	std::vector<AIArtHandle> arts = ArtList(p, true);
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : arts) {
+		if (p.get("name").isString()) Check(sAIArt->SetArtName(a, U(p.get("name").asString())), "SetArtName");
+		if (p.has("hidden")) Check(sAIArt->SetArtUserAttr(a, kArtHidden, p.boolean("hidden") ? kArtHidden : 0), "hide");
+		if (p.has("locked")) Check(sAIArt->SetArtUserAttr(a, kArtLocked, p.boolean("locked") ? kArtLocked : 0), "lock");
+		ApplyStyle(a, p);
+		if (p.get("contents").isString()) {
+			if (ArtType(a) != kTextFrameArt) Fail(kErrInvalidParams, "'contents' only applies to text");
+			SetText(a, p.get("contents").asString(), p);
+		}
+		out.push(ArtSummary(a, 0));
+	}
+	return out;
+}
+
+json::Value ArtDuplicate(const json::Value& p)
+{
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : ArtList(p, true)) {
+		AIArtHandle copy = nullptr;
+		Check(sAIArt->DuplicateArt(a, kPlaceAbove, a, &copy), "DuplicateArt");
+		out.push(ArtSummary(copy, 0));
+	}
+	return out;
+}
+
+json::Value ArtArrange(const json::Value& p)
+{
+	std::string to = ReqStr(p, "to");
+	ai::int16 order;
+	if (to == "front") order = kPlaceInsideOnTop;
+	else if (to == "back") order = kPlaceInsideOnBottom;
+	else Fail(kErrInvalidParams, "'to' must be \"front\" or \"back\"");
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : ArtList(p, true)) {
+		AIArtHandle parent = nullptr;
+		Check(sAIArt->GetArtParent(a, &parent), "GetArtParent");
+		Check(sAIArt->ReorderArt(a, order, parent), "ReorderArt");
+		out.push(ArtSummary(a, 0));
+	}
+	return out;
+}
+
+// Transforming a group with TransformArt moves it but records no undo step
+// (30.2), so a group is transformed through its contents.
+void TransformDeep(AIArtHandle art, AIRealMatrix& m, AIReal lineScale, ai::int32 flags)
+{
+	if (ArtType(art) == kGroupArt) {
+		AIArtHandle child = nullptr;
+		sAIArt->GetArtFirstChild(art, &child);
+		for (; child; sAIArt->GetArtSibling(child, &child)) TransformDeep(child, m, lineScale, flags);
+		return;
+	}
+	Check(sAITransformArt->TransformArt(art, &m, lineScale, flags), "TransformArt");
+}
+
+json::Value ArtTransform(const json::Value& p)
+{
+	Need(sAITransformArt, "The transform art suite");
+	std::vector<AIArtHandle> arts = ArtList(p, true);
+	double sx = 1, sy = 1, angle = p.num("rotate", 0) * M_PI / 180.0, dx = 0, dy = 0;
+	const json::Value& scale = p.get("scale");
+	if (scale.isNumber()) sx = sy = scale.asNumber();
+	else if (!scale.isNull()) { AIRealPoint s = Point(scale, "scale"); sx = s.h; sy = s.v; }
+	if (p.has("translate")) { AIRealPoint t = Point(p.get("translate"), "translate"); dx = t.h; dy = t.v; }
+
+	// Origin: the combined bounds' center unless given.
+	AIRealPoint origin = {0, 0};
+	if (p.get("origin").isArray()) origin = Point(p.get("origin"), "origin");
+	else {
+		AIRealRect all = {0, 0, 0, 0};
+		bool first = true;
+		for (AIArtHandle a : arts) {
+			AIRealRect r;
+			if (sAIArt->GetArtBounds(a, &r)) continue;
+			if (first) { all = r; first = false; continue; }
+			all.left = std::min(all.left, r.left); all.right = std::max(all.right, r.right);
+			all.top = std::max(all.top, r.top); all.bottom = std::min(all.bottom, r.bottom);
+		}
+		origin.h = (all.left + all.right) / 2;
+		origin.v = (all.top + all.bottom) / 2;
+	}
+
+	// M = T(origin + translate) * R * S * T(-origin)
+	double c = std::cos(angle), s = std::sin(angle);
+	AIRealMatrix m;
+	m.a = (AIReal) (c * sx);  m.b = (AIReal) (s * sx);
+	m.c = (AIReal) (-s * sy); m.d = (AIReal) (c * sy);
+	m.tx = (AIReal) (origin.h + dx - (m.a * origin.h + m.c * origin.v));
+	m.ty = (AIReal) (origin.v + dy - (m.b * origin.h + m.d * origin.v));
+
+	bool scaleStrokes = p.boolean("scaleStrokes", true);
+	ai::int32 flags = kTransformObjects | kTransformFillGradients | kTransformFillPatterns | kTransformStrokeGradients | kTransformStrokePatterns;
+	if (scaleStrokes) flags |= kScaleLines;
+	AIReal lineScale = (AIReal) std::sqrt(std::fabs(sx * sy));
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : arts) {
+		TransformDeep(a, m, lineScale, flags);
+		out.push(ArtSummary(a, 0));
+	}
+	return out;
+}
+
+// Keeps the stacking order: the art is sorted top first ("before" in the
+// paint order), the group goes where the topmost was, and each piece is moved
+// in to the group's bottom in turn. (Invoking the Group menu command from a
+// timer message doesn't take effect, found testing in 30.2.)
+json::Value ArtGroup(const json::Value& p)
+{
+	std::vector<AIArtHandle> arts = ArtList(p, true);
+	std::sort(arts.begin(), arts.end(), [](AIArtHandle a, AIArtHandle b) {
+		short order = kUnknownOrder;
+		return a != b && !sAIArt->GetArtOrder(a, b, &order) && order == kFirstBeforeSecond;
+	});
+	arts.erase(std::unique(arts.begin(), arts.end()), arts.end());
+	AIArtHandle group = nullptr;
+	Check(sAIArt->NewArt(kGroupArt, kPlaceAbove, arts.front(), &group), "NewArt group");
+	for (AIArtHandle a : arts) Check(sAIArt->ReorderArt(a, kPlaceInsideOnBottom, group), "ReorderArt");
+	return Finish(group, p);
+}
+
+json::Value ShapeRect(const json::Value& p)
+{
+	double x = ReqNum(p, "x"), y = ReqNum(p, "y"), w = ReqNum(p, "width"), h = ReqNum(p, "height");
+	// (x, y) is the top-left corner; y grows upward, so the rect runs down to y - h.
+	std::vector<AIPathSegment> segs = {Corner(x, y), Corner(x + w, y), Corner(x + w, y - h), Corner(x, y - h)};
+	return Finish(NewPath(p, segs, true), p);
+}
+
+json::Value ShapeEllipse(const json::Value& p)
+{
+	double x = ReqNum(p, "x"), y = ReqNum(p, "y"), w = ReqNum(p, "width"), h = ReqNum(p, "height");
+	double cx = x + w / 2, cy = y - h / 2, rx = w / 2, ry = h / 2, k = 0.5522847498;
+	auto seg = [&](double px, double py, double ix, double iy, double ox, double oy) {
+		AIPathSegment s;
+		s.p.h = (AIReal) px; s.p.v = (AIReal) py;
+		s.in.h = (AIReal) ix; s.in.v = (AIReal) iy;
+		s.out.h = (AIReal) ox; s.out.v = (AIReal) oy;
+		s.corner = false;
+		return s;
+	};
+	// Top, right, bottom, left - clockwise.
+	std::vector<AIPathSegment> segs = {
+		seg(cx, cy + ry, cx - k * rx, cy + ry, cx + k * rx, cy + ry),
+		seg(cx + rx, cy, cx + rx, cy + k * ry, cx + rx, cy - k * ry),
+		seg(cx, cy - ry, cx + k * rx, cy - ry, cx - k * rx, cy - ry),
+		seg(cx - rx, cy, cx - rx, cy - k * ry, cx - rx, cy + k * ry),
+	};
+	return Finish(NewPath(p, segs, true), p);
+}
+
+json::Value PathCreate(const json::Value& p)
+{
+	const json::Value& pts = Required(p, "points");
+	if (!pts.isArray()) Fail(kErrInvalidParams, "'points' must be an array");
+	std::vector<AIPathSegment> segs;
+	for (const json::Value& v : pts.asArray()) {
+		if (v.isArray()) { AIRealPoint pt = Point(v, "points[]"); segs.push_back(Corner(pt.h, pt.v)); continue; }
+		if (!v.isObject()) Fail(kErrInvalidParams, "each point is [x, y] or {\"p\":[x,y], \"in\":[x,y], \"out\":[x,y]}");
+		AIRealPoint pt = Point(v.get("p"), "p");
+		AIPathSegment s = Corner(pt.h, pt.v);
+		if (v.has("in")) s.in = Point(v.get("in"), "in");
+		if (v.has("out")) s.out = Point(v.get("out"), "out");
+		s.corner = !v.boolean("smooth", false);
+		segs.push_back(s);
+	}
+	return Finish(NewPath(p, segs, p.boolean("closed", false)), p);
+}
+
+json::Value TextCreate(const json::Value& p)
+{
+	Need(sAITextFrame, "The text frame suite");
+	AIRealPoint anchor = Point(Required(p, "position"), "position");
+	ai::int16 order;
+	AIArtHandle prep;
+	Placement(p, order, prep);
+	AIArtHandle art = nullptr;
+	Check(sAITextFrame->NewPointText(order, prep, kHorizontalTextOrientation, anchor, &art), "NewPointText");
+	SetText(art, ReqStr(p, "contents"), p);
+	json::Value v = Finish(art, p);
+	v["contents"] = TextOf(art);
+	return v;
+}
+
+json::Value MenuRun(const json::Value& p)
+{
+	Need(sAICommandManager, "The command manager suite");
+	std::string name = ReqStr(p, "command");
+	AICommandID id = 0;
+	if (sAICommandManager->GetCommandIDFromName(name.c_str(), &id) || !id)
+		Fail(kErrNotFound, "no menu command named '" + name + "' (use the same names as app.executeMenuCommand, e.g. \"group\", \"selectall\", \"outline\")");
+	Check(sAIMenu->InvokeMenuAction(id), "InvokeMenuAction");
+	json::Value v;
+	v["ran"] = name;
+	return v;
+}
+
+ActionParamKeyID KeyId(const std::string& key)
+{
+	if (key.size() == 4) return ((ActionParamKeyID) (unsigned char) key[0] << 24) | ((ActionParamKeyID) (unsigned char) key[1] << 16) |
+		((ActionParamKeyID) (unsigned char) key[2] << 8) | (ActionParamKeyID) (unsigned char) key[3];
+	char* end = nullptr;
+	unsigned long n = strtoul(key.c_str(), &end, 10);
+	if (key.empty() || *end) Fail(kErrInvalidParams, "action parameter keys are 4-character codes (\"name\") or numbers");
+	return (ActionParamKeyID) n;
+}
+
+json::Value ActionPlay(const json::Value& p)
+{
+	Need(sAIActionManager, "The action manager suite");
+	std::string event = ReqStr(p, "event");
+	std::string dialog = p.str("dialog", "off");
+	ActionDialogStatus status = dialog == "on" ? kDialogOn : dialog == "none" ? kDialogNone : kDialogOff;
+	AIActionParamValueRef params = nullptr;
+	const json::Value& in = p.get("params");
+	if (in.isObject()) {
+		Check(sAIActionManager->AINewActionParamValue(&params), "AINewActionParamValue");
+		try {
+			for (const auto& kv : in.asObject()) {
+				ActionParamKeyID key = KeyId(kv.first);
+				const json::Value& v = kv.second;
+				std::string type;
+				json::Value value = v;
+				if (v.isObject()) { type = v.str("type"); value = v.get("value"); }
+				if (type.empty()) type = value.isBool() ? "boolean" : value.isString() ? "string"
+					: value.isNumber() && value.asNumber() == std::floor(value.asNumber()) ? "integer" : "real";
+				if (type == "boolean") Check(sAIActionManager->AIActionSetBoolean(params, key, value.asBool()), "set boolean");
+				else if (type == "string") Check(sAIActionManager->AIActionSetStringUS(params, key, U(value.asString())), "set string");
+				else if (type == "integer") Check(sAIActionManager->AIActionSetInteger(params, key, (ai::int32) value.asNumber()), "set integer");
+				else if (type == "real") Check(sAIActionManager->AIActionSetReal(params, key, (AIReal) value.asNumber()), "set real");
+				else if (type == "enum") Check(sAIActionManager->AIActionSetEnumerated(params, key, v.str("name").c_str(), (ai::int32) value.asNumber()), "set enum");
+				else Fail(kErrInvalidParams, "unknown action parameter type '" + type + "'");
+			}
+		}
+		catch (...) {
+			sAIActionManager->AIDeleteActionParamValue(params);
+			throw;
+		}
+	}
+	AIErr e = sAIActionManager->PlayActionEvent(event.c_str(), status, params);
+	if (params) sAIActionManager->AIDeleteActionParamValue(params);
+	Check(e, ("PlayActionEvent " + event).c_str());
+	json::Value v;
+	v["played"] = event;
+	return v;
+}
+
+json::Value HistoryUndo(const json::Value& p)
+{
+	Need(sAIUndo, "The undo suite");
+	Check(sAIUndo->MultiUndoTransaction(ActiveDocument(), (ai::int32) p.num("steps", 1)), "Undo");
+	return json::Value("undone");
+}
+
+json::Value HistoryRedo(const json::Value& p)
+{
+	Need(sAIUndo, "The undo suite");
+	Check(sAIUndo->MultiRedoTransaction(ActiveDocument(), (ai::int32) p.num("steps", 1)), "Redo");
+	return json::Value("redone");
+}
+
+json::Value Redraw(const json::Value&)
+{
+	ActiveDocument();
+	Check(sAIDocument->RedrawDocument(), "RedrawDocument");
+	return json::Value("redrawn");
+}
+
+const char* kWhere = "'layer' (name/index) or 'parent' (group id) to place it; default: top of the current layer";
+const char* kPaint = "\"#RRGGBB\" | \"none\" | {\"rgb\":[0-255 x3]} | {\"cmyk\":[0-100 x4]} | {\"gray\":0-100}";
+
+std::map<std::string, Command>& Table()
+{
+	static std::map<std::string, Command> table = {
+		{"app.info", {"Illustrator + KAGE versions, open document count, missing suites.", Params({}), AppInfo, false}},
+		{"commands.list", {"Every command with its parameters.", Params({}), [](const json::Value&) { return Describe(); }, false}},
+		{"document.list", {"Open documents (index, name, path, active).", Params({}), DocumentList, false}},
+		{"document.info", {"The active document: name, path, color model, artboards (with bounds), layer count.", Params({}), DocumentInfo, false}},
+		{"document.new", {"New document without a dialog.", Params({{"preset", "string - new-document preset name (optional)"}, {"width", "number - points"},
+			{"height", "number - points"}, {"colorMode", "\"rgb\" | \"cmyk\""}, {"title", "string"}, {"artboards", "number"}}), DocumentNew, true}},
+		{"document.open", {"Open a file without a dialog.", Params({{"path", "string - absolute path"}}), DocumentOpen, true}},
+		{"document.activate", {"Bring a document to the front.", Params({{"index", "number - from document.list"}}), DocumentActivate, false}},
+		{"document.save", {"Save; with 'path': native .ai is a Save As (the document moves there), any other 'format' writes a copy.",
+			Params({{"path", "string - optional absolute path"}, {"format", "string - a name from document.formats"}}), DocumentSave, false}},
+		{"document.formats", {"File formats Illustrator can save or export, by the names document.save takes.", Params({}), DocumentFormats, false}},
+		{"document.close", {"Close a document (default: the active one). Unsaved changes may prompt unless save=true.",
+			Params({{"index", "number"}, {"save", "boolean"}}), DocumentClose, true}},
+		{"document.redraw", {"Force a redraw.", Params({}), Redraw, false}},
+		{"layer.list", {"Layers top to bottom (index, name, visible, locked, current, id of its art group).", Params({}), LayerList, false}},
+		{"layer.create", {"New layer on top.", Params({{"name", "string"}, {"current", "boolean - make it current (default true)"}}), LayerCreate, true}},
+		{"layer.set", {"Change a layer.", Params({{"layer", "string | number - name or index"}, {"name", "string - rename"}, {"visible", "boolean"},
+			{"locked", "boolean"}, {"current", "boolean"}, {"delete", "boolean"}}), LayerSet, true}},
+		{"art.tree", {"The art tree: per layer, or below one art id.", Params({{"depth", "number - levels of children (default 3)"},
+			{"layer", "string | number - only this layer"}, {"id", "string - start at this art"}}), ArtTree, false}},
+		{"art.get", {"One art object in detail: bounds, style, path segments, text contents, layer, parent.",
+			Params({{"id", "string"}, {"depth", "number - levels of children (default 1)"}}), ArtGet, false}},
+		{"art.selection", {"The selected art.", Params({{"depth", "number - levels of children (default 0)"}}), ArtSelection, false}},
+		{"art.select", {"Select art by id (replaces the selection unless add=true; no ids = deselect all).",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"add", "boolean"}}), ArtSelect, false}},
+		{"art.set", {"Change art (default: the selection): name, hidden, locked, fill, stroke, strokeWidth, text contents/size.",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"name", "string"}, {"hidden", "boolean"}, {"locked", "boolean"}, {"fill", kPaint},
+				{"stroke", kPaint}, {"strokeWidth", "number"}, {"contents", "string - text only"}, {"size", "number - font size, with contents"}}), ArtSet, true}},
+		{"art.transform", {"Move / scale / rotate art (default: the selection) about its center or 'origin'.",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"translate", "[dx, dy]"}, {"scale", "number | [sx, sy]"}, {"rotate", "number - degrees, counterclockwise"},
+				{"origin", "[x, y]"}, {"scaleStrokes", "boolean (default true)"}}), ArtTransform, true}},
+		{"art.duplicate", {"Duplicate art (default: the selection) in place.", Params({{"ids", "string[]"}, {"id", "string"}}), ArtDuplicate, true}},
+		{"art.arrange", {"Bring to front / send to back within its parent.", Params({{"ids", "string[]"}, {"id", "string"}, {"to", "\"front\" | \"back\""}}), ArtArrange, true}},
+		{"art.group", {"Group art (default: the selection).", Params({{"ids", "string[]"}, {"id", "string"}, {"name", "string"}}), ArtGroup, true}},
+		{"art.delete", {"Delete art.", Params({{"ids", "string[]"}, {"id", "string"}}), ArtDelete, true}},
+		{"shape.rect", {"Rectangle; (x, y) is its top-left corner.", Params({{"x", "number"}, {"y", "number"}, {"width", "number"}, {"height", "number"},
+			{"fill", kPaint}, {"stroke", kPaint}, {"strokeWidth", "number"}, {"name", "string"}, {"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), ShapeRect, true}},
+		{"shape.ellipse", {"Ellipse in the box whose top-left is (x, y).", Params({{"x", "number"}, {"y", "number"}, {"width", "number"}, {"height", "number"},
+			{"fill", kPaint}, {"stroke", kPaint}, {"strokeWidth", "number"}, {"name", "string"}, {"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), ShapeEllipse, true}},
+		{"path.create", {"Path from points: [x,y] corners or {p, in, out, smooth} Bezier anchors.",
+			Params({{"points", "array"}, {"closed", "boolean"}, {"fill", kPaint}, {"stroke", kPaint}, {"strokeWidth", "number"}, {"name", "string"},
+				{"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), PathCreate, true}},
+		{"text.create", {"Point text; 'position' is the first baseline's start.", Params({{"position", "[x, y]"}, {"contents", "string (\\n = new paragraph)"},
+			{"size", "number - font size"}, {"name", "string"}, {"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), TextCreate, true}},
+		{"menu.run", {"Run any menu command by name, as app.executeMenuCommand does (\"group\", \"outline\", \"selectall\", \"Live Pathfinder Add\"...).",
+			Params({{"command", "string"}}), MenuRun, true}},
+		{"action.play", {"Play an action event (e.g. \"adobe_paste\") with typed parameters, no dialog by default.",
+			Params({{"event", "string"}, {"params", "object - 4-char key -> value | {\"type\":\"integer|real|string|boolean|enum\",\"value\":..,\"name\":..}"},
+				{"dialog", "\"off\" | \"on\" | \"none\""}}), ActionPlay, true}},
+		{"history.undo", {"Undo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryUndo, false}},
+		{"history.redo", {"Redo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryRedo, false}},
+	};
+	return table;
+}
+
+json::Value RunOneUntimed(const json::Value& call)
+{
+	json::Value response;
+	response["jsonrpc"] = "2.0";
+	response["id"] = call.get("id");
+	auto error = [&](int code, const std::string& message, AIErr aiErr) {
+		response["error"]["code"] = code;
+		response["error"]["message"] = message;
+		if (aiErr) response["error"]["data"]["aiError"] = ErrText(aiErr);
+		return response;
+	};
+	if (!call.isObject() || !call.get("method").isString()) return error(kErrInvalidRequest, "each call needs a 'method' string", kNoErr);
+	std::string method = call.get("method").asString();
+	auto& table = Table();
+	auto it = table.find(method);
+	if (it == table.end()) return error(kErrMethodNotFound, "unknown method '" + method + "' - see commands.list", kNoErr);
+	const json::Value& params = call.get("params");
+	if (!params.isNull() && !params.isObject()) return error(kErrInvalidParams, "'params' must be an object", kNoErr);
+	try {
+		if (it->second.changesDocument && sAIUndo)
+			sAIUndo->SetUndoTextUS(U("Undo KAGE " + method), U("Redo KAGE " + method));
+		response["result"] = it->second.run(params.isNull() ? json::Value::MakeObject() : params);
+	}
+	catch (const CommandError& e) { return error(e.code, e.message, e.aiError); }
+	catch (const json::Error& e) { return error(kErrInvalidParams, e.what(), kNoErr); }
+	catch (const ai::Error& e) { return error(kErrIllustrator, "Illustrator error " + ErrText((AIErr) e), (AIErr) e); }
+	catch (const ATE::Exception& e) { return error(kErrIllustrator, "text engine error " + std::to_string((long) e.error), kNoErr); }
+	catch (const std::exception& e) { return error(kErrInternal, e.what(), kNoErr); }
+	catch (...) { return error(kErrInternal, "unexpected error", kNoErr); }
+	return response;
+}
+
+CallObserver gObserver;
+
+json::Value RunOne(const json::Value& call)
+{
+	auto start = std::chrono::steady_clock::now();
+	json::Value response = RunOneUntimed(call);
+	if (gObserver) {
+		double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+		std::string method = call.isObject() && call.get("method").isString() ? call.get("method").asString() : "(invalid)";
+		auto it = Table().find(method);
+		const json::Value& err = response.get("error");
+		std::string message = err.isNull() ? "" : err.get("message").isString() ? err.get("message").asString() : "error";
+		gObserver(method, err.isNull(), it != Table().end() && it->second.changesDocument, ms,
+			Narrate(method, call.get("params"), response.get("result"), message));
+	}
+	return response;
+}
+
+} // namespace
+
+void SetCallObserver(CallObserver observer) { gObserver = std::move(observer); }
+
+json::Value Describe()
+{
+	json::Value list = json::Value::MakeArray();
+	for (auto& kv : Table()) {
+		json::Value c;
+		c["method"] = kv.first;
+		c["description"] = kv.second.description;
+		c["params"] = kv.second.params;
+		c["changesDocument"] = kv.second.changesDocument;
+		list.push(c);
+	}
+	return list;
+}
+
+json::Value Handle(const json::Value& request)
+{
+	if (request.isArray()) {
+		// A batch: one timer message, so the calls land as one undo step.
+		json::Value out = json::Value::MakeArray();
+		bool stopped = false;
+		for (const json::Value& call : request.asArray()) {
+			if (stopped) {
+				json::Value skipped;
+				skipped["jsonrpc"] = "2.0";
+				skipped["id"] = call.get("id");
+				skipped["error"]["code"] = kErrInvalidRequest;
+				skipped["error"]["message"] = "skipped: an earlier call in the batch failed";
+				out.push(skipped);
+				continue;
+			}
+			json::Value r = RunOne(call);
+			if (r.has("error") && call.boolean("stopOnError", true)) stopped = true;
+			out.push(r);
+		}
+		return out;
+	}
+	return RunOne(request);
+}
+
+} // namespace kage

@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""kage - call Illustrator directly through the KAGE plug-in.
+
+  kage app.info
+  kage commands                                  # list every command
+  kage shape.rect x=0 y=0 width=100 height=50 fill='"#FF3366"'
+  kage art.transform '{"rotate": 45}'            # JSON params work too
+  kage --batch calls.json                        # [{"method":..,"params":..}, ...]
+
+key=value values are parsed as JSON when they can be (numbers, true, [1,2]),
+otherwise taken as strings.
+"""
+
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from kage_client import KageError, batch, call  # noqa: E402
+
+
+def parse_params(args):
+    if len(args) == 1 and args[0].lstrip().startswith("{"):
+        return json.loads(args[0])
+    params = {}
+    for a in args:
+        if "=" not in a:
+            sys.exit(f"kage: expected key=value, got {a!r}")
+        k, v = a.split("=", 1)
+        if k in ("id", "parent", "name", "command", "event", "contents", "path", "title", "preset", "to"):
+            params[k] = v   # always text, even when it looks like a number ("476")
+            continue
+        try:
+            params[k] = json.loads(v)
+        except json.JSONDecodeError:
+            params[k] = v
+    return params
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    try:
+        if argv[0] == "commands":
+            for c in call("commands.list"):
+                print(f"{c['method']:<18} {c['description']}")
+                for k, v in c["params"].items():
+                    print(f"{'':<20}{k}: {v}")
+            return 0
+        if argv[0] == "--batch":
+            with open(argv[1]) as f:
+                out = batch(json.load(f))
+            print(json.dumps(out, indent=2))
+            return 1 if any("error" in r for r in out) else 0
+        print(json.dumps(call(argv[0], parse_params(argv[1:])), indent=2))
+        return 0
+    except KageError as e:
+        print(f"kage: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

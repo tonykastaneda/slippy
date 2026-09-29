@@ -1,0 +1,10 @@
+-xobjective-c++
+-std=c++17
+-ISource
+-I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/samplecode/common/includes
+-I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/illustratorapi/illustrator
+-I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/illustratorapi/illustrator/actions
+-I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/illustratorapi/pica_sp
+-I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/illustratorapi/ate
+-include
+/Users/tonycastaneda/Developer/AdobeIllustratorSDK/samplecode/common/includes/IllustratorSDKRelease.pch
