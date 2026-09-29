@@ -1,5 +1,5 @@
-#ifndef __KAGE_SUITES_H__
-#define __KAGE_SUITES_H__
+#ifndef __SLIPPY_SUITES_H__
+#define __SLIPPY_SUITES_H__
 
 #include "IllustratorSDK.h"
 #include "Suites.hpp"
@@ -62,10 +62,10 @@ extern "C" ASUserInteractionSuite*	sASUserInteraction;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.
-int KAGETimerVersion();
+int SlippyTimerVersion();
 // undoable: run in an undo-tracked context (the calls timer); the overlay's
 // animation timer changes nothing, so it doesn't need one.
-AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable = true);
-AIErr KAGESetTimerActive(AITimerHandle timer, AIBoolean active);
+AIErr SlippyAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable = true);
+AIErr SlippySetTimerActive(AITimerHandle timer, AIBoolean active);
 
-#endif // __KAGE_SUITES_H__
+#endif // __SLIPPY_SUITES_H__

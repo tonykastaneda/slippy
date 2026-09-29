@@ -1,5 +1,5 @@
-#ifndef __KAGE_JSON_H__
-#define __KAGE_JSON_H__
+#ifndef __SLIPPY_JSON_H__
+#define __SLIPPY_JSON_H__
 
 // Small self-contained JSON value, parser and writer. No third-party
 // dependency, so the plug-in bundle carries nothing but itself.
@@ -91,4 +91,4 @@ Value Parse(const std::string& text);   // throws json::Error
 
 } // namespace json
 
-#endif // __KAGE_JSON_H__
+#endif // __SLIPPY_JSON_H__

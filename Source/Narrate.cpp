@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdio>
 
-namespace kage {
+namespace slippy {
 
 namespace {
 
@@ -111,7 +111,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 {
 	std::string who = Target(p, r);
 	if (m == "app.info") return {"Checked in with Illustrator", "check in with Illustrator"};
-	if (m == "commands.list") return {"Looked up what KAGE can do", "look up commands"};
+	if (m == "commands.list") return {"Looked up what Slippy can do", "look up commands"};
 	if (m == "document.list") return {"Listed the open documents", "list documents"};
 	if (m == "document.info") return {"Looked at the document", "look at the document"};
 	if (m == "document.formats") return {"Checked the file formats", "check file formats"};
@@ -211,7 +211,7 @@ std::string Why(const std::string& error)
 {
 	if (error.rfind("no art with id", 0) == 0) return "Couldn't find that object";
 	if (error.rfind("no document is open", 0) == 0) return "No document is open";
-	if (error.rfind("KAGE is paused", 0) == 0) return "Refused: KAGE is paused";
+	if (error.rfind("Slippy is paused", 0) == 0) return "Refused: Slippy is paused";
 	if (error.rfind("no layer", 0) == 0) return "Couldn't find that layer";
 	if (error.rfind("pass 'id' or 'ids', or select something", 0) == 0) return "Nothing was selected";
 	if (error.rfind("unknown method", 0) == 0) return "Unknown command";
@@ -231,4 +231,4 @@ std::string Narrate(const std::string& method, const json::Value& params, const 
 	return (why.empty() ? "Couldn't " + phrase.attempt : why) + "\n" + error;
 }
 
-} // namespace kage
+} // namespace slippy

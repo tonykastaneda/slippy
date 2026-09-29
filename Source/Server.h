@@ -1,15 +1,15 @@
-#ifndef __KAGE_SERVER_H__
-#define __KAGE_SERVER_H__
+#ifndef __SLIPPY_SERVER_H__
+#define __SLIPPY_SERVER_H__
 
 // Loopback HTTP server for agents. Runs entirely on its own threads and never
 // touches the Illustrator SDK: every request goes to the handler, which hands
-// it to Illustrator's main thread (see Bridge in KAGEPlugin.cpp).
+// it to Illustrator's main thread (see Bridge in SlippyPlugin.cpp).
 //
 //   GET  /health  -> {"ok":true,...}           no token needed, reveals nothing
 //   POST /rpc     -> {"method":..,"params":..}  JSON-RPC, needs the token
 //   POST /mcp     -> MCP (streamable HTTP, JSON responses), needs the token
 //
-// The token is made once and kept (~/Library/Application Support/KAGE/token,
+// The token is made once and kept (~/Library/Application Support/Slippy/token,
 // mode 0600) so agents' saved MCP configs keep working across launches; the
 // session file next to it tells clients the port and token. Requests carrying
 // an Origin header (browsers) are refused, so a web page can't drive Illustrator.
@@ -21,7 +21,7 @@
 #include <string>
 #include <thread>
 
-namespace kage {
+namespace slippy {
 
 class Server {
 public:
@@ -53,6 +53,6 @@ private:
 	void WriteSessionFile();
 };
 
-} // namespace kage
+} // namespace slippy
 
-#endif // __KAGE_SERVER_H__
+#endif // __SLIPPY_SERVER_H__

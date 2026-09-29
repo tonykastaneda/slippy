@@ -5,16 +5,16 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleDisplayName</key>
-	<string>KAGE</string>
+	<string>Slippy</string>
 	<key>CFBundleExecutable</key>
-	<string>KAGE</string>
+	<string>Slippy</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.tonykastaneda.illustrator.plugins.KAGE</string>
+	<string>com.tonykastaneda.illustrator.plugins.Slippy</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>KAGE</string>
-	<key>CFBundlePackageType</key>
+	<string>Slippy</string>
+	<key>CFBundlePacslippyType</key>
 	<string>ARPI</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>

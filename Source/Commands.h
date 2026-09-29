@@ -1,5 +1,5 @@
-#ifndef __KAGE_COMMANDS_H__
-#define __KAGE_COMMANDS_H__
+#ifndef __SLIPPY_COMMANDS_H__
+#define __SLIPPY_COMMANDS_H__
 
 // The command table: every method agents can call, run on Illustrator's main
 // thread. Requests and responses are JSON-RPC 2.0; an array request is a
@@ -10,7 +10,7 @@
 #include <functional>
 #include <string>
 
-namespace kage {
+namespace slippy {
 
 enum ErrorCode {
 	kErrParse = -32700,
@@ -32,6 +32,6 @@ json::Value Describe();                           // the command list with param
 using CallObserver = std::function<void(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line)>;
 void SetCallObserver(CallObserver observer);
 
-} // namespace kage
+} // namespace slippy
 
-#endif // __KAGE_COMMANDS_H__
+#endif // __SLIPPY_COMMANDS_H__

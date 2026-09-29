@@ -2,8 +2,8 @@
 #include "Commands.h"
 #include "Narrate.h"
 #include "Overlay.h"
-#include "KAGESuites.h"
-#include "KAGEID.h"
+#include "SlippySuites.h"
+#include "SlippyID.h"
 #include "IAIFilePath.hpp"
 #include "IText.h"
 
@@ -15,7 +15,7 @@
 #include <set>
 #include <unistd.h>
 
-namespace kage {
+namespace slippy {
 
 namespace {
 
@@ -563,8 +563,8 @@ std::map<std::string, Command>& Table();
 json::Value AppInfo(const json::Value&)
 {
 	json::Value v;
-	v["plugin"] = "KAGE";
-	v["version"] = kKAGEVersion;
+	v["plugin"] = "Slippy";
+	v["version"] = kSlippyVersion;
 	if (sAIRuntime) {
 		ai::UnicodeString name;
 		if (!sAIRuntime->GetAppNameUS(name)) v["app"] = S(name);
@@ -585,7 +585,7 @@ json::Value AppInfo(const json::Value&)
 	if (!sAIUndo) missing.push("undo");
 	if (!sAIFileFormat) missing.push("fileFormat");
 	v["missingSuites"] = missing;
-	v["timerSuiteVersion"] = KAGETimerVersion();
+	v["timerSuiteVersion"] = SlippyTimerVersion();
 	if (sAIUndo && count) {
 		ai::int32 past = 0, future = 0;
 		if (!sAIUndo->CountTransactions(&past, &future)) { v["undoSteps"] = past; v["redoSteps"] = future; }
@@ -1453,7 +1453,7 @@ const char* kPaint = "\"#RRGGBB\" | \"none\" | {\"rgb\":[0-255 x3]} | {\"cmyk\":
 std::map<std::string, Command>& Table()
 {
 	static std::map<std::string, Command> table = {
-		{"app.info", {"Illustrator + KAGE versions, open document count, missing suites.", Params({}), AppInfo, false}},
+		{"app.info", {"Illustrator + Slippy versions, open document count, missing suites.", Params({}), AppInfo, false}},
 		{"commands.list", {"Every command with its parameters.", Params({}), [](const json::Value&) { return Describe(); }, false}},
 		{"document.list", {"Open documents (index, name, path, active).", Params({}), DocumentList, false}},
 		{"document.info", {"The active document: name, path, color model, artboards (with bounds), layer count.", Params({}), DocumentInfo, false}},
@@ -1543,7 +1543,7 @@ json::Value RunOneUntimed(const json::Value& call)
 	if (!params.isNull() && !params.isObject()) return error(kErrInvalidParams, "'params' must be an object", kNoErr);
 	try {
 		if (it->second.changesDocument && sAIUndo)
-			sAIUndo->SetUndoTextUS(U("Undo KAGE " + method), U("Redo KAGE " + method));
+			sAIUndo->SetUndoTextUS(U("Undo Slippy " + method), U("Redo Slippy " + method));
 		response["result"] = it->second.run(params.isNull() ? json::Value::MakeObject() : params);
 	}
 	catch (const CommandError& e) { return error(e.code, e.message, e.aiError); }
@@ -1618,4 +1618,4 @@ json::Value Handle(const json::Value& request)
 	return RunOne(request);
 }
 
-} // namespace kage
+} // namespace slippy

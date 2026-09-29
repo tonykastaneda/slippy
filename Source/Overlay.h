@@ -1,17 +1,17 @@
-#ifndef __KAGE_OVERLAY_H__
-#define __KAGE_OVERLAY_H__
+#ifndef __SLIPPY_OVERLAY_H__
+#define __SLIPPY_OVERLAY_H__
 
-// Shows what Kage is working on, right on the canvas: a blue box around the
-// art a call touched and a Kage cursor that glides there, labelled with the
+// Shows what Slippy is working on, right on the canvas: a green box around the
+// art a call touched and a Slippy cursor that glides there, labelled with the
 // call's plain-English line. Drawn by an annotator (like selection
 // highlights), so it's never part of the artwork or the undo history.
 // Main thread only.
 
-#include "KAGESuites.h"
+#include "SlippySuites.h"
 
 #include <string>
 
-namespace kage {
+namespace slippy {
 namespace overlay {
 
 void Init(SPPluginRef plugin);   // startup: registers the annotator
@@ -31,6 +31,6 @@ void Tick();
 AIErr Annotate(const char* selector, AIAnnotatorMessage* message);
 
 } // namespace overlay
-} // namespace kage
+} // namespace slippy
 
-#endif // __KAGE_OVERLAY_H__
+#endif // __SLIPPY_OVERLAY_H__

@@ -1,6 +1,6 @@
 #include "IllustratorSDK.h"
 #include "Overlay.h"
-#include "KAGESuites.h"
+#include "SlippySuites.h"
 
 #include <algorithm>
 #include <chrono>
@@ -8,7 +8,7 @@
 #include <cstring>
 #include <vector>
 
-namespace kage {
+namespace slippy {
 namespace overlay {
 
 namespace {
@@ -23,7 +23,7 @@ const double kCursorHold = 6.0, kCursorFade = 1.0;
 
 const size_t kLabelChars = 48;
 
-const AIRGBColor kBlue = {0x4343, 0x7B7B, 0xFAFA};   // KageBlue(), the mascot's body
+const AIRGBColor kGreen = {0x2E2E, 0xA8A8, 0x4E4E};   // a shade darker than SlippyGreen(), to stand out on white
 const AIRGBColor kRed = {0xE0E0, 0x4545, 0x4545};
 const AIRGBColor kWhite = {0xFFFF, 0xFFFF, 0xFFFF};
 
@@ -225,15 +225,15 @@ bool Finished(double now) { return !gShow.doc || now > gShow.start + kGlide + kC
 void StartTimer()
 {
 	// Added on first use, like the calls timer: not during startup.
-	if (!gTimer && KAGEAddTimer(gPluginRef, "KAGE Overlay", 1, &gTimer, false)) gTimer = nullptr;
-	if (gTimer && !gTimerOn && !KAGESetTimerActive(gTimer, true)) gTimerOn = true;
+	if (!gTimer && SlippyAddTimer(gPluginRef, "Slippy Overlay", 1, &gTimer, false)) gTimer = nullptr;
+	if (gTimer && !gTimerOn && !SlippySetTimerActive(gTimer, true)) gTimerOn = true;
 }
 
 bool EnsureAnnotator()
 {
 	if (gAnnotator) return true;
 	if (!gPluginRef || !sAIAnnotator || !sAIAnnotatorDrawer || !sAIDocumentView) return false;
-	if (sAIAnnotator->AddAnnotator(gPluginRef, "KAGE Overlay", &gAnnotator) || !gAnnotator) {
+	if (sAIAnnotator->AddAnnotator(gPluginRef, "Slippy Overlay", &gAnnotator) || !gAnnotator) {
 		gAnnotator = nullptr;
 		return false;
 	}
@@ -304,7 +304,7 @@ void Draw(AIAnnotatorMessage* m)
 
 	if (f.box) {
 		const AIRect& b = f.boxRect;
-		D.SetColor(d, kBlue);
+		D.SetColor(d, kGreen);
 		D.SetOpacity(d, (AIReal) (0.08 * f.boxAlpha));
 		D.DrawRect(d, b, true);
 		// Outline and handles as filled shapes: the drawer strokes rectangles
@@ -319,7 +319,7 @@ void Draw(AIAnnotatorMessage* m)
 		for (AIPoint c : corners) {
 			c.h += c.h == b.left ? w / 2 : -w / 2;   // centered on the outline
 			c.v += c.v == b.top ? w / 2 : -w / 2;
-			D.SetColor(d, kBlue);
+			D.SetColor(d, kGreen);
 			D.DrawRect(d, {c.h - 5, c.v - 5, c.h + 5, c.v + 5}, true);
 			D.SetColor(d, kWhite);
 			D.DrawRect(d, {c.h - 3, c.v - 3, c.h + 3, c.v + 3}, true);
@@ -328,12 +328,12 @@ void Draw(AIAnnotatorMessage* m)
 
 	if (f.cursor) {
 		const AIPoint& t = f.tip;
-		// Kage's cursor: a plain triangle, its tip on the art.
+		// Slippy's cursor: a plain triangle, its tip on the art.
 		static const int shape[][2] = {{0, 0}, {18, 7}, {7, 18}};
 		AIPoint tri[3];
 		for (int i = 0; i < 3; i++) tri[i] = {t.h + shape[i][0], t.v + shape[i][1]};
 		D.SetOpacity(d, (AIReal) f.cursorAlpha);
-		D.SetColor(d, kBlue);
+		D.SetColor(d, kGreen);
 		D.DrawPolygon(d, tri, 3, true);
 		D.SetColor(d, kWhite);
 		D.SetLineWidth(d, 2);
@@ -349,7 +349,7 @@ void Draw(AIAnnotatorMessage* m)
 			int x = t.h + 16, y = t.v + 18, w = (tb.right - tb.left) + 20;
 			AIRect pill = {x, y, x + std::max(w, h), y + h};
 			D.SetOpacity(d, (AIReal) (f.labelAlpha * f.cursorAlpha));
-			D.SetColor(d, gShow.ok ? kBlue : kRed);
+			D.SetColor(d, gShow.ok ? kGreen : kRed);
 			D.DrawRect(d, {pill.left + h / 2, pill.top, pill.right - h / 2, pill.bottom}, true);
 			D.DrawEllipse(d, {pill.left, pill.top, pill.left + h, pill.bottom}, true);
 			D.DrawEllipse(d, {pill.right - h, pill.top, pill.right, pill.bottom}, true);
@@ -374,7 +374,7 @@ void Init(SPPluginRef plugin)
 
 void Shutdown()
 {
-	if (gTimer && gTimerOn) KAGESetTimerActive(gTimer, false);
+	if (gTimer && gTimerOn) SlippySetTimerActive(gTimer, false);
 	gTimerOn = false;
 	gShow = Show();
 	gTouched.clear();
@@ -424,7 +424,7 @@ void Tick()
 		Invalidate(now);   // erase the last frame
 		gShow = Show();
 		gDrawnAny = false;
-		if (gTimer) KAGESetTimerActive(gTimer, false);
+		if (gTimer) SlippySetTimerActive(gTimer, false);
 		gTimerOn = false;
 		return;
 	}
@@ -440,4 +440,4 @@ AIErr Annotate(const char* selector, AIAnnotatorMessage* message)
 }
 
 } // namespace overlay
-} // namespace kage
+} // namespace slippy

@@ -1,16 +1,16 @@
-# KAGE native Illustrator plug-in (arm64, macOS). Command Line Tools only -
+# Slippy native Illustrator plug-in (arm64, macOS). Command Line Tools only -
 # no Xcode, no Visual Studio. Same recipe as RAGE / AA-ReColor.
-#   make            build + sign build/KAGE.aip (ad hoc; SIGN_ID="Developer ID ..." to sign for real)
+#   make            build + sign build/Slippy.aip (ad hoc; SIGN_ID="Developer ID ..." to sign for real)
 #   make install    copy into Illustrator's Plug-ins folder (quit Illustrator first;
 #                   the first install needs sudo - the folder is root-owned)
-#   make preview    the panel + Kage in a plain window with made-up calls
+#   make preview    the panel + Slippy in a plain window with made-up calls
 #   make clean
 
 SDK        ?= $(HOME)/Developer/AdobeIllustratorSDK
 AI_APP     ?= /Applications/Adobe Illustrator 2026
 SIGN_ID    ?= -
 
-NAME       := KAGE
+NAME       := Slippy
 BUILD      := build
 OBJDIR     := $(BUILD)/obj
 BUNDLE     := $(BUILD)/$(NAME).aip
@@ -20,8 +20,8 @@ API        := $(SDK)/illustratorapi
 COMMON     := $(SDK)/samplecode/common
 
 SOURCES := \
-	Source/KAGEPlugin.cpp \
-	Source/KAGESuites.cpp \
+	Source/SlippyPlugin.cpp \
+	Source/SlippySuites.cpp \
 	Source/Commands.cpp \
 	Source/Overlay.cpp \
 	Source/Mcp.cpp \
@@ -41,8 +41,8 @@ SOURCES := \
 	$(API)/ate/IThrowException.cpp
 
 MM_SOURCES := \
-	Source/KAGEPanel.mm \
-	Source/KAGEPanelView.mm
+	Source/SlippyPanel.mm \
+	Source/SlippyPanelView.mm
 
 OBJECTS := $(addprefix $(OBJDIR)/,$(notdir $(SOURCES:.cpp=.o) $(MM_SOURCES:.mm=.o)))
 vpath %.cpp $(sort $(dir $(SOURCES)))
@@ -98,16 +98,17 @@ $(BUILD)/.signed: $(EXE) Resources/Info.plist $(BUILD)/plugin.pipl $(BUILD)/$(NA
 # Plug-ins.localized is root-owned; after the first sudo install the bundle's
 # own files are ours, so ditto can refresh it in place without sudo.
 install: all
+	rm -rf "$(AI_APP)/Plug-ins.localized/KAGE.aip"   # Slippy's old name: two copies would fight over the port
 	ditto $(BUNDLE) "$(AI_APP)/Plug-ins.localized/$(NAME).aip"
 
-# The panel in a plain window with made-up calls - watch Kage without Illustrator.
-$(BUILD)/KAGEPreview: Source/Preview.mm Source/KAGEPanelView.mm Source/KAGEPanelView.h Source/Narrate.cpp Source/Json.cpp
+# The panel in a plain window with made-up calls - watch Slippy without Illustrator.
+$(BUILD)/SlippyPreview: Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/Narrate.cpp Source/Json.cpp
 	mkdir -p $(BUILD)
-	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource Source/Preview.mm Source/KAGEPanelView.mm Source/Narrate.cpp Source/Json.cpp \
+	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource Source/Preview.mm Source/SlippyPanelView.mm Source/Narrate.cpp Source/Json.cpp \
 		-framework Cocoa -framework QuartzCore -o $@
 
-preview: $(BUILD)/KAGEPreview
-	./$(BUILD)/KAGEPreview
+preview: $(BUILD)/SlippyPreview
+	./$(BUILD)/SlippyPreview
 
 clean:
 	rm -rf $(BUILD)

@@ -1,7 +1,7 @@
-#ifndef __KAGE_PANEL_H__
-#define __KAGE_PANEL_H__
+#ifndef __SLIPPY_PANEL_H__
+#define __SLIPPY_PANEL_H__
 
-// The docked KAGE panel (Window > KAGE), starring Kage the mascot: asleep
+// The docked Slippy panel (Window > Slippy), starring Slippy the mascot: asleep
 // (— —, Z's) while idle, wakes (^ ^) on the first call, works (o o, looking
 // around) while agents call, winces (> <) on errors. Calls also ripple (teal =
 // read, amber = edit, red = error), bump their group's bar and slide into the feed.
@@ -20,9 +20,9 @@ struct PanelCallbacks {
 void PanelAttach(AIPanelRef panel, PanelCallbacks callbacks);
 void PanelDetach();
 void PanelSetStatus(const std::string& text, bool listening);
-// Hides a menu item by its title (KAGE's own internal command).
+// Hides a menu item by its title (Slippy's own internal command).
 void HideMenuItemTitled(const std::string& title);
 
 void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line);
 
-#endif // __KAGE_PANEL_H__
+#endif // __SLIPPY_PANEL_H__

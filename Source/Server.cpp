@@ -13,7 +13,7 @@
 #include <cstring>
 #include <fstream>
 
-namespace kage {
+namespace slippy {
 
 namespace {
 
@@ -90,7 +90,7 @@ json::Value ErrorBody(const std::string& message)
 static std::string SupportDir()
 {
 	const char* home = getenv("HOME");
-	return std::string(home ? home : "/tmp") + "/Library/Application Support/KAGE";
+	return std::string(home ? home : "/tmp") + "/Library/Application Support/Slippy";
 }
 
 static void MakeDirs(const std::string& dir)
@@ -108,10 +108,21 @@ std::string Server::TokenFilePath() { return SupportDir() + "/token"; }
 static std::string LoadOrCreateToken()
 {
 	std::string path = Server::TokenFilePath();
-	{
-		std::ifstream in(path);
+	// Slippy was called KAGE: keep its token so saved agent configs still connect.
+	const char* home = getenv("HOME");
+	std::string before = std::string(home ? home : "/tmp") + "/Library/Application Support/KAGE/token";
+	for (const std::string& from : {path, before}) {
+		std::ifstream in(from);
 		std::string t;
-		if (in >> t && t.size() >= 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) return t;
+		if (!(in >> t) || t.size() < 32 || t.find_first_not_of("0123456789abcdef") != std::string::npos) continue;
+		if (from != path) {
+			MakeDirs(SupportDir());
+			std::ofstream out(path, std::ios::trunc);
+			out << t << "\n";
+			out.close();
+			chmod(path.c_str(), 0600);
+		}
+		return t;
 	}
 	MakeDirs(SupportDir());
 	std::string t = NewToken();
@@ -176,7 +187,7 @@ void Server::WriteSessionFile()
 	std::string path = SessionFilePath();
 	MakeDirs(SupportDir());
 	json::Value s;
-	s["name"] = "KAGE";
+	s["name"] = "Slippy";
 	s["version"] = fVersion;
 	s["url"] = "http://127.0.0.1:" + std::to_string(fPort) + "/rpc";
 	s["mcp"] = "http://127.0.0.1:" + std::to_string(fPort) + "/mcp";
@@ -248,7 +259,7 @@ void Server::Serve(int fd)
 		std::string key = Lower(Trim(line.substr(0, colon)));
 		std::string value = Trim(line.substr(colon + 1));
 		if (key == "origin") origin = value;
-		else if (key == "x-kage-token") token = value;
+		else if (key == "x-slippy-token") token = value;
 		else if (key == "authorization" && Lower(value).rfind("bearer ", 0) == 0) token = Trim(value.substr(7));
 		else if (key == "content-length") contentLength = value;
 	}
@@ -258,7 +269,7 @@ void Server::Serve(int fd)
 	if (method == "GET" && target == "/health") {
 		json::Value v;
 		v["ok"] = true;
-		v["name"] = "KAGE";
+		v["name"] = "Slippy";
 		v["version"] = fVersion;
 		Respond(fd, 200, v);
 		return;
@@ -308,4 +319,4 @@ void Server::Serve(int fd)
 	else Respond(fd, 200, reply);
 }
 
-} // namespace kage
+} // namespace slippy

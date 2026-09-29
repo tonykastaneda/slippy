@@ -1,4 +1,4 @@
-#import "KAGEPanelView.h"
+#import "SlippyPanelView.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -21,12 +21,15 @@ const CGFloat kPad = 12;
 NSColor* ReadColor() { return NSColor.systemTealColor; }
 NSColor* EditColor() { return NSColor.systemOrangeColor; }
 NSColor* ErrorColor() { return NSColor.systemRedColor; }
-NSColor* KageBlue() { return [NSColor colorWithSRGBRed:0x43 / 255.0 green:0x7B / 255.0 blue:0xFA / 255.0 alpha:1]; }   // from the mascot art
+NSColor* SRGB(int rgb) { return [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0 green:((rgb >> 8) & 0xFF) / 255.0 blue:(rgb & 0xFF) / 255.0 alpha:1]; }
+NSColor* SlippyGreen() { return SRGB(0x3DBE5B); }   // Slippy's skin
+NSColor* MouthColor() { return SRGB(0x1D2A20); }
+NSColor* CheekColor() { return SRGB(0xFF8FA8); }
 
-// macOS's Reduce Motion, unless KAGE_FULL_MOTION=1 asks for the full bounce anyway.
+// macOS's Reduce Motion, unless SLIPPY_FULL_MOTION=1 asks for the full bounce anyway.
 bool ReduceMotion()
 {
-	static const bool full = getenv("KAGE_FULL_MOTION") && !strcmp(getenv("KAGE_FULL_MOTION"), "1");
+	static const bool full = getenv("SLIPPY_FULL_MOTION") && !strcmp(getenv("SLIPPY_FULL_MOTION"), "1");
 	return !full && NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
 }
 
@@ -50,13 +53,13 @@ NSTextField* Label(CGFloat size, NSFontWeight weight, NSColor* color)
 
 } // namespace
 
-// ------------------------------------------------------------------ Kage
+// ------------------------------------------------------------------ Slippy
 // Geometry is in units of the body's diameter D, measured off the mascot art;
 // layer coordinates, so y grows upward.
 //
 // Motion is layered so nothing fights: _root hops, shakes and tilts (pivoting
-// on the ground under Kage), _squash squashes and stretches, _breath breathes
-// on a loop nobody else touches. Every move starts from where Kage is on
+// on the ground under Slippy), _squash squashes and stretches, _breath breathes
+// on a loop nobody else touches. Every move starts from where Slippy is on
 // screen right now, so a new move never pops.
 
 namespace {
@@ -64,27 +67,65 @@ namespace {
 enum class Face { Sleep, Happy, Awake, Ouch };
 enum class Mood { Asleep, Waking, Working, Dozing };
 
-// Where the eye pair sits for each face (offset of the eyes from the body's center).
-CGFloat EyeY(Face f) { return f == Face::Sleep ? -0.17 : f == Face::Happy ? 0.10 : 0.0; }
-const CGFloat kEyeX = 0.21;
+// Slippy is a frog's face, drawn like a cartoon (think Keroppi): a wide
+// green head with two big white eyes sitting on top, pink cheeks and a wide
+// smile. No body - the face is the character. Units of D, from the box's
+// bottom-left.
+const CGFloat kEyeX = 0.22, kEyeY = 0.70;   // eye centers: 0.5 +/- kEyeX, kEyeY
+const CGFloat kRimR = 0.2, kWhiteR = 0.16, kPupilR = 0.055;
+const CGFloat kLookRange = 0.6;   // how far the pupils roam inside the whites
 
-// One eye's stroke, centered on (0, 0). right: the right eye (Ouch mirrors).
+// The head and the green rims around both eyes, as one outline (nonzero fill: the union).
+CGPathRef HeadPath(CGFloat D)
+{
+	CGMutablePathRef p = CGPathCreateMutable();
+	CGPathAddEllipseInRect(p, nullptr, CGRectMake(0, 0.06 * D, D, 0.62 * D));
+	for (CGFloat side : {-1.0, 1.0})
+		CGPathAddEllipseInRect(p, nullptr, CGRectMake((0.5 + side * kEyeX - kRimR) * D, (kEyeY - kRimR) * D, 2 * kRimR * D, 2 * kRimR * D));
+	return p;
+}
+
+CGPathRef MouthPath(CGFloat D)
+{
+	CGMutablePathRef p = CGPathCreateMutable();
+	CGPathMoveToPoint(p, nullptr, 0.3 * D, 0.36 * D);
+	CGPathAddQuadCurveToPoint(p, nullptr, 0.5 * D, 0.17 * D, 0.7 * D, 0.36 * D);
+	return p;
+}
+
+CGPathRef CheeksPath(CGFloat D)
+{
+	CGMutablePathRef p = CGPathCreateMutable();
+	for (CGFloat side : {-1.0, 1.0})
+		CGPathAddEllipseInRect(p, nullptr, CGRectMake((0.5 + side * 0.33 - 0.075) * D, 0.27 * D, 0.15 * D, 0.08 * D));
+	return p;
+}
+
+CGPathRef CirclePath(CGFloat r)
+{
+	return CGPathCreateWithEllipseInRect(CGRectMake(-r, -r, 2 * r, 2 * r), nullptr);
+}
+
+// One eye's mark, centered on (0, 0). Awake is a pupil on the white; the
+// others are drawn on a shut (green) eye. right: the right eye (Ouch mirrors).
 CGPathRef EyePath(Face f, bool right, CGFloat D)
 {
 	CGMutablePathRef p = CGPathCreateMutable();
 	switch (f) {
-	case Face::Sleep:   // —
-		CGPathMoveToPoint(p, nullptr, -0.105 * D, 0);
-		CGPathAddLineToPoint(p, nullptr, 0.105 * D, 0);
+	case Face::Sleep:   // a sleepy downward curve
+		CGPathMoveToPoint(p, nullptr, -0.1 * D, 0.02 * D);
+		CGPathAddQuadCurveToPoint(p, nullptr, 0, -0.06 * D, 0.1 * D, 0.02 * D);
 		break;
 	case Face::Happy:   // ^
-		CGPathMoveToPoint(p, nullptr, -0.075 * D, -0.06 * D);
-		CGPathAddLineToPoint(p, nullptr, 0, 0.07 * D);
-		CGPathAddLineToPoint(p, nullptr, 0.075 * D, -0.06 * D);
+		CGPathMoveToPoint(p, nullptr, -0.085 * D, -0.04 * D);
+		CGPathAddQuadCurveToPoint(p, nullptr, 0, 0.1 * D, 0.085 * D, -0.04 * D);
 		break;
-	case Face::Awake:   // o
-		CGPathAddEllipseInRect(p, nullptr, CGRectMake(-0.062 * D, -0.07 * D, 0.124 * D, 0.14 * D));
+	case Face::Awake: {  // the pupil
+		CGPathRef dot = CirclePath(kPupilR * D);
+		CGPathAddPath(p, nullptr, dot);
+		CGPathRelease(dot);
 		break;
+	}
 	case Face::Ouch: {  // > <
 		CGFloat s = right ? -1 : 1;
 		CGPathMoveToPoint(p, nullptr, -0.06 * D * s, 0.065 * D);
@@ -96,14 +137,14 @@ CGPathRef EyePath(Face f, bool right, CGFloat D)
 	return p;
 }
 
-CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Sleep ? 0.045 : f == Face::Awake ? 0.05 : 0.055) * D; }
+CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Awake ? 0 : 0.05) * D; }
 
 // The three Z's of the art: offset from the body's center, font size.
 struct ZSpot { CGFloat x, y, size; };
-const ZSpot kZs[] = {{-0.33, 0.08, 0.13}, {-0.44, 0.25, 0.16}, {-0.52, 0.47, 0.21}};
+const ZSpot kZs[] = {{-0.56, 0.3, 0.13}, {-0.64, 0.5, 0.16}, {-0.68, 0.72, 0.21}};   // up and away from the left eye
 
-// How far Kage moves: all the way, or - with Reduce Motion on - a gentle
-// fraction. Kage still breathes, blinks and eases; it just doesn't bounce.
+// How far Slippy moves: all the way, or - with Reduce Motion on - a gentle
+// fraction. Slippy still breathes, blinks and eases; it just doesn't bounce.
 CGFloat Motion() { return ReduceMotion() ? 0.3 : 1.0; }
 
 CAMediaTimingFunction* Curve(float a, float b, float c, float d) { return [CAMediaTimingFunction functionWithControlPoints:a :b :c :d]; }
@@ -163,13 +204,17 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 
 } // namespace
 
-@implementation KAGEMascotView {
-	CALayer* _root;          // hops, shakes, tilts; anchored on the ground under Kage
+@implementation SlippyMascotView {
+	CALayer* _root;          // hops, shakes, tilts; anchored on the ground under Slippy
 	CALayer* _squash;        // squash & stretch
 	CALayer* _breath;        // the breathing loop
-	CAShapeLayer* _body;
+	CAShapeLayer* _body;     // skin: head + eye rims
+	CAShapeLayer* _cheeks;
+	CAShapeLayer* _mouth;
 	CALayer* _eyes;          // the pair: looks around
-	CAShapeLayer* _eye[2];
+	CALayer* _eye[2];        // one eye: white + mark; blinks squeeze the whole eye
+	CAShapeLayer* _white[2];
+	CAShapeLayer* _mark[2];  // pupil, or the shut-eye line
 	NSMutableArray<CATextLayer*>* _zs;
 	BOOL _snoring;
 	CGFloat _D;
@@ -195,17 +240,26 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_breath = [CALayer layer];
 		for (CALayer* l in @[_root, _squash, _breath]) l.anchorPoint = CGPointMake(0.5, 0);   // pivot on the ground
 		_body = [CAShapeLayer layer];
+		_cheeks = [CAShapeLayer layer];
+		_mouth = [CAShapeLayer layer];
+		_mouth.fillColor = nil;
+		_mouth.lineCap = kCALineCapRound;
 		_eyes = [CALayer layer];
 		[_root addSublayer:_squash];
 		[_squash addSublayer:_breath];
 		[_breath addSublayer:_body];
+		[_breath addSublayer:_cheeks];
+		[_breath addSublayer:_mouth];
 		[_breath addSublayer:_eyes];
 		for (int i = 0; i < 2; i++) {
-			_eye[i] = [CAShapeLayer layer];
-			_eye[i].fillColor = nil;
-			_eye[i].strokeColor = NSColor.blackColor.CGColor;
-			_eye[i].lineCap = kCALineCapButt;
-			_eye[i].lineJoin = kCALineJoinMiter;
+			_eye[i] = [CALayer layer];
+			_white[i] = [CAShapeLayer layer];
+			_white[i].fillColor = NSColor.whiteColor.CGColor;
+			_mark[i] = [CAShapeLayer layer];
+			_mark[i].lineCap = kCALineCapRound;
+			_mark[i].lineJoin = kCALineJoinRound;
+			[_eye[i] addSublayer:_white[i]];
+			[_eye[i] addSublayer:_mark[i]];
 			[_eyes addSublayer:_eye[i]];
 		}
 		[self.layer addSublayer:_root];
@@ -219,7 +273,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_shown = Face::Sleep;
 		_mood = Mood::Asleep;
 		_available = YES;
-		[self paintBody:KageBlue()];
+		[self paintBody:SlippyGreen()];
 	}
 	return self;
 }
@@ -271,12 +325,24 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		l.bounds = box;
 		l.position = CGPointMake(_D / 2, 0);
 	}
-	_body.frame = box;
-	CGPathRef circle = CGPathCreateWithEllipseInRect(box, nullptr);
-	_body.path = circle;
-	CGPathRelease(circle);
+	CGPathRef frog = HeadPath(_D);
+	_body.path = frog;
+	CGPathRelease(frog);
+	CGPathRef mouth = MouthPath(_D), cheeks = CheeksPath(_D), white = CirclePath(kWhiteR * _D);
+	for (CAShapeLayer* l in @[_body, _cheeks, _mouth]) l.frame = box;
+	_mouth.path = mouth;
+	_mouth.lineWidth = 0.04 * _D;
+	_cheeks.path = cheeks;
+	for (int i = 0; i < 2; i++) {
+		_eye[i].bounds = CGRectZero;
+		_eye[i].position = CGPointMake((0.5 + (i ? kEyeX : -kEyeX)) * _D, kEyeY * _D);
+		_white[i].path = white;
+	}
+	CGPathRelease(mouth);
+	CGPathRelease(cheeks);
+	CGPathRelease(white);
 	_eyes.bounds = box;
-	_eyes.position = [self eyeSpot];
+	_eyes.position = CGPointMake(_D / 2, _D / 2);
 	[self drawFace];
 	for (CATextLayer* z in _zs) {
 		CGFloat size = kZs[2].size * _D;
@@ -284,24 +350,29 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		z.bounds = CGRectMake(0, 0, size * 1.4, size * 1.6);
 	}
 	[CATransaction commit];
-	// The Z's follow Kage's size; and the first layout is when they can start.
+	// The Z's follow Slippy's size; and the first layout is when they can start.
 	if (_D != oldD) { _snoring = NO; [self snore:[self wantsSnore]]; }
 }
 
-- (CGPoint)eyeSpot { return CGPointMake(_D / 2 + _look.x * _D, _D / 2 + _look.y * _D); }
+// Where the pupils sit in their whites (only open eyes look around).
+- (CGPoint)pupilSpot { return _shown == Face::Awake ? CGPointMake(_look.x * kLookRange * _D, _look.y * kLookRange * _D) : CGPointZero; }
 
 // Shape + spot of both eyes for _shown (no animation).
 - (void)drawFace
 {
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
+	bool open = _shown == Face::Awake;
 	for (int i = 0; i < 2; i++) {
 		CGPathRef p = EyePath(_shown, i == 1, _D);
-		_eye[i].path = p;
+		_mark[i].path = p;
 		CGPathRelease(p);
-		_eye[i].lineWidth = EyeWidth(_shown, _D);
-		_eye[i].bounds = CGRectZero;
-		_eye[i].position = CGPointMake(_D / 2 + (i ? kEyeX : -kEyeX) * _D, _D / 2 + EyeY(_shown) * _D);
+		_mark[i].lineWidth = EyeWidth(_shown, _D);
+		_mark[i].fillColor = open ? NSColor.blackColor.CGColor : nil;
+		_mark[i].strokeColor = open ? nil : NSColor.blackColor.CGColor;
+		_mark[i].bounds = CGRectZero;
+		_mark[i].position = [self pupilSpot];
+		_white[i].hidden = !open;   // shut: the green lid shows
 	}
 	[CATransaction commit];
 }
@@ -310,6 +381,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{
 		self->_body.fillColor = color.CGColor;
+		self->_mouth.strokeColor = MouthColor().CGColor;
+		self->_cheeks.fillColor = [CheekColor() colorWithAlphaComponent:0.85].CGColor;
 	}];
 }
 
@@ -352,14 +425,15 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[self closeEyes:0.06 hold:0.03 then:nil open:0.12];
 	if (twice) {
 		int mood = _moodGen;
-		[self after:0.28 do:^(KAGEMascotView* me) { if (me->_moodGen == mood) [me closeEyes:0.06 hold:0.03 then:nil open:0.12]; }];
+		[self after:0.28 do:^(SlippyMascotView* me) { if (me->_moodGen == mood) [me closeEyes:0.06 hold:0.03 then:nil open:0.12]; }];
 	}
 }
 
 - (void)lookAt:(CGPoint)look
 {
 	_look = look;
-	Spring(_eyes, @"position", [NSValue valueWithPoint:[self eyeSpot]], 300, 20);   // darts, overshoots a hair, settles
+	for (int i = 0; i < 2; i++)   // the pupils dart, overshoot a hair, settle
+		Spring(_mark[i], @"position", [NSValue valueWithPoint:[self pupilSpot]], 300, 20);
 }
 
 // ---- body
@@ -402,7 +476,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	CGFloat angle = (Random(0, 1) < 0.5 ? -1 : 1) * 0.08 * Motion();
 	Spring(_root, @"transform.rotation.z", @(angle), 140, 11);
 	int mood = _moodGen;
-	[self after:Random(0.7, 1.2) do:^(KAGEMascotView* me) {
+	[self after:Random(0.7, 1.2) do:^(SlippyMascotView* me) {
 		if (me->_moodGen == mood) Spring(me->_root, @"transform.rotation.z", @0, 140, 11);
 	}];
 }
@@ -470,7 +544,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	else [self snoreDrifting];
 }
 
-// Each Z rises from beside Kage along a gentle arc, growing, swaying and
+// Each Z rises from beside Slippy along a gentle arc, growing, swaying and
 // fading; three of them, a third of a cycle apart, so the trail never jumps.
 - (void)snoreDrifting
 {
@@ -533,11 +607,11 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 
 // ---- moods
 
-- (void)after:(double)seconds do:(void (^)(KAGEMascotView* me))work
+- (void)after:(double)seconds do:(void (^)(SlippyMascotView* me))work
 {
-	__weak KAGEMascotView* weakSelf = self;
+	__weak SlippyMascotView* weakSelf = self;
 	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-		if (KAGEMascotView* me = weakSelf) work(me);
+		if (SlippyMascotView* me = weakSelf) work(me);
 	});
 }
 
@@ -552,7 +626,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[self scheduleIdle];
 }
 
-// Little things Kage does on its own: working - looks around (sooner when
+// Little things Slippy does on its own: working - looks around (sooner when
 // busy), blinks, tilts its head; asleep - the odd snuffle.
 - (void)scheduleIdle
 {
@@ -563,7 +637,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	if (_mood == Mood::Working) wait = Random(0.6, 1.8) * (1.0 - 0.6 * _busy);
 	else if (_mood == Mood::Asleep && _available && !_paused) wait = Random(7, 16);
 	else return;
-	__weak KAGEMascotView* weakSelf = self;
+	__weak SlippyMascotView* weakSelf = self;
 	_idleTimer = After(wait, ^(NSTimer*) { [weakSelf idle]; });
 }
 
@@ -600,7 +674,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	Play(_squash, @"squash.x", @"transform.scale.x", @[@(1 + k), @(1 - 0.3 * k), @1], times, curves, 0.5);
 	Play(_squash, @"squash.y", @"transform.scale.y", @[@(1 - k), @(1 + 0.3 * k), @1], times, curves, 0.5);
 	int mood = _moodGen;
-	[self after:0.8 do:^(KAGEMascotView* me) {
+	[self after:0.8 do:^(SlippyMascotView* me) {
 		if (me->_moodGen == mood && me->_shown == Face::Ouch) [me showFace:Face::Awake];
 	}];
 }
@@ -608,7 +682,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 - (void)restartSleepTimer
 {
 	[_sleepTimer invalidate];
-	__weak KAGEMascotView* weakSelf = self;
+	__weak SlippyMascotView* weakSelf = self;
 	_sleepTimer = After(self.sleepAfter, ^(NSTimer*) { [weakSelf doze]; });
 }
 
@@ -622,14 +696,14 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[self lookAt:CGPointZero];
 	[self showFace:Face::Happy];
 	CGFloat y = _root.position.y, dip = 0.035 * _D * Motion();
-	[self after:0.6 do:^(KAGEMascotView* me) {
+	[self after:0.6 do:^(SlippyMascotView* me) {
 		if (me->_moodGen != mood) return;
 		Play(me->_root, @"nod", @"position.y", @[@(y - dip), @(y - dip), @(y)], @[@0, @0.6, @0.7, @1],
 			@[EaseInOut(), EaseInOut(), Overshoot()], 1.1);
 		Play(me->_root, @"nodTilt", @"transform.rotation.z", @[@(-0.05 * Motion()), @(-0.05 * Motion()), @0], @[@0, @0.6, @0.7, @1],
 			@[EaseInOut(), EaseInOut(), Overshoot()], 1.1);
 	}];
-	[self after:1.9 do:^(KAGEMascotView* me) {
+	[self after:1.9 do:^(SlippyMascotView* me) {
 		if (me->_moodGen != mood) return;
 		[me showFace:Face::Sleep];
 		[me enterMood:Mood::Asleep];
@@ -670,10 +744,10 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		int mood = _moodGen;
 		[self showFace:Face::Happy];
 		[self stretch];
-		[self after:0.45 do:^(KAGEMascotView* me) {
+		[self after:0.45 do:^(SlippyMascotView* me) {
 			if (me->_moodGen == mood) [me hop:0.16 squash:0.12 duration:0.62];
 		}];
-		[self after:1.0 do:^(KAGEMascotView* me) {
+		[self after:1.0 do:^(SlippyMascotView* me) {
 			if (me->_moodGen != mood) return;
 			[me enterMood:Mood::Working];
 			[me showFace:Face::Awake];
@@ -725,11 +799,11 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 // One bar per command group. A call kicks its group's bar up (a spring, higher
 // for slower calls); the bars sink back while nothing happens.
 
-@interface KAGEBarsView : NSView
+@interface SlippyBarsView : NSView
 - (void)bump:(int)group color:(NSColor*)color strength:(double)strength;
 @end
 
-@implementation KAGEBarsView {
+@implementation SlippyBarsView {
 	NSMutableArray<CALayer*>* _bars;
 	NSMutableArray<NSTextField*>* _labels;
 }
@@ -813,19 +887,19 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 
 // ------------------------------------------------------------------ panel
 
-@interface KAGEFeedView : NSView   // top-down, newest row at y = 0
+@interface SlippyFeedView : NSView   // top-down, newest row at y = 0
 @end
-@implementation KAGEFeedView
+@implementation SlippyFeedView
 - (BOOL)isFlipped { return YES; }
 @end
 
 // One feed line: colored dot, what happened, time of day. Lays itself out
 // from its own width, so a row made before the panel had a size still fits.
-@interface KAGEFeedRow : NSView
+@interface SlippyFeedRow : NSView
 - (instancetype)initWithLine:(NSString*)line tip:(NSString*)tip color:(NSColor*)color ok:(BOOL)ok;
 @end
 
-@implementation KAGEFeedRow {
+@implementation SlippyFeedRow {
 	NSView* _dot;
 	NSTextField* _text;
 	NSTextField* _time;
@@ -863,9 +937,9 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 }
 @end
 
-@implementation KAGEPanelView {
-	KAGEMascotView* _kage;
-	KAGEBarsView* _bars;
+@implementation SlippyPanelView {
+	SlippyMascotView* _slippy;
+	SlippyBarsView* _bars;
 	NSTextField* _title;
 	NSTextField* _status;
 	NSTextField* _counts;
@@ -874,7 +948,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	NSView* _feed;
 	NSMutableArray<NSView*>* _rows;
 	NSTimer* _tick;
-	std::deque<double> _recent;   // call times, for how busy Kage looks
+	std::deque<double> _recent;   // call times, for how busy Slippy looks
 	long _calls, _errors;
 	BOOL _listening, _paused;
 }
@@ -885,10 +959,10 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	if ((self = [super initWithFrame:frame])) {
 		self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-		_kage = [[KAGEMascotView alloc] initWithFrame:NSZeroRect];
-		_bars = [[KAGEBarsView alloc] initWithFrame:NSZeroRect];
+		_slippy = [[SlippyMascotView alloc] initWithFrame:NSZeroRect];
+		_bars = [[SlippyBarsView alloc] initWithFrame:NSZeroRect];
 		_title = Label(15, NSFontWeightBold, NSColor.labelColor);
-		_title.stringValue = @"KAGE";
+		_title.stringValue = @"Slippy";
 		_status = Label(11, NSFontWeightRegular, NSColor.secondaryLabelColor);
 		_counts = Label(10, NSFontWeightRegular, NSColor.tertiaryLabelColor);
 		_counts.font = [NSFont monospacedDigitSystemFontOfSize:10 weight:NSFontWeightRegular];
@@ -899,11 +973,11 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_copy.controlSize = NSControlSizeSmall;
 		_copy.bezelStyle = NSBezelStyleRounded;
 		_copy.font = [NSFont systemFontOfSize:11];
-		_feed = [[KAGEFeedView alloc] initWithFrame:NSZeroRect];
+		_feed = [[SlippyFeedView alloc] initWithFrame:NSZeroRect];
 		_feed.wantsLayer = YES;
 		_feed.layer.masksToBounds = YES;
 		_rows = [NSMutableArray array];
-		for (NSView* v in @[_kage, _bars, _title, _status, _counts, _pause, _copy, _feed]) [self addSubview:v];
+		for (NSView* v in @[_slippy, _bars, _title, _status, _counts, _pause, _copy, _feed]) [self addSubview:v];
 		[self setStatus:@"Starting…" listening:NO];
 		[self updateCounts];
 	}
@@ -914,12 +988,12 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	[super layout];
 	CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-	CGFloat kage = 124, text = kPad + kage + 2;
-	_kage.frame = NSMakeRect(kPad - 6, kPad - 6, kage, kage);
+	CGFloat slippy = 124, text = kPad + slippy + 2;
+	_slippy.frame = NSMakeRect(kPad - 6, kPad - 6, slippy, slippy);
 	_title.frame = NSMakeRect(text, kPad + 34, w - text - kPad, 20);
 	_status.frame = NSMakeRect(text, kPad + 56, w - text - kPad, 16);
 	_counts.frame = NSMakeRect(text, kPad + 74, w - text - kPad, 14);
-	CGFloat y = kPad + kage;
+	CGFloat y = kPad + slippy;
 	_bars.frame = NSMakeRect(kPad, y, w - 2 * kPad, 54);
 	y += 62;
 	[_pause sizeToFit];
@@ -935,7 +1009,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	_status.stringValue = text;
 	_listening = listening;
-	[_kage setAvailable:_listening paused:_paused];
+	[_slippy setAvailable:_listening paused:_paused];
 }
 
 - (void)updateCounts
@@ -948,15 +1022,15 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	double now = CACurrentMediaTime();
 	while (!_recent.empty() && now - _recent.front() > 3) _recent.pop_front();
-	[_kage setBusy:std::min(1.0, _recent.size() / 5.0)];
+	[_slippy setBusy:std::min(1.0, _recent.size() / 5.0)];
 }
 
 - (void)startTicking
 {
 	if (_tick) return;
-	__weak KAGEPanelView* weakSelf = self;
+	__weak SlippyPanelView* weakSelf = self;
 	_tick = [NSTimer scheduledTimerWithTimeInterval:1.0 / 30 repeats:YES block:^(NSTimer* t) {
-		KAGEPanelView* s = weakSelf;
+		SlippyPanelView* s = weakSelf;
 		if (!s) { [t invalidate]; return; }
 		[s refreshBusy];
 		if (s->_recent.empty()) { [t invalidate]; s->_tick = nil; }
@@ -971,14 +1045,14 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[self updateCounts];
 	NSColor* color = !ok ? ErrorColor() : edit ? EditColor() : ReadColor();
 	[self refreshBusy];
-	[_kage callArrived:color ok:ok];
+	[_slippy callArrived:color ok:ok];
 	[_bars bump:GroupOf(method.UTF8String) color:color strength:0.35 + std::min(0.5, ms / 400.0)];
 	// "shown line\nmore detail": the detail joins the tooltip.
 	NSRange nl = [line rangeOfString:@"\n"];
 	NSString* shown = nl.location == NSNotFound ? line : [line substringToIndex:nl.location];
 	NSString* detail = nl.location == NSNotFound ? @"" : [[line substringFromIndex:nl.location + 1] stringByAppendingString:@"\n"];
 	NSString* tip = [NSString stringWithFormat:@"%@%@ · %@", detail, method, ms < 1 ? @"under 1 ms" : [NSString stringWithFormat:@"%.0f ms", ms]];
-	[self addRow:[[KAGEFeedRow alloc] initWithLine:shown tip:tip color:color ok:ok]];
+	[self addRow:[[SlippyFeedRow alloc] initWithLine:shown tip:tip color:color ok:ok]];
 	[self startTicking];
 }
 
@@ -1012,7 +1086,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	_paused = sender.state == NSControlStateValueOn;
 	if (self.onPause) self.onPause(_paused);
-	[_kage setAvailable:_listening paused:_paused];
+	[_slippy setAvailable:_listening paused:_paused];
 }
 
 - (void)copyConnection:(id)sender

@@ -1,5 +1,5 @@
 #include "IllustratorSDK.h"
-#include "KAGESuites.h"
+#include "SlippySuites.h"
 
 extern "C" {
 	SPBlocksSuite*			sSPBlocks = nullptr;
@@ -55,7 +55,7 @@ ImportSuite gImportSuites[] =
 	kAIUndoSuite, kAIUndoSuiteVersion, &sAIUndo,
 	kAIUUIDSuite, kAIUUIDSuiteVersion, &sAIUUID,
 	kAIRuntimeSuite, kAIRuntimeSuiteVersion, &sAIRuntime,
-	kAIPanelSuite, kAIPanelSuiteVersion, &sAIPanel,			// the KAGE panel (checked before use)
+	kAIPanelSuite, kAIPanelSuiteVersion, &sAIPanel,			// the Slippy panel (checked before use)
 	kAIFileFormatSuite, kAIFileFormatSuiteVersion, &sAIFileFormat,
 	kAIAnnotatorSuite, kAIAnnotatorSuiteVersion, &sAIAnnotator,		// the canvas overlay (Overlay.h)
 	kAIAnnotatorDrawerSuite, kAIAnnotatorDrawerSuiteVersion, &sAIAnnotatorDrawer,
@@ -82,7 +82,7 @@ extern "C" SPBasicSuite* sSPBasic;
 static int gTimerVersion = -1;
 static const void* gTimerSuite = nullptr;
 
-int KAGETimerVersion()
+int SlippyTimerVersion()
 {
 	if (gTimerVersion < 0) {
 		gTimerVersion = 0;
@@ -94,9 +94,9 @@ int KAGETimerVersion()
 	return gTimerVersion;
 }
 
-AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable)
+AIErr SlippyAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable)
 {
-	int v = KAGETimerVersion();
+	int v = SlippyTimerVersion();
 	if (!v) return kCantHappenErr;
 	// Version 6 can run the timer in an undo-tracked context, so agent edits
 	// land on Edit > Undo; older ones get a standard context set in GoTimer.
@@ -104,9 +104,9 @@ AIErr KAGEAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimer
 	return ((const TimerSuiteV5*) gTimerSuite)->AddTimer(self, name, period, timer);
 }
 
-AIErr KAGESetTimerActive(AITimerHandle timer, AIBoolean active)
+AIErr SlippySetTimerActive(AITimerHandle timer, AIBoolean active)
 {
-	int v = KAGETimerVersion();
+	int v = SlippyTimerVersion();
 	if (!v) return kCantHappenErr;
 	return v >= 6 ? ((const AITimerSuite*) gTimerSuite)->SetTimerActive(timer, active)
 		: ((const TimerSuiteV5*) gTimerSuite)->SetTimerActive(timer, active);

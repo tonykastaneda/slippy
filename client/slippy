@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""kage - call Illustrator directly through the KAGE plug-in.
+"""slippy - call Illustrator directly through the Slippy plug-in.
 
-  kage app.info
-  kage commands                                  # list every command
-  kage shape.rect x=0 y=0 width=100 height=50 fill='"#FF3366"'
-  kage art.transform '{"rotate": 45}'            # JSON params work too
-  kage --batch calls.json                        # [{"method":..,"params":..}, ...]
+  slippy app.info
+  slippy commands                                  # list every command
+  slippy shape.rect x=0 y=0 width=100 height=50 fill='"#FF3366"'
+  slippy art.transform '{"rotate": 45}'            # JSON params work too
+  slippy --batch calls.json                        # [{"method":..,"params":..}, ...]
 
 key=value values are parsed as JSON when they can be (numbers, true, [1,2]),
 otherwise taken as strings.
@@ -16,7 +16,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from kage_client import KageError, batch, call  # noqa: E402
+from slippy_client import SlippyError, batch, call  # noqa: E402
 
 
 def parse_params(args):
@@ -25,7 +25,7 @@ def parse_params(args):
     params = {}
     for a in args:
         if "=" not in a:
-            sys.exit(f"kage: expected key=value, got {a!r}")
+            sys.exit(f"slippy: expected key=value, got {a!r}")
         k, v = a.split("=", 1)
         if k in ("id", "parent", "name", "command", "event", "contents", "path", "title", "preset", "to"):
             params[k] = v   # always text, even when it looks like a number ("476")
@@ -55,8 +55,8 @@ def main(argv):
             return 1 if any("error" in r for r in out) else 0
         print(json.dumps(call(argv[0], parse_params(argv[1:])), indent=2))
         return 0
-    except KageError as e:
-        print(f"kage: {e}", file=sys.stderr)
+    except SlippyError as e:
+        print(f"slippy: {e}", file=sys.stderr)
         return 1
 
 

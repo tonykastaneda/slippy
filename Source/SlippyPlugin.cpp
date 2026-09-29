@@ -1,7 +1,7 @@
 #include "IllustratorSDK.h"
-#include "KAGEPlugin.h"
+#include "SlippyPlugin.h"
 #include "Commands.h"
-#include "KAGEPanel.h"
+#include "SlippyPanel.h"
 #include "Mcp.h"
 #include "Overlay.h"
 #include "AppContext.hpp"
@@ -32,7 +32,7 @@ struct Job {
 
 std::mutex gQueueMutex;
 std::deque<std::shared_ptr<Job>> gQueue;
-KAGEPlugin* gPlugin = nullptr;   // main thread only
+SlippyPlugin* gPlugin = nullptr;   // main thread only
 std::atomic<bool> gPaused{false};    // the panel's "Pause agents"
 std::atomic<bool> gShuttingDown{false};
 const char* gLastRunVia = "none";   // app.info reports it: "menu" (undoable) or "timer"
@@ -67,9 +67,9 @@ json::Value Submit(const json::Value& request)
 	if (first.isObject() && first.get("timeout").isNumber()) seconds = first.get("timeout").asNumber();
 	seconds = std::max(1.0, std::min(seconds, 3600.0));
 	if (gShuttingDown)
-		return Failure(first.isObject() ? first.get("id") : json::Value(), kage::kErrUnavailable, "Illustrator is shutting down");
+		return Failure(first.isObject() ? first.get("id") : json::Value(), slippy::kErrUnavailable, "Illustrator is shutting down");
 	if (gPaused)
-		return Failure(first.isObject() ? first.get("id") : json::Value(), kage::kErrUnavailable, "KAGE is paused in its Illustrator panel");
+		return Failure(first.isObject() ? first.get("id") : json::Value(), slippy::kErrUnavailable, "Slippy is paused in its Illustrator panel");
 
 	auto job = std::make_shared<Job>();
 	job->request = request;
@@ -81,7 +81,7 @@ json::Value Submit(const json::Value& request)
 	dispatch_async_f(dispatch_get_main_queue(), nullptr, KickMain);
 
 	if (result.wait_for(std::chrono::duration<double>(seconds)) != std::future_status::ready) {
-		return Failure(first.isObject() ? first.get("id") : json::Value(), kage::kErrTimeout,
+		return Failure(first.isObject() ? first.get("id") : json::Value(), slippy::kErrTimeout,
 			"Illustrator didn't run the call within " + std::to_string((int) seconds) +
 			"s (a modal dialog open? a long operation?). It still runs when Illustrator is free.");
 	}
@@ -108,7 +108,7 @@ void FailQueue()
 {
 	gShuttingDown = true;
 	std::lock_guard<std::mutex> lock(gQueueMutex);
-	for (auto& job : gQueue) job->promise.set_value(Failure(json::Value(), kage::kErrUnavailable, "Illustrator is shutting down"));
+	for (auto& job : gQueue) job->promise.set_value(Failure(json::Value(), slippy::kErrUnavailable, "Illustrator is shutting down"));
 	gQueue.clear();
 }
 
@@ -118,42 +118,42 @@ void FailQueue()
 
 Plugin* AllocatePlugin(SPPluginRef pluginRef)
 {
-	return new KAGEPlugin(pluginRef);
+	return new SlippyPlugin(pluginRef);
 }
 
 void FixupReload(Plugin* plugin)
 {
-	KAGEPlugin::FixupVTable((KAGEPlugin*) plugin);
+	SlippyPlugin::FixupVTable((SlippyPlugin*) plugin);
 }
 
-KAGEPlugin::KAGEPlugin(SPPluginRef pluginRef)
+SlippyPlugin::SlippyPlugin(SPPluginRef pluginRef)
 	: Plugin(pluginRef)
 {
-	strncpy(fPluginName, kKAGEPluginName, kMaxStringLength);
+	strncpy(fPluginName, kSlippyPluginName, kMaxStringLength);
 }
 
-ASErr KAGEPlugin::StartupPlugin(SPInterfaceMessage* message)
+ASErr SlippyPlugin::StartupPlugin(SPInterfaceMessage* message)
 {
 	ASErr error = Plugin::StartupPlugin(message);
 	if (error) return error;
 	AIPlatformAddMenuItemDataUS menuData;
-	menuData.groupName = kKAGEMenuGroup;
-	menuData.itemText = ai::UnicodeString::FromUTF8(kKAGEMenuItemText);
-	if (sAIMenu->AddMenuItem(fPluginRef, kKAGEMenuItemName, &menuData, 0, &fPanelItem)) fPanelItem = nullptr;
+	menuData.groupName = kSlippyMenuGroup;
+	menuData.itemText = ai::UnicodeString::FromUTF8(kSlippyMenuItemText);
+	if (sAIMenu->AddMenuItem(fPluginRef, kSlippyMenuItemName, &menuData, 0, &fPanelItem)) fPanelItem = nullptr;
 	AIPlatformAddMenuItemDataUS runData;
-	runData.groupName = kKAGEMenuGroup;
-	runData.itemText = ai::UnicodeString::FromUTF8(kKAGERunItemName);
-	if (sAIMenu->AddMenuItem(fPluginRef, kKAGERunItemName, &runData, 0, &fRunItem)) fRunItem = nullptr;
-	AddPanel();   // never fails startup: without it KAGE still serves agents
-	kage::overlay::Init(fPluginRef);   // likewise optional
+	runData.groupName = kSlippyMenuGroup;
+	runData.itemText = ai::UnicodeString::FromUTF8(kSlippyRunItemName);
+	if (sAIMenu->AddMenuItem(fPluginRef, kSlippyRunItemName, &runData, 0, &fRunItem)) fRunItem = nullptr;
+	AddPanel();   // never fails startup: without it Slippy still serves agents
+	slippy::overlay::Init(fPluginRef);   // likewise optional
 	return kNoErr;
 }
 
-void KAGEPlugin::AddPanel()
+void SlippyPlugin::AddPanel()
 {
 	if (!sAIPanel) return;
 	AISize minSize = {220, 260};
-	if (sAIPanel->Create(fPluginRef, ai::UnicodeString::FromUTF8("KAGE"), ai::UnicodeString::FromUTF8("KAGE"), 1, minSize, true, nullptr, this, fPanel)) {
+	if (sAIPanel->Create(fPluginRef, ai::UnicodeString::FromUTF8("Slippy"), ai::UnicodeString::FromUTF8("Slippy"), 1, minSize, true, nullptr, this, fPanel)) {
 		fPanel = nullptr;
 		return;
 	}
@@ -161,43 +161,43 @@ void KAGEPlugin::AddPanel()
 	cb.setPaused = [](bool paused) { gPaused = paused; };
 	cb.connectionInfo = [this] { return ConnectionInfo(); };
 	PanelAttach(fPanel, cb);
-	kage::SetCallObserver([](const std::string& method, bool ok, bool changes, double ms, const std::string& line) {
+	slippy::SetCallObserver([](const std::string& method, bool ok, bool changes, double ms, const std::string& line) {
 		PanelCall(method, ok, changes, ms, line);
 	});
 }
 
 // What "Copy connection" puts on the clipboard: the one line that connects
 // Claude Code, and the pieces any other MCP client needs.
-std::string KAGEPlugin::ConnectionInfo() const
+std::string SlippyPlugin::ConnectionInfo() const
 {
 	std::string port = std::to_string(fServer.Port());
 	std::string mcp = "http://127.0.0.1:" + port + "/mcp";
-	return "claude mcp add --transport http kage " + mcp + " --header \"Authorization: Bearer " + fServer.Token() + "\"\n\n"
+	return "claude mcp add --transport http slippy " + mcp + " --header \"Authorization: Bearer " + fServer.Token() + "\"\n\n"
 		"Other MCP clients - URL: " + mcp + "\n"
 		"Header: Authorization: Bearer " + fServer.Token() + "\n"
 		"Scripts: POST http://127.0.0.1:" + port + "/rpc with the same header\n";
 }
 // After every plug-in has started: open the door for agents.
-ASErr KAGEPlugin::PostStartupPlugin()
+ASErr SlippyPlugin::PostStartupPlugin()
 {
 	ASErr error = Plugin::PostStartupPlugin();
 	gPlugin = this;
-	if (fRunItem && sAICommandManager && sAICommandManager->GetCommandIDFromName(kKAGERunItemName, &fRunCommand)) fRunCommand = 0;
-	// The run command is KAGE's own plumbing: keep it out of the Window menu.
+	if (fRunItem && sAICommandManager && sAICommandManager->GetCommandIDFromName(kSlippyRunItemName, &fRunCommand)) fRunCommand = 0;
+	// The run command is Slippy's own plumbing: keep it out of the Window menu.
 	// (Again a little later, in case Illustrator builds the menu after startup.)
-	HideMenuItemTitled(kKAGERunItemName);
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ HideMenuItemTitled(kKAGERunItemName); });
-	int port = kKAGEDefaultPort;
-	if (const char* env = getenv("KAGE_PORT")) if (atoi(env) > 0) port = atoi(env);
-	auto mcp = [](const json::Value& message) { return kage::HandleMcp(message, Submit); };
-	if (fServer.Start(Submit, mcp, port, kKAGEVersion, fServerError))
+	HideMenuItemTitled(kSlippyRunItemName);
+	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ HideMenuItemTitled(kSlippyRunItemName); });
+	int port = kSlippyDefaultPort;
+	if (const char* env = getenv("SLIPPY_PORT")) if (atoi(env) > 0) port = atoi(env);
+	auto mcp = [](const json::Value& message) { return slippy::HandleMcp(message, Submit); };
+	if (fServer.Start(Submit, mcp, port, kSlippyVersion, fServerError))
 		PanelSetStatus("Listening on 127.0.0.1:" + std::to_string(fServer.Port()), true);
 	else
 		PanelSetStatus("Not listening: " + (fServerError.empty() ? std::string("the server didn't start") : fServerError), false);
 	return error;
 }
 
-ASErr KAGEPlugin::PreShutdownPlugin()
+ASErr SlippyPlugin::PreShutdownPlugin()
 {
 	FailQueue();
 	fServer.Stop();
@@ -205,19 +205,19 @@ ASErr KAGEPlugin::PreShutdownPlugin()
 	return Plugin::PreShutdownPlugin();
 }
 
-ASErr KAGEPlugin::ShutdownPlugin(SPInterfaceMessage* message)
+ASErr SlippyPlugin::ShutdownPlugin(SPInterfaceMessage* message)
 {
 	FailQueue();
 	fServer.Stop();
 	gPlugin = nullptr;
-	kage::SetCallObserver(nullptr);
-	kage::overlay::Shutdown();
+	slippy::SetCallObserver(nullptr);
+	slippy::overlay::Shutdown();
 	PanelDetach();
 	if (fPanel && sAIPanel) { sAIPanel->Destroy(fPanel); fPanel = nullptr; }
 	return Plugin::ShutdownPlugin(message);
 }
 
-ASErr KAGEPlugin::GoMenuItem(AIMenuMessage* message)
+ASErr SlippyPlugin::GoMenuItem(AIMenuMessage* message)
 {
 	if (message->menuItem == fRunItem) {
 		gLastRunVia = "menu";
@@ -228,12 +228,12 @@ ASErr KAGEPlugin::GoMenuItem(AIMenuMessage* message)
 	if (fPanel) { sAIPanel->Show(fPanel, true); return kNoErr; }
 	// No panel suite: say where things stand instead.
 	if (!sAIUser) return kNoErr;
-	std::string text = fServer.Port() ? ConnectionInfo() : "KAGE isn't listening: " + fServerError;
+	std::string text = fServer.Port() ? ConnectionInfo() : "Slippy isn't listening: " + fServerError;
 	sAIUser->MessageAlert(ai::UnicodeString::FromUTF8(text));
 	return kNoErr;
 }
 
-void KAGEPlugin::Kick()
+void SlippyPlugin::Kick()
 {
 	if (QueueEmpty()) return;
 	AppContext context(fPluginRef);
@@ -246,33 +246,33 @@ void KAGEPlugin::Kick()
 	}
 	// Added on first use: adding a timer during startup makes Illustrator
 	// refuse the plug-in (found building RAGE).
-	if (!fTimer && KAGEAddTimer(fPluginRef, "KAGE Calls", 1, &fTimer)) fTimer = nullptr;
-	if (fTimer) KAGESetTimerActive(fTimer, true);
+	if (!fTimer && SlippyAddTimer(fPluginRef, "Slippy Calls", 1, &fTimer)) fTimer = nullptr;
+	if (fTimer) SlippySetTimerActive(fTimer, true);
 	else RunPending();   // no timer suite: run here, inside the app context
 }
 
-ASErr KAGEPlugin::Message(char* caller, char* selector, void* message)
+ASErr SlippyPlugin::Message(char* caller, char* selector, void* message)
 {
-	if (!strcmp(caller, kCallerAIAnnotation)) return kage::overlay::Annotate(selector, (AIAnnotatorMessage*) message);
+	if (!strcmp(caller, kCallerAIAnnotation)) return slippy::overlay::Annotate(selector, (AIAnnotatorMessage*) message);
 	return Plugin::Message(caller, selector, message);
 }
 
-ASErr KAGEPlugin::GoTimer(AITimerMessage* message)
+ASErr SlippyPlugin::GoTimer(AITimerMessage* message)
 {
-	if (kage::overlay::IsTimer(message->timer)) {
-		kage::overlay::Tick();
+	if (slippy::overlay::IsTimer(message->timer)) {
+		slippy::overlay::Tick();
 		return kNoErr;
 	}
 	if (fTimer && message->timer == fTimer) {
 		if (fRunning) return kNoErr;   // nested event loop; the outer run drains the queue
-		KAGESetTimerActive(fTimer, false);
+		SlippySetTimerActive(fTimer, false);
 		gLastRunVia = "timer";
 		RunPending();
 	}
 	return kNoErr;
 }
 
-void KAGEPlugin::RunPending()
+void SlippyPlugin::RunPending()
 {
 	fRunning = true;
 	// Timer messages come in a silent undo context: edits there never reach
@@ -291,10 +291,10 @@ void KAGEPlugin::RunPending()
 	while (auto job = PopJob()) {
 		json::Value response;
 		try {
-			response = kage::Handle(job->request);
+			response = slippy::Handle(job->request);
 		}
 		catch (...) {
-			response = Failure(json::Value(), kage::kErrInternal, "internal error");
+			response = Failure(json::Value(), slippy::kErrInternal, "internal error");
 		}
 		job->promise.set_value(std::move(response));
 	}

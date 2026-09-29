@@ -1,20 +1,20 @@
 #include "Mcp.h"
 #include "Commands.h"
-#include "KAGEID.h"
+#include "SlippyID.h"
 
 #include <string>
 
-namespace kage {
+namespace slippy {
 
 namespace {
 
 const char* kProtocol = "2025-06-18";
 
 const char* kInstructions =
-	"KAGE drives Adobe Illustrator directly through a native plug-in (no JSX). "
+	"Slippy drives Adobe Illustrator directly through a native plug-in (no JSX). "
 	"Coordinates are Illustrator artwork points with y growing upward; call document_info first for the artboard bounds. "
 	"Art ids are strings from art_tree / art_selection / creation results. Commands that take ids act on the selection when none are given. "
-	"Every call is one step on Edit > Undo; use kage_batch to make several calls one step.";
+	"Every call is one step on Edit > Undo; use slippy_batch to make several calls one step.";
 
 json::Value Error(const json::Value& id, int code, const std::string& message)
 {
@@ -66,16 +66,16 @@ json::Value ToolList()
 	json::Value tools = json::Value::MakeArray();
 	{
 		json::Value t;
-		t["name"] = "kage_status";
-		t["description"] = "Check that Illustrator and KAGE are reachable: versions, open document count, undo steps.";
+		t["name"] = "slippy_status";
+		t["description"] = "Check that Illustrator and Slippy are reachable: versions, open document count, undo steps.";
 		t["inputSchema"]["type"] = "object";
 		t["inputSchema"]["properties"] = json::Value::MakeObject();
 		tools.push(t);
 	}
 	{
 		json::Value t;
-		t["name"] = "kage_batch";
-		t["description"] = "Run several KAGE commands back to back as ONE undo step; stops at the first error. "
+		t["name"] = "slippy_batch";
+		t["description"] = "Run several Slippy commands back to back as ONE undo step; stops at the first error. "
 			"Each call is {method, params} with the dotted method names (shape.rect, art.transform, ...).";
 		json::Value call;
 		call["type"] = "object";
@@ -111,7 +111,7 @@ json::Value ToolResult(const json::Value& response)
 	text["type"] = "text";
 	if (!err.isNull()) {
 		std::string message = err.get("message").isString() ? err.get("message").asString() : "error";
-		if (err.get("code").isNumber()) message = "KAGE error " + std::to_string(err.get("code").asInt()) + ": " + message;
+		if (err.get("code").isNumber()) message = "Slippy error " + std::to_string(err.get("code").asInt()) + ": " + message;
 		if (err.get("data").isObject()) message += " " + err.get("data").dump();
 		text["text"] = message;
 		out["isError"] = true;
@@ -132,7 +132,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 	const json::Value& args = params.get("arguments");
 	json::Value arguments = args.isObject() ? args : json::Value::MakeObject();
 
-	if (name == "kage_batch") {
+	if (name == "slippy_batch") {
 		const json::Value& calls = arguments.get("calls");
 		if (!calls.isArray() || calls.size() == 0) {
 			json::Value e;
@@ -161,8 +161,8 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 		return out;
 	}
 
-	std::string method = name == "kage_status" ? "app.info" : name;
-	if (name != "kage_status") {
+	std::string method = name == "slippy_status" ? "app.info" : name;
+	if (name != "slippy_status") {
 		size_t dot = method.find('_');   // group_action -> group.action
 		if (dot != std::string::npos) method[dot] = '.';
 	}
@@ -194,9 +194,9 @@ json::Value HandleMcp(const json::Value& message, const RunCall& run)
 		// Answer in the client's version when it's one this server speaks.
 		r["protocolVersion"] = asked == "2025-06-18" || asked == "2025-03-26" ? asked : std::string(kProtocol);
 		r["capabilities"]["tools"]["listChanged"] = false;
-		r["serverInfo"]["name"] = "kage";
-		r["serverInfo"]["title"] = "KAGE for Adobe Illustrator";
-		r["serverInfo"]["version"] = kKAGEVersion;
+		r["serverInfo"]["name"] = "slippy";
+		r["serverInfo"]["title"] = "Slippy for Adobe Illustrator";
+		r["serverInfo"]["version"] = kSlippyVersion;
 		r["instructions"] = kInstructions;
 		return Result(id, r);
 	}
@@ -213,4 +213,4 @@ json::Value HandleMcp(const json::Value& message, const RunCall& run)
 	return Error(id, kErrMethodNotFound, "unsupported MCP method '" + method + "'");
 }
 
-} // namespace kage
+} // namespace slippy

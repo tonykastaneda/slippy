@@ -1,16 +1,16 @@
 #include "IllustratorSDK.h"
-#include "KAGEPanel.h"
-#include "KAGESuites.h"
+#include "SlippyPanel.h"
+#include "SlippySuites.h"
 
-#import "KAGEPanelView.h"
+#import "SlippyPanelView.h"
 
-// Hosts KAGEPanelView (KAGEPanelView.mm) in Illustrator's docked panel.
+// Hosts SlippyPanelView (SlippyPanelView.mm) in Illustrator's docked panel.
 
 // ------------------------------------------------------------------ C++ side
 
 namespace {
 AIPanelRef gPanel = nullptr;
-KAGEPanelView* gView = nil;
+SlippyPanelView* gView = nil;
 PanelCallbacks gCallbacks;
 NSString* gStatus = @"Starting…";
 BOOL gListening = NO;
@@ -24,7 +24,7 @@ void Install()
 	if (sAIPanel->GetPlatformWindow(gPanel, host) || !host) return;
 	if (gView && gView.superview == host) return;
 	if (!gView) {
-		gView = [[KAGEPanelView alloc] initWithFrame:host.bounds];
+		gView = [[SlippyPanelView alloc] initWithFrame:host.bounds];
 		gView.onPause = ^(BOOL paused) { if (gCallbacks.setPaused) gCallbacks.setPaused(paused); };
 		gView.connectionInfo = ^NSString* { return gCallbacks.connectionInfo ? NS(gCallbacks.connectionInfo()) : @""; };
 		[gView setStatus:gStatus listening:gListening];

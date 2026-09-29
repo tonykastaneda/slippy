@@ -1,10 +1,10 @@
-#ifndef __KAGE_MCP_H__
-#define __KAGE_MCP_H__
+#ifndef __SLIPPY_MCP_H__
+#define __SLIPPY_MCP_H__
 
-// MCP (Model Context Protocol) over KAGE's HTTP server: POST /mcp, the
+// MCP (Model Context Protocol) over Slippy's HTTP server: POST /mcp, the
 // streamable HTTP transport, answered as plain JSON (no SSE stream). Every
-// KAGE command is a tool (art.transform -> art_transform), plus kage_batch
-// (many calls, one undo step) and kage_status. Stateless: no session ids.
+// Slippy command is a tool (art.transform -> art_transform), plus slippy_batch
+// (many calls, one undo step) and slippy_status. Stateless: no session ids.
 //
 // Runs on a server thread. Tool calls go through `run`, which hands them to
 // Illustrator's main thread the same way /rpc calls go.
@@ -13,13 +13,13 @@
 
 #include <functional>
 
-namespace kage {
+namespace slippy {
 
 using RunCall = std::function<json::Value(const json::Value& jsonRpcRequest)>;
 
 // One MCP message in; its response out, or null for a notification.
 json::Value HandleMcp(const json::Value& message, const RunCall& run);
 
-} // namespace kage
+} // namespace slippy
 
-#endif // __KAGE_MCP_H__
+#endif // __SLIPPY_MCP_H__

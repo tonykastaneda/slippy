@@ -1,9 +1,9 @@
-// `make preview`: the KAGE panel in a plain window with made-up agent calls,
-// to watch Kage without installing into Illustrator.
-//   build/KAGEPreview                 live: bursts of calls, quiet spells (he dozes off)
-//   build/KAGEPreview --snapshot DIR  still PNGs of each face (for checking the drawing)
+// `make preview`: the Slippy panel in a plain window with made-up agent calls,
+// to watch Slippy without installing into Illustrator.
+//   build/SlippyPreview                 live: bursts of calls, quiet spells (he dozes off)
+//   build/SlippyPreview --snapshot DIR  still PNGs of each face (for checking the drawing)
 
-#import "KAGEPanelView.h"
+#import "SlippyPanelView.h"
 #include "Json.h"
 #include "Narrate.h"
 
@@ -12,13 +12,13 @@ struct Fake { const char* method; const char* params; const char* result; const 
 static const Fake kSession[] = {
 	{"app.info", "{}", "{}", ""},
 	{"document.new", "{\"width\":400,\"height\":400,\"title\":\"Poster\"}", "{}", ""},
-	{"shape.ellipse", "{\"x\":75,\"y\":-75,\"width\":250,\"height\":250,\"name\":\"Kage body\"}", "{\"name\":\"Kage body\"}", ""},
+	{"shape.ellipse", "{\"x\":75,\"y\":-75,\"width\":250,\"height\":250,\"name\":\"Slippy body\"}", "{\"name\":\"Slippy body\"}", ""},
 	{"path.create", "{\"points\":[[1,2],[3,4]],\"name\":\"left eye\"}", "{\"name\":\"left eye\"}", ""},
 	{"text.create", "{\"position\":[30,-95],\"contents\":\"Z\"}", "{}", ""},
 	{"art.tree", "{}", "[]", ""},
-	{"art.group", "{\"ids\":[\"1\",\"2\",\"3\"],\"name\":\"Kage\"}", "{\"name\":\"Kage\"}", ""},
-	{"art.transform", "{\"id\":\"4\",\"rotate\":15}", "[{\"type\":\"group\",\"name\":\"Kage\"}]", ""},
-	{"art.set", "{\"id\":\"1\",\"fill\":\"#437BFA\"}", "[{\"type\":\"path\",\"name\":\"Kage body\"}]", ""},
+	{"art.group", "{\"ids\":[\"1\",\"2\",\"3\"],\"name\":\"Slippy\"}", "{\"name\":\"Slippy\"}", ""},
+	{"art.transform", "{\"id\":\"4\",\"rotate\":15}", "[{\"type\":\"group\",\"name\":\"Slippy\"}]", ""},
+	{"art.set", "{\"id\":\"1\",\"fill\":\"#437BFA\"}", "[{\"type\":\"path\",\"name\":\"Slippy body\"}]", ""},
 	{"art.get", "{\"id\":\"99\"}", "null", "no art with id 99 in the active document"},
 	{"layer.create", "{\"name\":\"Agents\"}", "{\"name\":\"Agents\"}", ""},
 	{"shape.rect", "{\"x\":0,\"y\":0,\"width\":120,\"height\":40}", "{}", ""},
@@ -27,23 +27,23 @@ static const Fake kSession[] = {
 };
 static const int kSessionCount = sizeof kSession / sizeof kSession[0];
 
-static void Play(KAGEPanelView* panel, const Fake& f)
+static void Play(SlippyPanelView* panel, const Fake& f)
 {
-	std::string line = kage::Narrate(f.method, json::Parse(f.params), json::Parse(f.result), f.error);
+	std::string line = slippy::Narrate(f.method, json::Parse(f.params), json::Parse(f.result), f.error);
 	NSString* m = [NSString stringWithUTF8String:f.method];
 	bool edit = ![@[@"app.info", @"art.tree", @"art.get"] containsObject:m];
 	[panel call:m line:[NSString stringWithUTF8String:line.c_str()] ok:!*f.error edit:edit ms:arc4random_uniform(40)];
 }
 
 @interface Driver : NSObject
-@property (nonatomic, strong) KAGEPanelView* panel;
+@property (nonatomic, strong) SlippyPanelView* panel;
 - (void)burst;
 @end
 
 @implementation Driver {
 	int _next;
 }
-// A burst of 3-7 calls from the session, then 2-10 s of quiet (over 6 s and Kage dozes off).
+// A burst of 3-7 calls from the session, then 2-10 s of quiet (over 6 s and Slippy dozes off).
 - (void)burst
 {
 	int n = 3 + (int) arc4random_uniform(5);
@@ -77,10 +77,10 @@ int main(int argc, const char* argv[])
 		app.activationPolicy = NSApplicationActivationPolicyRegular;
 		NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(200, 200, 260, 400)
 			styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
-		win.title = @"KAGE preview";
+		win.title = @"Slippy preview";
 		win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];   // like Illustrator's dark UI
 		win.backgroundColor = [NSColor colorWithWhite:0.22 alpha:1];
-		KAGEPanelView* panel = [[KAGEPanelView alloc] initWithFrame:win.contentView.bounds];
+		SlippyPanelView* panel = [[SlippyPanelView alloc] initWithFrame:win.contentView.bounds];
 		[win.contentView addSubview:panel];
 		[panel setStatus:@"Preview - made-up calls" listening:YES];
 		panel.connectionInfo = ^NSString* { return @"(preview)"; };
@@ -95,7 +95,7 @@ int main(int argc, const char* argv[])
 			for (int i = 0; i < 9; i++) Play(panel, kSession[i]);
 			wait(0.3);
 			Snapshot(panel, [dir stringByAppendingPathComponent:@"2-waking.png"]);
-			wait(0.6);
+			wait(1.2);   // the stretch and hop, then eyes open
 			Snapshot(panel, [dir stringByAppendingPathComponent:@"3-working.png"]);
 			Play(panel, kSession[9]);
 			wait(0.3);
