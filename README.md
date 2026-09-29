@@ -42,7 +42,8 @@ and simple black eyes, no mouth. Slippy reacts to what agents are doing:
 | Ouch | `> <`, a flinch, a shake that dies away, a red flash | A call failed |
 | Dozing | `^ ^`, nods off, catches himself, then `— —` | About 6 s after the last call |
 
-Every face change happens through a blink. Moves ease in and out and start
+Click Slippy to wake him up: he stays awake looking around for 20 seconds
+(awake already, he hops happily). Every face change happens through a blink. Moves ease in and out and start
 from wherever Slippy is on screen, so one never cuts another off with a jump:
 hops, squash and stretch, and breathing each run on their own layer. Each call also sends a ripple out
 from Slippy (teal = read, amber = edit, red = error), kicks its command group's

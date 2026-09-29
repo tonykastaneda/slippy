@@ -2,6 +2,7 @@
 // to watch Slippy without installing into Illustrator.
 //   build/SlippyPreview                 live: bursts of calls, quiet spells (he dozes off)
 //   build/SlippyPreview --once          one burst, then quiet
+//   build/SlippyPreview --quiet         no calls at all (click Slippy to wake him)
 //   build/SlippyPreview --snapshot DIR  still PNGs of each face (for checking the drawing)
 
 #import "SlippyPanelView.h"
@@ -111,6 +112,7 @@ int main(int argc, const char* argv[])
 		Driver* driver = [Driver new];
 		driver.panel = panel;
 		driver.once = argc == 2 && !strcmp(argv[1], "--once");   // one burst, then quiet: watch Slippy doze off
+		if (argc == 2 && !strcmp(argv[1], "--quiet")) { [app run]; return 0; }   // no calls: click Slippy
 		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [driver burst]; });
 		[app run];
 	}

@@ -70,13 +70,15 @@ enum class Mood { Asleep, Waking, Working, Dozing };
 // Units of D, from the box's bottom-left.
 const CGFloat kEyeX = 0.22, kEyeY = 0.70;   // eye (bump) centers: 0.5 +/- kEyeX, kEyeY
 const CGFloat kBumpR = 0.2;
+const CGFloat kBumpFollow = 0.35;   // how much of a look the bumps follow
 
 // Where the eye pair sits for each face: sleepy eyes droop, happy ones lift.
 CGFloat EyeLift(Face f) { return f == Face::Sleep ? -0.03 : f == Face::Happy ? 0.02 : 0.0; }
 
 CGPathRef HeadPath(CGFloat D) { return CGPathCreateWithEllipseInRect(CGRectMake(0, 0.06 * D, D, 0.62 * D), nullptr); }
 
-// The two eye bumps. They ride along with the eyes, so a look moves the whole eye.
+// The two eye bumps. They follow the eyes part of the way (kBumpFollow), so a
+// look turns the whole eye without the bumps leaving the head.
 CGPathRef BumpsPath(CGFloat D)
 {
 	CGMutablePathRef p = CGPathCreateMutable();
@@ -118,6 +120,8 @@ CGFloat EyeWidth(Face f, CGFloat D) { return (f == Face::Sleep ? 0.045 : f == Fa
 // The three Z's of the art: offset from the body's center, font size.
 struct ZSpot { CGFloat x, y, size; };
 const ZSpot kZs[] = {{-0.56, 0.3, 0.13}, {-0.64, 0.5, 0.16}, {-0.68, 0.72, 0.21}};   // up and away from the left eye
+
+const double kClickAwake = 20;   // seconds a click keeps Slippy awake
 
 // How far Slippy moves: all the way, or - with Reduce Motion on - a gentle
 // fraction. Slippy still breathes, blinks and eases; it just doesn't bounce.
@@ -185,7 +189,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	CALayer* _squash;        // squash & stretch
 	CALayer* _breath;        // the breathing loop
 	CAShapeLayer* _body;     // skin: the head
-	CAShapeLayer* _bumps;    // skin: the eye bumps, inside _eyes so they move with the eyes
+	CAShapeLayer* _bumps;    // skin: the eye bumps, which follow the eyes part of the way
 	CALayer* _eyes;          // the pair: looks around
 	CALayer* _eye[2];        // one eye: white + mark; blinks squeeze the whole eye
 	CAShapeLayer* _mark[2];  // the eye's stroke: o, —, ^, > <
@@ -202,6 +206,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	BOOL _available, _paused;
 	NSTimer* _idleTimer;     // looks, blinks, tilts, snuffles
 	NSTimer* _sleepTimer;
+	double _awakeUntil;      // a click keeps Slippy up until then (CACurrentMediaTime)
 }
 
 - (instancetype)initWithFrame:(NSRect)frame
@@ -219,8 +224,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		[_root addSublayer:_squash];
 		[_squash addSublayer:_breath];
 		[_breath addSublayer:_body];
+		[_breath addSublayer:_bumps];
 		[_breath addSublayer:_eyes];
-		[_eyes addSublayer:_bumps];
 		for (int i = 0; i < 2; i++) {
 			_eye[i] = [CALayer layer];
 			_mark[i] = [CAShapeLayer layer];
@@ -299,7 +304,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	CGPathRelease(frog);
 	_body.frame = box;
 	CGPathRef bumps = BumpsPath(_D);
-	_bumps.frame = box;
+	_bumps.bounds = box;
+	_bumps.position = [self bumpSpot];
 	_bumps.path = bumps;
 	CGPathRelease(bumps);
 	for (int i = 0; i < 2; i++) _eye[i].bounds = CGRectZero;
@@ -314,10 +320,12 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[CATransaction commit];
 	// The Z's follow Slippy's size; and the first layout is when they can start.
 	if (_D != oldD) { _snoring = NO; [self snore:[self wantsSnore]]; }
+	if (_D != oldD) [self.window invalidateCursorRectsForView:self];
 }
 
 // The eye pair moves together when Slippy looks around.
 - (CGPoint)eyeSpot { return CGPointMake(_D / 2 + _look.x * _D, _D / 2 + _look.y * _D); }
+- (CGPoint)bumpSpot { return CGPointMake(_D / 2 + _look.x * kBumpFollow * _D, _D / 2 + _look.y * kBumpFollow * _D); }
 
 // Shape + spot of both eyes for _shown (no animation).
 - (void)drawFace
@@ -390,6 +398,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	_look = look;
 	Spring(_eyes, @"position", [NSValue valueWithPoint:[self eyeSpot]], 300, 20);   // darts, overshoots a hair, settles
+	Spring(_bumps, @"position", [NSValue valueWithPoint:[self bumpSpot]], 260, 20);
 }
 
 // ---- body
@@ -642,7 +651,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 {
 	[_sleepTimer invalidate];
 	__weak SlippyMascotView* weakSelf = self;
-	_sleepTimer = After(self.sleepAfter, ^(NSTimer*) { [weakSelf doze]; });
+	double wait = std::max((double) self.sleepAfter, _awakeUntil - CACurrentMediaTime());
+	_sleepTimer = After(wait, ^(NSTimer*) { [weakSelf doze]; });
 }
 
 // Quiet for a while: eyes back to center, a content ^ ^, nods off - catches
@@ -698,20 +708,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[self ripple:color];
 	[self restartSleepTimer];
 	if (_mood == Mood::Asleep || _mood == Mood::Dozing) {
-		// Waking up: a stretch with a content ^ ^, a hop, then eyes open.
-		[self enterMood:Mood::Waking];
-		int mood = _moodGen;
-		[self showFace:Face::Happy];
-		[self stretch];
-		[self after:0.45 do:^(SlippyMascotView* me) {
-			if (me->_moodGen == mood) [me hop:0.16 squash:0.12 duration:0.62];
-		}];
-		[self after:1.0 do:^(SlippyMascotView* me) {
-			if (me->_moodGen != mood) return;
-			[me enterMood:Mood::Working];
-			[me showFace:Face::Awake];
-			if (!ok) [me wince];
-		}];
+		[self wakeUp:ok];
 		return;
 	}
 	if (_mood != Mood::Working) return;
@@ -720,6 +717,58 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[self lookAt:CGPointMake(Random(-0.12, 0.12), Random(-0.05, 0.08))];
 	if ([color isEqual:EditColor()] && ![_root animationForKey:@"hop"]) [self hop:0.05 squash:0.06 duration:0.4];
 	[self scheduleIdle];   // it just looked; the next idle glance can wait
+}
+
+// Waking up: a stretch with a content ^ ^, a hop, then eyes open.
+- (void)wakeUp:(BOOL)ok
+{
+	[self enterMood:Mood::Waking];
+	int mood = _moodGen;
+	[self showFace:Face::Happy];
+	[self stretch];
+	[self after:0.45 do:^(SlippyMascotView* me) {
+		if (me->_moodGen == mood) [me hop:0.16 squash:0.12 duration:0.62];
+	}];
+	[self after:1.0 do:^(SlippyMascotView* me) {
+		if (me->_moodGen != mood) return;
+		[me enterMood:Mood::Working];
+		[me showFace:Face::Awake];
+		if (!ok) [me wince];
+	}];
+}
+
+// ---- clicks
+
+- (BOOL)acceptsFirstMouse:(NSEvent*)event { return YES; }   // works even when the panel isn't focused
+
+- (NSRect)frogRect
+{
+	return NSMakeRect(_center.x - _D / 2, _center.y - _D / 2, _D, _D);   // layer coords = view coords (not flipped)
+}
+
+- (void)resetCursorRects { [self addCursorRect:[self frogRect] cursor:NSCursor.pointingHandCursor]; }
+
+- (NSView*)hitTest:(NSPoint)point
+{
+	NSPoint p = [self convertPoint:point fromView:self.superview];
+	return NSPointInRect(p, [self frogRect]) ? self : nil;
+}
+
+// A click wakes Slippy, who then stays up looking around for a while; awake
+// already, Slippy hops happily. Paused, Slippy only stirs.
+- (void)mouseDown:(NSEvent*)event
+{
+	if (!_available || _paused) { [self snuffle]; return; }
+	_awakeUntil = CACurrentMediaTime() + kClickAwake;
+	[self restartSleepTimer];
+	if (_mood == Mood::Asleep || _mood == Mood::Dozing) { [self wakeUp:YES]; return; }
+	if (_mood != Mood::Working || [_root animationForKey:@"hop"]) return;
+	int mood = _moodGen;
+	[self showFace:Face::Happy];
+	[self hop:0.1 squash:0.1 duration:0.5];
+	[self after:0.7 do:^(SlippyMascotView* me) {
+		if (me->_moodGen == mood && me->_shown == Face::Happy) [me showFace:Face::Awake];
+	}];
 }
 
 - (void)ripple:(NSColor*)color
