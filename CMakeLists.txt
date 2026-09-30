@@ -80,8 +80,9 @@ target_compile_definitions(Slippy PRIVATE
 # pragma.h silences SDK warnings (as in the SDK's own projects); /utf-8 keeps
 # the feed's “quotes” and the panel's glyphs intact.
 target_compile_options(Slippy PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8 /EHsc /W3 /FI${COMMON}/win/pragma.h /wd4996>)
-# C++/WinRT (Windows.Data.Pdf for PNG / JPEG export) wants these.
-set_source_files_properties(Source/Raster.cpp PROPERTIES COMPILE_OPTIONS "/bigobj;/permissive-;/Zc:__cplusplus")
+# C++/WinRT (Windows.Data.Pdf for PNG / JPEG export) wants these, and C++20:
+# under C++17 it reaches for the removed <experimental/coroutine>.
+set_source_files_properties(Source/Raster.cpp PROPERTIES COMPILE_OPTIONS "/std:c++20;/bigobj;/permissive-;/Zc:__cplusplus")
 # The SDK headers' std names meet GDI+'s 'byte'; the panel doesn't need std::byte.
 set_source_files_properties(Source/SlippyPanelWin.cpp PROPERTIES COMPILE_DEFINITIONS "_HAS_STD_BYTE=0")
 
