@@ -1,0 +1,154 @@
+# Builds Slippy.aip for macOS (signed with Developer ID and notarized when the
+# secrets are set, ad hoc otherwise) and Windows (x64 and ARM64). A v* tag
+# also publishes both as a GitHub release.
+#
+# The Adobe Illustrator SDK is not in the repository: it is downloaded from
+# this private repo's "sdk-illustrator-2026" release.
+#
+# macOS signing / notarization, all optional:
+#   secrets.MACOS_CERT_P12       base64 of the Developer ID Application .p12
+#   secrets.MACOS_CERT_PASSWORD  that .p12's password
+#   secrets.APPLE_ID             the Apple ID email
+#   secrets.APPLE_APP_PASSWORD   an app-specific password for it
+#   vars.APPLE_TEAM_ID           the team (GM98GV6S97)
+name: Build
+
+on:
+  push:
+    branches: [main, windows-port]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    env:
+      SDK: ${{ github.workspace }}/../sdk/AdobeIllustratorSDK
+      HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' }}
+      HAS_NOTARY: ${{ secrets.MACOS_CERT_P12 != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_PASSWORD != '' && vars.APPLE_TEAM_ID != '' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download Illustrator SDK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download sdk-illustrator-2026 --repo "$GITHUB_REPOSITORY" --pattern AdobeIllustratorSDK.zip --dir "$RUNNER_TEMP"
+          mkdir -p "$SDK/.."
+          unzip -q "$RUNNER_TEMP/AdobeIllustratorSDK.zip" -d "$SDK/.."
+
+      - name: Import the signing certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Build
+        run: |
+          if [ "$HAS_CERT" = "true" ]; then
+            make SDK="$SDK" SIGN_ID="Developer ID Application" SIGN_FLAGS="--timestamp --options runtime"
+          else
+            echo "::notice::No signing certificate in the secrets - signing ad hoc."
+            make SDK="$SDK"
+          fi
+          codesign -dv --verbose=2 build/Slippy.aip
+
+      - name: Notarize
+        if: env.HAS_NOTARY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          ditto -c -k --keepParent build/Slippy.aip "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json" || true
+          cat "$RUNNER_TEMP/notary.json"
+          STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/notary.json" || true)
+          if [ "$STATUS" != "Accepted" ]; then
+            ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/notary.json" || true)
+            [ -n "$ID" ] && xcrun notarytool log "$ID" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" || true
+            echo "::error::Notarization failed (status: ${STATUS:-none})"
+            exit 1
+          fi
+          # Stapling lets Gatekeeper check the plug-in offline; a plug-in bundle
+          # may not take a ticket, and it still passes online without one.
+          xcrun stapler staple build/Slippy.aip || echo "::warning::Couldn't staple the ticket; Gatekeeper will check online."
+
+      - name: Package
+        run: ditto -c -k --keepParent build/Slippy.aip Slippy-macos.zip
+
+      - name: Upload plug-in
+        uses: actions/upload-artifact@v5
+        with:
+          name: Slippy-macos
+          path: Slippy-macos.zip
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, ARM64]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download Illustrator SDK
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download sdk-illustrator-2026 --repo "${{ github.repository }}" --pattern AdobeIllustratorSDK.zip --dir "$env:RUNNER_TEMP"
+          Expand-Archive "$env:RUNNER_TEMP\AdobeIllustratorSDK.zip" -DestinationPath "$env:RUNNER_TEMP\sdk"
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build-win -A ${{ matrix.arch }} -DAI_SDK="$env:RUNNER_TEMP\sdk\AdobeIllustratorSDK"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build-win --config Release
+
+      - name: Upload plug-in
+        uses: actions/upload-artifact@v5
+        with:
+          name: Slippy-windows-${{ matrix.arch }}
+          path: build-win/Release/Slippy.aip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          for arch in x64 ARM64; do (cd "Slippy-windows-$arch" && zip -q "../Slippy-windows-$arch.zip" Slippy.aip); done
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Slippy $GITHUB_REF_NAME" --generate-notes \
+            Slippy-macos/Slippy-macos.zip Slippy-windows-x64.zip Slippy-windows-ARM64.zip

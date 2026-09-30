@@ -1,17 +1,30 @@
 #include "Server.h"
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "Platform.h"
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+using ssize_t = long long;
+#define SOCKET_EINTR WSAEINTR
+static int SocketError() { return WSAGetLastError(); }
+static void CloseSocket(intptr_t fd) { closesocket((SOCKET) fd); }
+static std::string SocketErrorText() { return "socket error " + std::to_string(WSAGetLastError()); }
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#define SOCKET_EINTR EINTR
+static int SocketError() { return errno; }
+static void CloseSocket(int fd) { close(fd); }
+static std::string SocketErrorText() { return strerror(errno); }
+#endif
 
 namespace slippy {
 
@@ -23,7 +36,7 @@ const size_t kMaxBody = 64 * 1024 * 1024;
 std::string NewToken()
 {
 	unsigned char bytes[24];
-	arc4random_buf(bytes, sizeof bytes);
+	platform::RandomBytes(bytes, sizeof bytes);
 	static const char* hex = "0123456789abcdef";
 	std::string s;
 	for (unsigned char b : bytes) { s += hex[b >> 4]; s += hex[b & 15]; }
@@ -50,19 +63,19 @@ std::string Trim(const std::string& s)
 	return a == std::string::npos ? "" : s.substr(a, b - a + 1);
 }
 
-bool SendAll(int fd, const std::string& data)
+bool SendAll(intptr_t fd, const std::string& data)
 {
 	size_t sent = 0;
 	while (sent < data.size()) {
-		ssize_t n = send(fd, data.data() + sent, data.size() - sent, 0);
-		if (n < 0 && errno == EINTR) continue;
+		ssize_t n = send(fd, data.data() + sent, (int) std::min<size_t>(data.size() - sent, 1 << 30), 0);
+		if (n < 0 && SocketError() == SOCKET_EINTR) continue;
 		if (n <= 0) return false;
 		sent += (size_t) n;
 	}
 	return true;
 }
 
-void Respond(int fd, int status, const json::Value& body)
+void Respond(intptr_t fd, int status, const json::Value& body)
 {
 	const char* reason = status == 200 ? "OK" : status == 202 ? "Accepted" : status == 400 ? "Bad Request" : status == 401 ? "Unauthorized"
 		: status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 405 ? "Method Not Allowed"
@@ -87,41 +100,18 @@ json::Value ErrorBody(const std::string& message)
 
 } // namespace
 
-static std::string SupportDir()
-{
-	const char* home = getenv("HOME");
-	return std::string(home ? home : "/tmp") + "/Library/Application Support/Slippy";
-}
-
-static void MakeDirs(const std::string& dir)
-{
-	for (size_t slash = dir.find('/', 1); ; slash = dir.find('/', slash + 1)) {   // mkdir -p
-		mkdir(dir.substr(0, slash).c_str(), 0700);
-		if (slash == std::string::npos) break;
-	}
-}
-
-std::string Server::SessionFilePath() { return SupportDir() + "/session.json"; }
-std::string Server::TokenFilePath() { return SupportDir() + "/token"; }
+std::string Server::SessionFilePath() { return platform::JoinPath(platform::SupportDir(), "session.json"); }
+std::string Server::TokenFilePath() { return platform::JoinPath(platform::SupportDir(), "token"); }
 
 // The kept token, or a new one saved for next time. Delete the file to rotate it.
 static std::string LoadOrCreateToken()
 {
 	std::string path = Server::TokenFilePath();
-	{
-		std::ifstream in(path);
-		std::string t;
-		if (in >> t && t.size() >= 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) return t;
-	}
-	MakeDirs(SupportDir());
-	std::string t = NewToken();
-	std::string tmp = path + ".tmp";
-	{
-		std::ofstream out(tmp, std::ios::trunc);
-		out << t << "\n";
-	}
-	chmod(tmp.c_str(), 0600);
-	rename(tmp.c_str(), path.c_str());
+	std::string t;
+	if (platform::ReadFirstWord(path, t) && t.size() >= 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) return t;
+	platform::MakeDirs(platform::SupportDir());
+	t = NewToken();
+	platform::WritePrivateFile(path, t + "\n");
 	return t;
 }
 
@@ -132,12 +122,22 @@ bool Server::Start(Handler rpc, Handler mcp, int firstPort, const std::string& v
 	fVersion = version;
 	fToken = LoadOrCreateToken();
 	fStopping = false;
+#ifdef _WIN32
+	WSADATA wsa;
+	if (WSAStartup(MAKEWORD(2, 2), &wsa)) { error = "Winsock didn't start"; return false; }
+	fWinsock = true;
+#endif
 
 	for (int port = firstPort; port < firstPort + 10; port++) {
-		int fd = socket(AF_INET, SOCK_STREAM, 0);
-		if (fd < 0) { error = strerror(errno); return false; }
+		intptr_t fd = (intptr_t) socket(AF_INET, SOCK_STREAM, 0);
+		if (fd < 0) { error = SocketErrorText(); return false; }
 		int one = 1;
+#ifdef _WIN32
+		// Windows' SO_REUSEADDR would let another process take the port too.
+		setsockopt((SOCKET) fd, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*) &one, sizeof one);
+#else
 		setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+#endif
 		sockaddr_in addr = {};
 		addr.sin_family = AF_INET;
 		addr.sin_port = htons((uint16_t) port);
@@ -147,8 +147,8 @@ bool Server::Start(Handler rpc, Handler mcp, int firstPort, const std::string& v
 			fPort = port;
 			break;
 		}
-		error = "port " + std::to_string(port) + ": " + strerror(errno);
-		close(fd);
+		error = "port " + std::to_string(port) + ": " + SocketErrorText();
+		CloseSocket(fd);
 	}
 	if (fListenFd < 0) return false;
 	error.clear();
@@ -161,20 +161,26 @@ void Server::Stop()
 {
 	if (fListenFd < 0) return;
 	fStopping = true;
+#ifdef _WIN32
+	shutdown((SOCKET) fListenFd, SD_BOTH);
+#else
 	shutdown(fListenFd, SHUT_RDWR);
-	close(fListenFd);
+#endif
+	CloseSocket(fListenFd);
 	fListenFd = -1;
 	if (fAcceptThread.joinable()) fAcceptThread.join();
 	// Connection threads are detached; give in-flight ones a moment to finish
 	// before the plug-in's code goes away.
 	for (int i = 0; i < 300 && fActive > 0; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	unlink(SessionFilePath().c_str());
+	platform::RemoveFile(SessionFilePath());
+#ifdef _WIN32
+	if (fWinsock) { WSACleanup(); fWinsock = false; }
+#endif
 }
 
 void Server::WriteSessionFile()
 {
-	std::string path = SessionFilePath();
-	MakeDirs(SupportDir());
+	platform::MakeDirs(platform::SupportDir());
 	json::Value s;
 	s["name"] = "Slippy";
 	s["version"] = fVersion;
@@ -182,46 +188,45 @@ void Server::WriteSessionFile()
 	s["mcp"] = "http://127.0.0.1:" + std::to_string(fPort) + "/mcp";
 	s["port"] = fPort;
 	s["token"] = fToken;
-	s["pid"] = (int) getpid();
-	std::string tmp = path + ".tmp";
-	{
-		std::ofstream out(tmp, std::ios::trunc);
-		out << s.dump(2) << "\n";
-	}
-	chmod(tmp.c_str(), 0600);
-	rename(tmp.c_str(), path.c_str());
+	s["pid"] = platform::ProcessId();
+	platform::WritePrivateFile(SessionFilePath(), s.dump(2) + "\n");
 }
 
 void Server::AcceptLoop()
 {
 	while (!fStopping) {
-		int fd = accept(fListenFd, nullptr, nullptr);
+		intptr_t fd = (intptr_t) accept(fListenFd, nullptr, nullptr);
 		if (fd < 0) {
-			if (errno == EINTR) continue;
+			if (SocketError() == SOCKET_EINTR && !fStopping) continue;
 			break;   // closed by Stop()
 		}
+#ifdef _WIN32
+		DWORD timeout = 30000;
+		setsockopt((SOCKET) fd, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof timeout);
+#else
 		int one = 1;
 		setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
 		timeval tv = {30, 0};
 		setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+#endif
 		fActive++;
 		std::thread([this, fd] {
 			Serve(fd);
-			close(fd);
+			CloseSocket(fd);
 			fActive--;
 		}).detach();
 	}
 }
 
-void Server::Serve(int fd)
+void Server::Serve(intptr_t fd)
 {
 	// Read the header block.
 	std::string buf;
 	size_t headerEnd = std::string::npos;
 	char chunk[8192];
 	while (headerEnd == std::string::npos) {
-		ssize_t n = recv(fd, chunk, sizeof chunk, 0);
-		if (n < 0 && errno == EINTR) continue;
+		ssize_t n = recv(fd, chunk, (int) sizeof chunk, 0);
+		if (n < 0 && SocketError() == SOCKET_EINTR) continue;
 		if (n <= 0) return;
 		buf.append(chunk, (size_t) n);
 		headerEnd = buf.find("\r\n\r\n");
@@ -276,8 +281,8 @@ void Server::Serve(int fd)
 	size_t length = contentLength.empty() ? 0 : (size_t) strtoull(contentLength.c_str(), nullptr, 10);
 	if (length > kMaxBody) { Respond(fd, 413, ErrorBody("body too large")); return; }
 	while (body.size() < length) {
-		ssize_t n = recv(fd, chunk, sizeof chunk, 0);
-		if (n < 0 && errno == EINTR) continue;
+		ssize_t n = recv(fd, chunk, (int) sizeof chunk, 0);
+		if (n < 0 && SocketError() == SOCKET_EINTR) continue;
 		if (n <= 0) return;
 		body.append(chunk, (size_t) n);
 	}

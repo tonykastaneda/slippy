@@ -6,9 +6,8 @@
 #include "SlippyID.h"
 #include "IAIFilePath.hpp"
 #include "IText.h"
-
-#import <Foundation/Foundation.h>
-#import <ImageIO/ImageIO.h>
+#include "Platform.h"
+#include "Raster.h"
 
 #include <algorithm>
 #include <chrono>
@@ -16,7 +15,6 @@
 #include <functional>
 #include <map>
 #include <set>
-#include <unistd.h>
 
 namespace slippy {
 
@@ -848,8 +846,8 @@ AIRealRect ArtboardRect(const json::Value& p)
 }
 
 // PNG / JPEG at any resolution. Illustrator writes a PDF copy (its own
-// renderer, untouched document), and Core Graphics draws the page at the
-// asked resolution - cropped to the artboard, all the art, or one object.
+// renderer, untouched document), and the system draws the page at the asked
+// resolution (Raster.h) - cropped to the artboard, all the art, or one object.
 json::Value ExportRaster(const json::Value& p, const std::string& path, const std::string& kind)
 {
 	ActiveDocument();
@@ -893,45 +891,27 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 	crop.top = std::min(crop.top, board.top); crop.bottom = std::max(crop.bottom, board.bottom);
 	if (crop.right <= crop.left || crop.top <= crop.bottom) Fail(kErrInvalidParams, "that's outside artboard " + std::to_string(index));
 
-	std::string pdf = path + ".slippy.pdf";
-	WriteTo(pdf, "PDF File Format");
-	NSURL* pdfURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:pdf.c_str()]];
-	CGPDFDocumentRef doc = CGPDFDocumentCreateWithURL((__bridge CFURLRef) pdfURL);
-	unlink(pdf.c_str());
-	CGPDFPageRef page = doc ? CGPDFDocumentGetPage(doc, (size_t) index + 1) : nullptr;
-	if (!page) { if (doc) CGPDFDocumentRelease(doc); Fail(kErrIllustrator, "Illustrator's PDF had no page for artboard " + std::to_string(index)); }
-	CGRect box = CGPDFPageGetBoxRect(page, kCGPDFCropBox);
-
 	double k = dpi / 72.0;
-	size_t w = (size_t) std::max(1.0, std::ceil((crop.right - crop.left) * k)), h = (size_t) std::max(1.0, std::ceil((crop.top - crop.bottom) * k));
-	if ((double) w * h > 400e6) { CGPDFDocumentRelease(doc); Fail(kErrInvalidParams, "that's over 400 megapixels - lower 'scale' or 'dpi'"); }
-	bool transparent = kind == "png" && p.boolean("transparent", true);
-	CGColorSpaceRef rgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-	CGContextRef ctx = CGBitmapContextCreate(nullptr, w, h, 8, 0, rgb, (CGBitmapInfo) kCGImageAlphaPremultipliedLast);
-	CGColorSpaceRelease(rgb);
-	if (!ctx) { CGPDFDocumentRelease(doc); Fail(kErrIllustrator, "not enough memory for a " + std::to_string(w) + " x " + std::to_string(h) + " image"); }
-	if (!transparent) { CGContextSetRGBFillColor(ctx, 1, 1, 1, 1); CGContextFillRect(ctx, CGRectMake(0, 0, w, h)); }
-	CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
-	CGContextScaleCTM(ctx, k, k);
-	// Page space starts at the artboard's bottom-left.
-	CGContextTranslateCTM(ctx, -(box.origin.x + (crop.left - board.left)), -(box.origin.y + (crop.bottom - board.bottom)));
-	CGContextDrawPDFPage(ctx, page);
-	CGImageRef image = CGBitmapContextCreateImage(ctx);
-	CGContextRelease(ctx);
-	CGPDFDocumentRelease(doc);
-
-	NSURL* out = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
-	CGImageDestinationRef dst = CGImageDestinationCreateWithURL((__bridge CFURLRef) out, kind == "png" ? CFSTR("public.png") : CFSTR("public.jpeg"), 1, nullptr);
-	bool ok = false;
-	if (dst && image) {
-		NSMutableDictionary* props = [@{(__bridge NSString*) kCGImagePropertyDPIWidth: @(dpi), (__bridge NSString*) kCGImagePropertyDPIHeight: @(dpi)} mutableCopy];
-		if (kind == "jpg") props[(__bridge NSString*) kCGImageDestinationLossyCompressionQuality] = @(std::max(1.0, std::min(100.0, p.num("quality", 90))) / 100.0);
-		CGImageDestinationAddImage(dst, image, (__bridge CFDictionaryRef) props);
-		ok = CGImageDestinationFinalize(dst);
-	}
-	if (dst) CFRelease(dst);
-	if (image) CGImageRelease(image);
-	if (!ok) Fail(kErrIllustrator, "couldn't write " + path);
+	RasterJob job;
+	job.page = (int) index;
+	job.left = crop.left - board.left;
+	job.bottom = crop.bottom - board.bottom;
+	job.width = crop.right - crop.left;
+	job.height = crop.top - crop.bottom;
+	job.pixelsWide = (size_t) std::max(1.0, std::ceil(job.width * k));
+	job.pixelsHigh = (size_t) std::max(1.0, std::ceil(job.height * k));
+	if ((double) job.pixelsWide * job.pixelsHigh > 400e6) Fail(kErrInvalidParams, "that's over 400 megapixels - lower 'scale' or 'dpi'");
+	job.dpi = dpi;
+	job.png = kind == "png";
+	job.transparent = p.boolean("transparent", true);
+	job.quality = (int) p.num("quality", 90);
+	job.out = path;
+	job.pdf = path + ".slippy.pdf";
+	WriteTo(job.pdf, "PDF File Format");
+	std::string error = RenderPdfPage(job);
+	platform::RemoveFile(job.pdf);
+	if (!error.empty()) Fail(kErrIllustrator, error);
+	size_t w = job.pixelsWide, h = job.pixelsHigh;
 	json::Value v;
 	v["path"] = path;
 	v["format"] = kind;
@@ -946,7 +926,7 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 json::Value DocumentExport(const json::Value& p)
 {
 	std::string path = ReqStr(p, "path");
-	if (path.empty() || path[0] != '/') Fail(kErrInvalidParams, "'path' must be absolute (start with /)");
+	if (!platform::IsAbsolutePath(path)) Fail(kErrInvalidParams, "'path' must be absolute");
 	std::string kind = FormatKind(p, path);
 	if (kind == "png" || kind == "jpg") return ExportRaster(p, path, kind);
 	auto w = Writers().find(kind);
@@ -1419,7 +1399,7 @@ json::Value ArtPlace(const json::Value& p)
 	Need(sAIPlaced, "The placed art suite");
 	ActiveDocument();
 	std::string path = ReqStr(p, "path");
-	if (access(path.c_str(), R_OK)) Fail(kErrNotFound, "can't read " + path);
+	if (!platform::Readable(path)) Fail(kErrNotFound, "can't read " + path);
 	// Where it goes and what it fits are checked before placing anything.
 	ai::int16 order = kPlaceAboveAll;
 	AIArtHandle prep = nullptr;

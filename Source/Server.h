@@ -10,13 +10,15 @@
 //   POST /mcp     -> MCP (streamable HTTP, JSON responses), needs the token
 //
 // The token is made once and kept (~/Library/Application Support/Slippy/token,
-// mode 0600) so agents' saved MCP configs keep working across launches; the
-// session file next to it tells clients the port and token. Requests carrying
-// an Origin header (browsers) are refused, so a web page can't drive Illustrator.
+// mode 0600; %APPDATA%\Slippy\token on Windows) so agents' saved MCP configs
+// keep working across launches; the session file next to it tells clients the
+// port and token. Requests carrying an Origin header (browsers) are refused, so
+// a web page can't drive Illustrator.
 
 #include "Json.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <thread>
@@ -40,16 +42,17 @@ public:
 private:
 	Handler fHandler;
 	Handler fMcp;
-	int fListenFd = -1;
+	intptr_t fListenFd = -1;   // a socket (SOCKET on Windows)
 	int fPort = 0;
 	std::string fToken;
 	std::string fVersion;
 	std::thread fAcceptThread;
 	std::atomic<bool> fStopping{false};
 	std::atomic<int> fActive{0};
+	bool fWinsock = false;
 
 	void AcceptLoop();
-	void Serve(int fd);
+	void Serve(intptr_t fd);
 	void WriteSessionFile();
 };
 

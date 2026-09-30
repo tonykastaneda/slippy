@@ -5,8 +5,7 @@
 #include "Mcp.h"
 #include "Overlay.h"
 #include "AppContext.hpp"
-
-#include <dispatch/dispatch.h>
+#include "Platform.h"
 
 #include <atomic>
 #include <chrono>
@@ -18,7 +17,7 @@
 
 // ------------------------------------------------------------------ bridge
 // Server threads never touch the SDK. They queue a Job, ask the main thread
-// (GCD main queue) to Kick the plug-in, and wait on the job's future. Kick
+// (GCD's main queue, or a message window on Windows) to Kick the plug-in, and wait on the job's future. Kick
 // activates a one-tick timer; GoTimer runs the queue in a normal plug-in
 // context. A job that times out is abandoned - it still runs, its result is
 // dropped.
@@ -36,11 +35,6 @@ SlippyPlugin* gPlugin = nullptr;   // main thread only
 std::atomic<bool> gPaused{false};    // the panel's "Pause agents"
 std::atomic<bool> gShuttingDown{false};
 const char* gLastRunVia = "none";   // app.info reports it: "menu" (undoable) or "timer"
-
-void KickMain(void*)
-{
-	if (gPlugin) gPlugin->Kick();
-}
 
 json::Value Failure(const json::Value& id, int code, const std::string& message)
 {
@@ -78,7 +72,7 @@ json::Value Submit(const json::Value& request)
 		std::lock_guard<std::mutex> lock(gQueueMutex);
 		gQueue.push_back(job);
 	}
-	dispatch_async_f(dispatch_get_main_queue(), nullptr, KickMain);
+	slippy::platform::MainThreadKick();
 
 	if (result.wait_for(std::chrono::duration<double>(seconds)) != std::future_status::ready) {
 		return Failure(first.isObject() ? first.get("id") : json::Value(), slippy::kErrTimeout,
@@ -136,6 +130,7 @@ ASErr SlippyPlugin::StartupPlugin(SPInterfaceMessage* message)
 {
 	ASErr error = Plugin::StartupPlugin(message);
 	if (error) return error;
+	slippy::platform::MainThreadInit([] { if (gPlugin) gPlugin->Kick(); });
 	AIPlatformAddMenuItemDataUS menuData;
 	menuData.groupName = kSlippyMenuGroup;
 	menuData.itemText = ai::UnicodeString::FromUTF8(kSlippyMenuItemText);
@@ -186,7 +181,7 @@ ASErr SlippyPlugin::PostStartupPlugin()
 	// The run command is Slippy's own plumbing: keep it out of the Window menu.
 	// (Again a little later, in case Illustrator builds the menu after startup.)
 	HideMenuItemTitled(kSlippyRunItemName);
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ HideMenuItemTitled(kSlippyRunItemName); });
+	slippy::platform::MainThreadAfter(3, [] { HideMenuItemTitled(kSlippyRunItemName); });
 	int port = kSlippyDefaultPort;
 	if (const char* env = getenv("SLIPPY_PORT")) if (atoi(env) > 0) port = atoi(env);
 	auto mcp = [](const json::Value& message) { return slippy::HandleMcp(message, Submit); };
@@ -214,6 +209,7 @@ ASErr SlippyPlugin::ShutdownPlugin(SPInterfaceMessage* message)
 	slippy::overlay::Shutdown();
 	PanelDetach();
 	if (fPanel && sAIPanel) { sAIPanel->Destroy(fPanel); fPanel = nullptr; }
+	slippy::platform::MainThreadShutdown();
 	return Plugin::ShutdownPlugin(message);
 }
 

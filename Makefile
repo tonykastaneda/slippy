@@ -1,14 +1,17 @@
 # Slippy native Illustrator plug-in (arm64, macOS). Command Line Tools only -
 # no Xcode, no Visual Studio. Same recipe as RAGE / AA-ReColor.
-#   make            build + sign build/Slippy.aip (ad hoc; SIGN_ID="Developer ID ..." to sign for real)
+#   make            build + sign build/Slippy.aip (ad hoc; SIGN_ID="Developer ID ..." to sign for real,
+#                   with SIGN_FLAGS="--timestamp --options runtime" to notarize)
 #   make install    copy into Illustrator's Plug-ins folder (quit Illustrator first;
 #                   the first install needs sudo - the folder is root-owned)
 #   make preview    the panel + Slippy in a plain window with made-up calls
 #   make clean
+# Windows builds with CMakeLists.txt (see there).
 
 SDK        ?= $(HOME)/Developer/AdobeIllustratorSDK
 AI_APP     ?= /Applications/Adobe Illustrator 2026
 SIGN_ID    ?= -
+SIGN_FLAGS ?= --timestamp=none
 
 NAME       := Slippy
 BUILD      := build
@@ -28,6 +31,8 @@ SOURCES := \
 	Source/Narrate.cpp \
 	Source/Server.cpp \
 	Source/Json.cpp \
+	Source/Platform.cpp \
+	Source/Raster.cpp \
 	$(COMMON)/source/Main.cpp \
 	$(COMMON)/source/Plugin.cpp \
 	$(COMMON)/source/Suites.cpp \
@@ -91,7 +96,7 @@ $(BUILD)/.signed: $(EXE) Resources/Info.plist $(BUILD)/plugin.pipl $(BUILD)/$(NA
 	cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
 	printf 'ARPIART5' > $(BUNDLE)/Contents/PkgInfo
 	cp $(BUILD)/plugin.pipl $(BUNDLE)/Contents/Resources/pipl/plugin.pipl
-	codesign --force --sign "$(SIGN_ID)" --timestamp=none $(BUNDLE)
+	codesign --force --sign "$(SIGN_ID)" $(SIGN_FLAGS) $(BUNDLE)
 	codesign --verify --strict $(BUNDLE)
 	touch $@
 
