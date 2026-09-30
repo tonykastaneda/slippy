@@ -152,6 +152,7 @@ void SlippyPlugin::AddPanel()
 		fPanel = nullptr;
 		return;
 	}
+	sAIPanel->SetSVGIconResourceID(fPanel, kSlippyPanelIconID, kSlippyPanelDarkIconID);
 	PanelCallbacks cb;
 	cb.setPaused = [](bool paused) { gPaused = paused; };
 	cb.connectionInfo = [this] { return ConnectionInfo(); };

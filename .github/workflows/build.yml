@@ -15,7 +15,7 @@ name: Build
 
 on:
   push:
-    branches: [main, windows-port]
+    branches: [main]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:

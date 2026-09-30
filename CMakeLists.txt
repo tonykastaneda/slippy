@@ -60,6 +60,7 @@ set_target_properties(Slippy PROPERTIES
 
 target_include_directories(Slippy PRIVATE
 	Source
+	Resources/raw
 	${COMMON}/includes
 	${COMMON}/win
 	${API}/illustrator
@@ -100,7 +101,7 @@ add_custom_command(
 )
 add_custom_target(SlippyPipl DEPENDS "${PIPL}")
 add_dependencies(Slippy SlippyPipl)
-set_source_files_properties(Resources/Win/Slippy.rc PROPERTIES OBJECT_DEPENDS "${PIPL}")
+set_source_files_properties(Resources/Win/Slippy.rc PROPERTIES OBJECT_DEPENDS "${PIPL};${CMAKE_CURRENT_SOURCE_DIR}/Resources/raw/IDToFile.txt;${CMAKE_CURRENT_SOURCE_DIR}/Resources/raw/slippy_panel_light.svg;${CMAKE_CURRENT_SOURCE_DIR}/Resources/raw/slippy_panel_dark.svg")
 target_include_directories(Slippy PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 configure_file(Resources/Win/SlippyVersion.h.in "${CMAKE_CURRENT_BINARY_DIR}/SlippyVersion.h" @ONLY)

@@ -5,6 +5,10 @@
 
 plugin pipl "plugin.pipl"
 
+IDToFile txt "IDToFile.txt"
+slippy_panel_light svg "slippy_panel_light.svg"
+slippy_panel_dark svg "slippy_panel_dark.svg"
+
 1 VERSIONINFO
  FILEVERSION SLIPPY_VERSION_COMMAS
  PRODUCTVERSION SLIPPY_VERSION_COMMAS

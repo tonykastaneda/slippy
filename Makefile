@@ -90,12 +90,15 @@ $(BUILD)/$(NAME).rsrc: Resources/$(NAME).r
 	mkdir -p $(BUILD)
 	Rez -useDF -o $@ $<
 
-$(BUILD)/.signed: $(EXE) Resources/Info.plist $(BUILD)/plugin.pipl $(BUILD)/$(NAME).rsrc
+$(BUILD)/.signed: $(EXE) Resources/Info.plist Resources/raw/slippy_panel_light.svg Resources/raw/slippy_panel_dark.svg Resources/raw/IDToFile.txt $(BUILD)/plugin.pipl $(BUILD)/$(NAME).rsrc
 	mkdir -p $(BUNDLE)/Contents/Resources/pipl
 	cp $(BUILD)/$(NAME).rsrc $(BUNDLE)/Contents/Resources/$(NAME).rsrc
 	cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
 	printf 'ARPIART5' > $(BUNDLE)/Contents/PkgInfo
 	cp $(BUILD)/plugin.pipl $(BUNDLE)/Contents/Resources/pipl/plugin.pipl
+	mkdir -p $(BUNDLE)/Contents/Resources/svg $(BUNDLE)/Contents/Resources/txt
+	cp Resources/raw/slippy_panel_light.svg Resources/raw/slippy_panel_dark.svg $(BUNDLE)/Contents/Resources/svg/
+	cp Resources/raw/IDToFile.txt $(BUNDLE)/Contents/Resources/txt/IDToFile.txt
 	codesign --force --sign "$(SIGN_ID)" $(SIGN_FLAGS) $(BUNDLE)
 	codesign --verify --strict $(BUNDLE)
 	touch $@

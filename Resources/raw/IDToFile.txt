@@ -1,0 +1,2 @@
+17002.svg		slippy_panel_light.svg
+17003.svg		slippy_panel_dark.svg
