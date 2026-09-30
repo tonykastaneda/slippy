@@ -232,7 +232,7 @@ RGBA ReadColor() { return gDark ? Rgb(0x40C8E0) : Rgb(0x30B0C7); }
 RGBA EditColor() { return gDark ? Rgb(0xFF9F0A) : Rgb(0xFF9500); }
 RGBA ErrorColor() { return gDark ? Rgb(0xFF453A) : Rgb(0xFF3B30); }
 RGBA KindColor(Kind k) { return k == Kind::Error ? ErrorColor() : k == Kind::Edit ? EditColor() : ReadColor(); }
-RGBA SlippyGreen() { return Rgb(0x00AB45); }
+RGBA SlippyGreen() { return Rgb(0x92F607); }
 RGBA LabelColor() { return gDark ? RGBA{1, 1, 1, 0.85} : RGBA{0, 0, 0, 0.85}; }
 RGBA SecondaryLabel() { return gDark ? RGBA{1, 1, 1, 0.55} : RGBA{0, 0, 0, 0.5}; }
 RGBA TertiaryLabel() { return gDark ? RGBA{1, 1, 1, 0.25} : RGBA{0, 0, 0, 0.26}; }

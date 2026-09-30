@@ -22,7 +22,7 @@ NSColor* ReadColor() { return NSColor.systemTealColor; }
 NSColor* EditColor() { return NSColor.systemOrangeColor; }
 NSColor* ErrorColor() { return NSColor.systemRedColor; }
 NSColor* SRGB(int rgb) { return [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0 green:((rgb >> 8) & 0xFF) / 255.0 blue:(rgb & 0xFF) / 255.0 alpha:1]; }
-NSColor* SlippyGreen() { return SRGB(0x00AB45); }   // Slippy's skin
+NSColor* SlippyGreen() { return SRGB(0x92F607); }   // Slippy's skin
 
 // macOS's Reduce Motion, unless SLIPPY_FULL_MOTION=1 asks for the full bounce anyway.
 bool ReduceMotion()
