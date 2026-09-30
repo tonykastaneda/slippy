@@ -8,6 +8,8 @@
 //   GET  /health  -> {"ok":true,...}           no token needed, reveals nothing
 //   POST /rpc     -> {"method":..,"params":..}  JSON-RPC, needs the token
 //   POST /mcp     -> MCP (streamable HTTP, JSON responses), needs the token
+// The token goes in the path (/mcp/<token>, /rpc/<token>) or a header
+// (Authorization: Bearer, X-Slippy-Token).
 //
 // The token is made once and kept (~/Library/Application Support/Slippy/token,
 // mode 0600; %APPDATA%\Slippy\token on Windows) so agents' saved MCP configs

@@ -162,17 +162,13 @@ void SlippyPlugin::AddPanel()
 	});
 }
 
-// What "Copy connection" puts on the clipboard: the one line that connects
-// Claude Code, and the pieces any other MCP client needs.
+// What "Copy connection" puts on the clipboard: Slippy's URL, token and all -
+// the one thing to hand any agent, whatever MCP client it runs in.
 std::string SlippyPlugin::ConnectionInfo() const
 {
-	std::string port = std::to_string(fServer.Port());
-	std::string mcp = "http://127.0.0.1:" + port + "/mcp";
-	return "claude mcp add --transport http slippy " + mcp + " --header \"Authorization: Bearer " + fServer.Token() + "\"\n\n"
-		"Other MCP clients - URL: " + mcp + "\n"
-		"Header: Authorization: Bearer " + fServer.Token() + "\n"
-		"Scripts: POST http://127.0.0.1:" + port + "/rpc with the same header\n";
+	return "http://127.0.0.1:" + std::to_string(fServer.Port()) + "/mcp/" + fServer.Token();
 }
+
 // After every plug-in has started: open the door for agents.
 ASErr SlippyPlugin::PostStartupPlugin()
 {

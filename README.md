@@ -76,11 +76,11 @@ and solid black eyes, no mouth. Slippy reacts to what agents are doing:
 Click Slippy to wake him up: he stays awake looking around for 20 seconds
 (awake already, he hops happily). Every face change happens through a blink. Moves ease in and out and start
 from wherever Slippy is on screen, so one never cuts another off with a jump:
-hops, squash and stretch, and breathing each run on their own layer. Each call also sends a ripple out
+hops, squash and stretch, and breathing each run on their own layer. Each call also sends a ripple (Slippy's own outline) out
 from Slippy (teal = read, amber = edit, red = error), kicks its command group's
 bar, and slides into the feed as a plain-English line ("Rotated “Slippy” 15°", "Couldn't find that object"), with the time of day. Hover a line for the technical command, how long it took and any full error. The panel also has
 **Pause agents**, which refuses calls, and **Copy connection**, which copies
-the `claude mcp add` line with the token. With macOS Reduce Motion on (on
+Slippy's URL (token included) to hand to an agent. With macOS Reduce Motion on (on
 Windows: "Show animations in Windows" off), Slippy
 moves about a third as much, feed lines fade in without sliding, and the Z's
 light up in place one after another instead of drifting. Launch Illustrator
@@ -108,20 +108,25 @@ saved agent configs keep working. Delete the file to rotate it; the next
 launch makes a new one. `session.json` next to it has the current URLs and
 token.
 
-**Claude Code:** click **Copy connection** in the Slippy panel and paste. It
-copies:
+**Give an agent Slippy:** click **Copy connection** in the Slippy panel and
+paste what it copies, Slippy's URL with the token in it:
 
-```sh
-claude mcp add --transport http slippy http://127.0.0.1:7331/mcp --header "Authorization: Bearer <token>"
+```
+http://127.0.0.1:7331/mcp/<token>
 ```
 
-**Other MCP clients** (Cursor, VS Code, Gemini CLI, ...): add an HTTP MCP
-server with the URL `http://127.0.0.1:7331/mcp` and the header
-`Authorization: Bearer <token>`. Every command is a tool (`art.transform`
-becomes `art_transform`). There are also `slippy_batch`, which runs many calls as
-one undo step, and `slippy_status`. For a client that only launches stdio
-servers, use an adapter such as
-`npx mcp-remote http://127.0.0.1:7331/mcp --header "Authorization: Bearer <token>"`.
+That's the whole handoff, whatever MCP client the agent runs in: it adds
+that URL as an MCP server (streamable HTTP). Most clients load a new
+server's tools on a reload or restart. An agent with a shell can also use
+it straight away over plain HTTP (`/rpc/<token>`, below). One without the
+token is told to ask you for this URL, not to go reading the token file.
+
+Every command is a tool (`art.transform` becomes `art_transform`). There are
+also `slippy_batch`, which runs many calls as one undo step, and
+`slippy_status`. The token also works as a header (`Authorization: Bearer
+<token>` or `X-Slippy-Token`) on `http://127.0.0.1:7331/mcp`. For a client
+that only launches stdio servers, use an adapter such as
+`npx mcp-remote http://127.0.0.1:7331/mcp/<token>`.
 
 **Shell:**
 
@@ -136,8 +141,7 @@ client/slippy menu.run command=group
 **Raw HTTP (JSON-RPC):**
 
 ```sh
-TOKEN=$(cat ~/Library/Application\ Support/Slippy/token)
-curl -s -H "Authorization: Bearer $TOKEN" localhost:7331/rpc \
+curl -s http://127.0.0.1:7331/rpc/<token> \
   -d '{"jsonrpc":"2.0","id":1,"method":"document.info"}'
 ```
 
@@ -196,7 +200,9 @@ sets how long the client waits.
 ## Security
 
 - The server binds `127.0.0.1` only.
-- `/rpc` and `/mcp` require the token (`Authorization: Bearer` or `X-Slippy-Token`).
+- `/rpc` and `/mcp` require the token, in the path (`/mcp/<token>`) or a header
+  (`Authorization: Bearer` or `X-Slippy-Token`). Slippy's URL is as secret as
+  the token: anyone with it can drive Illustrator.
 - Requests that carry an `Origin` header are refused, so a web page can't
   drive Illustrator.
 - The token is stored in a file only you can read. Delete the file to rotate it.

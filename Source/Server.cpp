@@ -268,13 +268,24 @@ void Server::Serve(intptr_t fd)
 		Respond(fd, 200, v);
 		return;
 	}
-	// Query strings don't matter here.
-	std::string path = target.substr(0, target.find('?'));
-	if (path != "/rpc" && path != "/mcp") { Respond(fd, 404, ErrorBody("use POST /rpc or POST /mcp")); return; }
+	// Query strings don't matter here. The token can ride in the path
+	// (/mcp/<token>), so one URL is all an agent needs; or in a header.
+	std::string path = target.substr(0, target.find('?')), pathToken;
+	for (const char* base : {"/mcp/", "/rpc/"}) {
+		if (path.rfind(base, 0) == 0) {
+			pathToken = path.substr(strlen(base), path.find('/', strlen(base)) - strlen(base));
+			path = std::string(base, 4);
+			break;
+		}
+	}
+	if (path != "/rpc" && path != "/mcp") { Respond(fd, 404, ErrorBody("use POST /mcp/<token> or POST /rpc/<token>")); return; }
 	// MCP's optional GET (server-sent events) and DELETE (end session) aren't offered.
 	if (method != "POST") { Respond(fd, 405, ErrorBody("use POST " + path)); return; }
-	if (!SameToken(token, fToken)) {
-		Respond(fd, 401, ErrorBody("missing or wrong token - read it from " + SessionFilePath()));
+	if (!SameToken(token, fToken) && !SameToken(pathToken, fToken)) {
+		// Agents are told to ask, not to go reading the credential file.
+		Respond(fd, 401, ErrorBody("missing or wrong token. Ask the person at this computer for Slippy's URL: "
+			"it's on the clipboard after they click Copy connection in Illustrator's Slippy panel "
+			"(Window > Utilities > Slippy), and it has the token in it."));
 		return;
 	}
 
