@@ -194,6 +194,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 		return {"Ran the menu command " + Quote(p.str("command")), "run " + Quote(p.str("command"))};
 	}
 	if (m == "action.play") return {"Played the action " + Quote(p.str("event")), "play " + Quote(p.str("event"))};
+	if (m == "plugin.message") return {"Sent " + p.str("plugin") + " " + Quote(p.str("selector")), "message " + p.str("plugin")};
 	if (m == "history.undo") {
 		int n = p.get("steps").isNumber() ? p.get("steps").asInt() : 1;
 		return {n == 1 ? "Undid the last change" : "Undid " + std::to_string(n) + " changes", "undo"};

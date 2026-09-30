@@ -28,6 +28,7 @@ extern "C" {
 	AIGroupSuite*			sAIGroup = nullptr;
 	AIPlacedSuite*			sAIPlaced = nullptr;
 	ASUserInteractionSuite*	sASUserInteraction = nullptr;
+	SPInterfaceSuite*		sSPInterface = nullptr;
 	EXTERN_TEXT_SUITES
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
 };
@@ -63,6 +64,7 @@ ImportSuite gImportSuites[] =
 	kAIGroupSuite, kAIGroupSuiteVersion, &sAIGroup,
 	kAIPlacedSuite, kAIPlacedSuiteVersion, &sAIPlaced,
 	kASUserInteractionSuite, kASUserInteractionSuiteVersion, &sASUserInteraction,	// alerts off while agents run
+	kSPInterfaceSuite, kSPInterfaceSuiteVersion, &sSPInterface,		// plugin.message
 	IMPORT_TEXT_SUITES
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,
 	nullptr, 0, nullptr

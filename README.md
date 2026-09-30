@@ -125,7 +125,7 @@ sets how long the client waits.
 | structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.unclip` |
 | files | `art.place` (link or embed an image / PDF / .ai, into a group or next to an object, scaled to `fitTo` another object) |
 | create | `shape.rect`, `shape.ellipse`, `path.create` (corners or Bézier anchors), `text.create` |
-| escape hatches | `menu.run` (any menu command by name, like `app.executeMenuCommand`), `action.play` (any action event with typed params) |
+| escape hatches | `menu.run` (any menu command by name, like `app.executeMenuCommand`), `action.play` (any action event with typed params), `plugin.message` (send another plug-in a script message, like `app.sendScriptMessage`) |
 | history | `history.undo`, `history.redo` |
 
 - **Exporting:** `document.export {path}` picks the format from the extension
@@ -141,6 +141,11 @@ sets how long the client waits.
   `art.place {path, above: <placeholder>, fitTo: <placeholder>}` then
   `art.delete {id: <placeholder>}`. `art.tree` marks clipping groups
   (`clipped`), their masks (`clipMask`) and placed files (`file`).
+- **Other plug-ins:** `plugin.message {plugin, selector, param}` sends the
+  message `app.sendScriptMessage` would and returns the plug-in's text reply.
+  Pressing RAGE's MAKE is `plugin.message plugin=RAGE selector=design.make`;
+  RAGE defers the work, so poll `selector=design.result` until it stops
+  saying `running`. That deferred work isn't part of Slippy's undo step.
 - **No alerts:** Illustrator's alerts are off while agent calls run, so a
   command that doesn't apply can't freeze Illustrator behind a dialog.
   `menu.run` reports `changed: false` (with a note) when nothing happened.

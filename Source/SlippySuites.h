@@ -30,6 +30,8 @@
 #include "AIGroup.h"
 #include "AIPlaced.h"
 #include "ASUserInteraction.h"
+#include "AIScriptMessage.h"
+#include "SPInterf.h"
 #include "ATETextSuitesImportHelper.h"
 #include "AIAssert.hpp"
 
@@ -59,6 +61,7 @@ extern "C" AIDocumentViewSuite*	sAIDocumentView;
 extern "C" AIGroupSuite*			sAIGroup;
 extern "C" AIPlacedSuite*			sAIPlaced;
 extern "C" ASUserInteractionSuite*	sASUserInteraction;
+extern "C" SPInterfaceSuite*		sSPInterface;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.

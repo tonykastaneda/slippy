@@ -1561,6 +1561,27 @@ json::Value MenuRun(const json::Value& p)
 	return v;
 }
 
+json::Value PluginMessage(const json::Value& p)
+{
+	Need(sSPInterface, "The plug-in interface suite");
+	std::string name = ReqStr(p, "plugin"), selector = ReqStr(p, "selector");
+	SPPluginRef plugin = nullptr;
+	if (sSPPlugins->GetNamedPlugin(name.c_str(), &plugin) || !plugin) Fail(kErrNotFound, "no plug-in named '" + name + "' is loaded");
+	// The same message app.sendScriptMessage(plugin, selector, param) sends.
+	AIScriptMessage msg;
+	msg.inParam = U(p.str("param"));
+	Check(sSPInterface->SetupMessageData(plugin, &msg.d), "SetupMessageData");
+	SPErr result = kNoErr;
+	SPErr e = sSPInterface->SendMessage(plugin, kCallerAIScriptMessage, selector.c_str(), &msg, &result);
+	sSPInterface->EmptyMessageData(plugin, &msg.d);
+	Check(e ? e : result, "SendMessage");
+	json::Value v;
+	v["plugin"] = name;
+	v["selector"] = selector;
+	v["reply"] = S(msg.outParam);
+	return v;
+}
+
 ActionParamKeyID KeyId(const std::string& key)
 {
 	if (key.size() == 4) return ((ActionParamKeyID) (unsigned char) key[0] << 24) | ((ActionParamKeyID) (unsigned char) key[1] << 16) |
@@ -1708,6 +1729,9 @@ std::map<std::string, Command>& Table()
 		{"action.play", {"Play an action event (e.g. \"adobe_paste\") with typed parameters, no dialog by default.",
 			Params({{"event", "string"}, {"params", "object - 4-char key -> value | {\"type\":\"integer|real|string|boolean|enum\",\"value\":..,\"name\":..}"},
 				{"dialog", "\"off\" | \"on\" | \"none\""}}), ActionPlay, true}},
+		{"plugin.message", {"Send another plug-in a script message, as app.sendScriptMessage(plugin, selector, param) does, and return its text reply. "
+			"The plug-in decides what the selector does; work it defers finishes after this returns.",
+			Params({{"plugin", "string - the plug-in's name, e.g. \"RAGE\""}, {"selector", "string"}, {"param", "string (optional)"}}), PluginMessage, true}},
 		{"history.undo", {"Undo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryUndo, false}},
 		{"history.redo", {"Redo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryRedo, false}},
 	};
