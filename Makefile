@@ -36,6 +36,8 @@ SOURCES := \
 	Source/CmdCatalog.cpp \
 	Source/CmdSymbols.cpp \
 	Source/CmdView.cpp \
+	Source/CmdPaint.cpp \
+	Source/CmdAppearance.cpp \
 	$(COMMON)/source/Main.cpp \
 	$(COMMON)/source/Plugin.cpp \
 	$(COMMON)/source/Suites.cpp \

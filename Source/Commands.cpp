@@ -346,19 +346,18 @@ json::Value ColorJson(const AIColor& c)
 		return v;
 	}
 	case kNoneColor: return json::Value("none");
-	case kPattern: return json::Value("pattern");
-	case kGradient: return json::Value("gradient");
-	case kCustomColor: return json::Value("spot");
+	case kPattern: case kGradient: case kCustomColor: return NamedPaintJson(c);   // CmdPaint.cpp
 	default: return json::Value("other");
 	}
 }
 
-// "#RRGGBB", "none", {"rgb":[0-255 x3]}, {"cmyk":[0-100 x4]}, {"gray":0-100}
+// "#RRGGBB", "none", {"rgb":[0-255 x3]}, {"cmyk":[0-100 x4]}, {"gray":0-100},
+// or by name: {"swatch"}, {"spot", "tint"}, {"gradient", ...}, {"pattern", ...} (CmdPaint.cpp).
 AIColor ParseColor(const json::Value& v, const char* what)
 {
 	AIColor c;
 	c.Init();
-	auto bad = [&]() { Fail(kErrInvalidParams, std::string("'") + what + "' must be \"#RRGGBB\", \"none\", {\"rgb\":[r,g,b]}, {\"cmyk\":[c,m,y,k]} or {\"gray\":n}"); };
+	auto bad = [&]() { Fail(kErrInvalidParams, std::string("'") + what + "' must be " + kPaint); };
 	if (v.isString()) {
 		const std::string& s = v.asString();
 		if (s == "none") { c.kind = kNoneColor; return c; }
@@ -372,6 +371,7 @@ AIColor ParseColor(const json::Value& v, const char* what)
 		return c;
 	}
 	if (!v.isObject()) bad();
+	if (NamedPaintFromJson(v, c)) return c;
 	auto channels = [&](const json::Value& a, size_t n, double scale, AIReal* out[]) {
 		if (!a.isArray() || a.size() != n) bad();
 		for (size_t i = 0; i < n; i++) {
@@ -398,6 +398,9 @@ AIColor ParseColor(const json::Value& v, const char* what)
 	return c;
 }
 
+const char* CapName(AILineCap c) { return c == kAIRoundCap ? "round" : c == kAIProjectingCap ? "projecting" : "butt"; }
+const char* JoinName(AILineJoin j) { return j == kAIRoundJoin ? "round" : j == kAIBevelJoin ? "bevel" : "miter"; }
+
 json::Value StyleJson(AIArtHandle art)
 {
 	json::Value v;
@@ -407,16 +410,63 @@ json::Value StyleJson(AIArtHandle art)
 	if (sAIPathStyle->GetPathStyle(art, &style, &advanced)) return v;
 	v["fill"] = style.fillPaint ? ColorJson(style.fill.color) : json::Value("none");
 	v["stroke"] = style.strokePaint ? ColorJson(style.stroke.color) : json::Value("none");
-	if (style.strokePaint) v["strokeWidth"] = (double) style.stroke.width;
+	if (style.strokePaint) {
+		v["strokeWidth"] = (double) style.stroke.width;
+		v["cap"] = CapName(style.stroke.cap);
+		v["join"] = JoinName(style.stroke.join);
+		if (style.stroke.join == kAIMiterJoin) v["miterLimit"] = (double) style.stroke.miterLimit;
+		if (style.stroke.dash.length > 0) {
+			json::Value dash = json::Value::MakeArray();
+			for (int i = 0; i < style.stroke.dash.length && i < kMaxDashComponents; i++) dash.push((double) style.stroke.dash.array[i]);
+			v["dash"] = dash;
+			if (style.stroke.dash.offset != 0) v["dashOffset"] = (double) style.stroke.dash.offset;
+		}
+		if (style.stroke.overprint) v["strokeOverprint"] = true;
+	}
+	if (style.fillPaint && style.fill.overprint) v["fillOverprint"] = true;
 	if (style.evenodd) v["evenOdd"] = true;
 	if (advanced) v["advancedFill"] = true;
 	return v;
 }
 
-// fill, stroke, strokeWidth - whichever are present.
+namespace {
+const char* const kPaintKeys[] = {"fill", "stroke", "strokeWidth", "dash", "dashOffset", "cap", "join", "miterLimit",
+	"fillOverprint", "strokeOverprint", "evenOdd", "strokeAlign"};
+
+bool HasPaint(const json::Value& p)
+{
+	for (const char* k : kPaintKeys) if (p.has(k)) return true;
+	return false;
+}
+
+void ApplyStroke(AIStrokeStyle& stroke, const json::Value& p)
+{
+	if (p.has("strokeWidth")) stroke.width = (AIReal) ReqNum(p, "strokeWidth");
+	if (p.has("cap")) {
+		std::string c = ReqStr(p, "cap");
+		stroke.cap = c == "round" ? kAIRoundCap : c == "projecting" ? kAIProjectingCap : c == "butt" ? kAIButtCap : (Fail(kErrInvalidParams, "'cap' must be butt, round or projecting"), kAIButtCap);
+	}
+	if (p.has("join")) {
+		std::string j = ReqStr(p, "join");
+		stroke.join = j == "round" ? kAIRoundJoin : j == "bevel" ? kAIBevelJoin : j == "miter" ? kAIMiterJoin : (Fail(kErrInvalidParams, "'join' must be miter, round or bevel"), kAIMiterJoin);
+	}
+	if (p.has("miterLimit")) stroke.miterLimit = (AIReal) std::max(1.0, ReqNum(p, "miterLimit"));
+	if (p.has("dash")) {
+		const json::Value& d = p.get("dash");
+		if (!d.isArray() || d.size() > kMaxDashComponents) Fail(kErrInvalidParams, "'dash' must be an array of up to 6 lengths ([] for solid)");
+		stroke.dash.length = (ai::int16) d.size();
+		for (size_t i = 0; i < d.size(); i++) stroke.dash.array[i] = (AIFloat) d.asArray()[i].asNumber();
+	}
+	if (p.has("dashOffset")) stroke.dash.offset = (AIFloat) ReqNum(p, "dashOffset");
+	if (p.has("strokeOverprint")) stroke.overprint = p.boolean("strokeOverprint", false);
+}
+} // namespace
+
+// Paint - whichever of fill, stroke, strokeWidth, dash, dashOffset, cap, join,
+// miterLimit, fillOverprint, strokeOverprint, evenOdd, strokeAlign are present.
 void ApplyStyle(AIArtHandle art, const json::Value& p)
 {
-	if (!p.has("fill") && !p.has("stroke") && !p.has("strokeWidth")) return;
+	if (!HasPaint(p)) return;
 	Need(sAIPathStyle, "The path style suite");
 	short type = ArtType(art);
 	if (type == kGroupArt || type == kCompoundPathArt) {
@@ -432,19 +482,24 @@ void ApplyStyle(AIArtHandle art, const json::Value& p)
 	Check(sAIPathStyle->GetPathStyle(art, &style, &advanced), "GetPathStyle");
 	if (p.has("fill")) {
 		AIColor c = ParseColor(p.get("fill"), "fill");
+		FitPaintToArt(art, c, p.get("fill"));
 		style.fillPaint = c.kind != kNoneColor;
 		if (style.fillPaint) style.fill.color = c;
 	}
 	if (p.has("stroke")) {
 		AIColor c = ParseColor(p.get("stroke"), "stroke");
+		FitPaintToArt(art, c, p.get("stroke"));
 		style.strokePaint = c.kind != kNoneColor;
 		if (style.strokePaint) {
 			style.stroke.color = c;
 			if (style.stroke.width <= 0) style.stroke.width = 1;
 		}
 	}
-	if (p.has("strokeWidth")) style.stroke.width = (AIReal) ReqNum(p, "strokeWidth");
+	ApplyStroke(style.stroke, p);
+	if (p.has("fillOverprint")) style.fill.overprint = p.boolean("fillOverprint", false);
+	if (p.has("evenOdd")) style.evenodd = p.boolean("evenOdd", false);
 	Check(sAIPathStyle->SetPathStyle(art, &style), "SetPathStyle");
+	if (p.has("strokeAlign")) SetStrokeAlign(art, ReqStr(p, "strokeAlign"));   // CmdPaint.cpp
 }
 
 // Name and style for freshly created art, and its id back.
@@ -1104,6 +1159,7 @@ json::Value ArtSet(const json::Value& p)
 		if (p.has("hidden")) Check(sAIArt->SetArtUserAttr(a, kArtHidden, p.boolean("hidden") ? kArtHidden : 0), "hide");
 		if (p.has("locked")) Check(sAIArt->SetArtUserAttr(a, kArtLocked, p.boolean("locked") ? kArtLocked : 0), "lock");
 		ApplyStyle(a, p);
+		SetBlend(a, p);
 		if (p.get("contents").isString()) {
 			if (ArtType(a) != kTextFrameArt) Fail(kErrInvalidParams, "'contents' only applies to text");
 			SetText(a, p.get("contents").asString(), p);
@@ -1658,9 +1714,13 @@ std::map<std::string, Command>& Table()
 		{"art.selection", {"The selected art.", Params({{"depth", "number - levels of children (default 0)"}}), ArtSelection, false}},
 		{"art.select", {"Select art by id (replaces the selection unless add=true; no ids = deselect all).",
 			Params({{"ids", "string[]"}, {"id", "string"}, {"add", "boolean"}}), ArtSelect, false}},
-		{"art.set", {"Change art (default: the selection): name, hidden, locked, fill, stroke, strokeWidth, text contents/size.",
+		{"art.set", {"Change art (default: the selection): name, hidden, locked, paint (fill, stroke and stroke detail), opacity, blendMode, text contents/size.",
 			Params({{"ids", "string[]"}, {"id", "string"}, {"name", "string"}, {"hidden", "boolean"}, {"locked", "boolean"}, {"fill", kPaint},
-				{"stroke", kPaint}, {"strokeWidth", "number"}, {"contents", "string - text only"}, {"size", "number - font size, with contents"}}), ArtSet, true}},
+				{"stroke", kPaint}, {"strokeWidth", "number"}, {"dash", "number[] - dash and gap lengths ([] = solid)"}, {"dashOffset", "number"},
+				{"cap", "butt | round | projecting"}, {"join", "miter | round | bevel"}, {"miterLimit", "number"}, {"strokeAlign", "center | inside | outside"},
+				{"fillOverprint", "boolean"}, {"strokeOverprint", "boolean"}, {"evenOdd", "boolean"},
+				{"opacity", "number 0-100"}, {"blendMode", "normal | multiply | screen | overlay | ... (see appearance.set)"},
+				{"contents", "string - text only"}, {"size", "number - font size, with contents"}}), ArtSet, true}},
 		{"art.transform", {"Move / scale / rotate art (default: the selection) about its center or 'origin'.",
 			Params({{"ids", "string[]"}, {"id", "string"}, {"translate", "[dx, dy]"}, {"scale", "number | [sx, sy]"}, {"rotate", "number - degrees, counterclockwise"},
 				{"origin", "[x, y]"}, {"scaleStrokes", "boolean (default true)"}}), ArtTransform, true}},
@@ -1706,6 +1766,8 @@ std::map<std::string, Command>& Table()
 	AddCatalogCommands(t);
 	AddSymbolCommands(t);
 	AddViewCommands(t);
+	AddPaintCommands(t);
+	AddAppearanceCommands(t);
 	return t;
 	}();
 	return table;

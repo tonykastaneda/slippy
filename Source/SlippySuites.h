@@ -35,6 +35,15 @@
 #include "AIIsolationMode.h"
 #include "AITool.h"
 #include "AIHitTest.h"
+#include "AISwatchList.h"
+#include "AICustomColor.h"
+#include "AIGradient.h"
+#include "AIPattern.h"
+#include "AIArtStyle.h"
+#include "AIArtStyleParser.h"
+#include "AILiveEffect.h"
+#include "AIDictionary.h"
+#include "AIPaintStyle.h"
 #include "SPInterf.h"
 #include "ATETextSuitesImportHelper.h"
 #include "AIAssert.hpp"
@@ -70,6 +79,17 @@ extern "C" AISymbolSuite*			sAISymbol;
 extern "C" AIIsolationModeSuite*	sAIIsolationMode;
 extern "C" AIToolSuite*				sAITool;
 extern "C" AIHitTestSuite*			sAIHitTest;
+extern "C" AISwatchListSuite*		sAISwatchList;
+extern "C" AISwatchGroupSuite*		sAISwatchGroup;
+extern "C" AICustomColorSuite*		sAICustomColor;
+extern "C" AIGradientSuite*			sAIGradient;
+extern "C" AIPatternSuite*			sAIPattern;
+extern "C" AIArtStyleSuite*			sAIArtStyle;
+extern "C" AIArtStyleParserSuite*	sAIArtStyleParser;
+extern "C" AILiveEffectSuite*		sAILiveEffect;
+extern "C" AIDictionarySuite*		sAIDictionary;
+extern "C" AIDictionaryIteratorSuite*	sAIDictionaryIterator;
+extern "C" AIPaintStyleSuite*		sAIPaintStyle;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.

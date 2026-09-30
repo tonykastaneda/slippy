@@ -77,9 +77,22 @@ void Placement(const json::Value& p, ai::int16& order, AIArtHandle& prep);
 json::Value ColorJson(const AIColor& c);
 AIColor ParseColor(const json::Value& v, const char* what);
 json::Value StyleJson(AIArtHandle art);
-void ApplyStyle(AIArtHandle art, const json::Value& p);   // fill / stroke / strokeWidth
+void ApplyStyle(AIArtHandle art, const json::Value& p);   // fill, stroke and stroke detail (kPaintOptions)
 // Name, style and selection for new art; returns its summary.
 json::Value Finish(AIArtHandle art, const json::Value& p);
+
+// Named paint (CmdPaint.cpp): {"swatch"}, {"spot", "tint"}, {"gradient", "angle"...},
+// {"pattern", "scale"...} in and out, sized to the art it lands on.
+bool NamedPaintFromJson(const json::Value& v, AIColor& c);
+json::Value NamedPaintJson(const AIColor& c);
+void FitPaintToArt(AIArtHandle art, AIColor& c, const json::Value& spec);
+void SetStrokeAlign(AIArtHandle art, const std::string& align);
+// opacity / blendMode / knockout / isolate, when present (CmdAppearance.cpp).
+void SetBlend(AIArtHandle art, const json::Value& p);
+
+// Dictionaries (effect settings, blend, metadata) as JSON, both ways (CmdAppearance.cpp).
+json::Value DictJson(ConstAIDictionaryRef dict);
+void JsonIntoDict(const json::Value& v, AIDictionaryRef dict);
 
 // ---- the command table
 
@@ -94,13 +107,18 @@ using CommandTable = std::map<std::string, Command>;
 json::Value Params(std::initializer_list<std::pair<const char*, const char*>> list);
 
 inline const char* const kWhere = "'layer' (name/index) or 'parent' (group id) to place it; default: top of the current layer";
-inline const char* const kPaint = "\"#RRGGBB\" | \"none\" | {\"rgb\":[0-255 x3]} | {\"cmyk\":[0-100 x4]} | {\"gray\":0-100}";
+inline const char* const kPaint = "\"#RRGGBB\" | \"none\" | {\"rgb\":[0-255 x3]} | {\"cmyk\":[0-100 x4]} | {\"gray\":0-100} | "
+	"{\"swatch\":name} | {\"spot\":name,\"tint\":0-100} | {\"gradient\":name,\"angle\",\"origin\",\"length\"} | {\"pattern\":name,\"scale\",\"rotate\"}";
+inline const char* const kPaintOptions = "stroke detail: dash ([lengths]), dashOffset, cap (butt|round|projecting), join (miter|round|bevel), "
+	"miterLimit, strokeAlign (center|inside|outside), fillOverprint, strokeOverprint, evenOdd";
 inline const char* const kIds = "string[] - art ids (default: the selection)";
 
 // Families of commands, each in its own file.
 void AddCatalogCommands(CommandTable& t);   // CmdCatalog.cpp: menu.list, action.list/describe, tool.*
 void AddSymbolCommands(CommandTable& t);    // CmdSymbols.cpp: symbol.*, isolation
 void AddViewCommands(CommandTable& t);      // CmdView.cpp: view.*, hit.test
+void AddPaintCommands(CommandTable& t);     // CmdPaint.cpp: swatch.*, spot.*, gradient.*, pattern.*
+void AddAppearanceCommands(CommandTable& t);   // CmdAppearance.cpp: style.*, appearance.*, effect.*
 
 } // namespace slippy
 

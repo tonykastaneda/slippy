@@ -33,6 +33,17 @@ extern "C" {
 	AIIsolationModeSuite*	sAIIsolationMode = nullptr;
 	AIToolSuite*			sAITool = nullptr;
 	AIHitTestSuite*			sAIHitTest = nullptr;
+	AISwatchListSuite*		sAISwatchList = nullptr;
+	AISwatchGroupSuite*		sAISwatchGroup = nullptr;
+	AICustomColorSuite*		sAICustomColor = nullptr;
+	AIGradientSuite*		sAIGradient = nullptr;
+	AIPatternSuite*			sAIPattern = nullptr;
+	AIArtStyleSuite*		sAIArtStyle = nullptr;
+	AIArtStyleParserSuite*	sAIArtStyleParser = nullptr;
+	AILiveEffectSuite*		sAILiveEffect = nullptr;
+	AIDictionarySuite*		sAIDictionary = nullptr;
+	AIDictionaryIteratorSuite*	sAIDictionaryIterator = nullptr;
+	AIPaintStyleSuite*		sAIPaintStyle = nullptr;
 	EXTERN_TEXT_SUITES
 #if AI_ASSERTS_ENABLED
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
@@ -75,6 +86,17 @@ ImportSuite gImportSuites[] =
 	kAIIsolationModeSuite, kAIIsolationModeSuiteVersion, &sAIIsolationMode,
 	kAIToolSuite, kAIToolSuiteVersion, &sAITool,
 	kAIHitTestSuite, kAIHitTestSuiteVersion, &sAIHitTest,
+	kAISwatchListSuite, kAISwatchListSuiteVersion, &sAISwatchList,
+	kAISwatchGroupSuite, kAISwatchGroupSuiteVersion, &sAISwatchGroup,
+	kAICustomColorSuite, kAICustomColorSuiteVersion, &sAICustomColor,
+	kAIGradientSuite, kAIGradientSuiteVersion, &sAIGradient,
+	kAIPatternSuite, kAIPatternSuiteVersion, &sAIPattern,
+	kAIArtStyleSuite, kAIArtStyleSuiteVersion, &sAIArtStyle,
+	kAIArtStyleParserSuite, kAIArtStyleParserSuiteVersion, &sAIArtStyleParser,
+	kAILiveEffectSuite, kAILiveEffectSuiteVersion, &sAILiveEffect,
+	kAIDictionarySuite, kAIDictionarySuiteVersion, &sAIDictionary,
+	kAIDictionaryIteratorSuite, kAIDictionaryIteratorSuiteVersion, &sAIDictionaryIterator,
+	kAIPaintStyleSuite, kAIPaintStyleSuiteVersion, &sAIPaintStyle,
 	IMPORT_TEXT_SUITES
 #if AI_ASSERTS_ENABLED
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,

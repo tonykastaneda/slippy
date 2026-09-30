@@ -220,6 +220,39 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	if (m == "view.fit") return {"Zoomed to fit", "zoom to fit"};
 	if (m == "view.screenshot") return {"Took a screenshot of the window", "take a screenshot"};
 	if (m == "hit.test") return {r.get("hit").isBool() && r.get("hit").asBool() ? std::string("Found ") + KindOf(r.get("art").str("type")) + " at a point" : "Found nothing at that point", "look at a point"};
+	if (m == "swatch.list") return {"Looked at the swatches", "list swatches"};
+	if (m == "swatch.create") return {"Made the swatch " + Quote(p.str("name")), "make a swatch"};
+	if (m == "swatch.set") return {"Changed the swatch " + Quote(p.str("name")), "change a swatch"};
+	if (m == "swatch.delete") return {"Deleted the swatch " + Quote(p.str("name")), "delete a swatch"};
+	if (m == "swatch.group.create") return {"Made the swatch group " + Quote(p.str("name")), "make a swatch group"};
+	if (m == "spot.list") return {"Looked at the spot colors", "list spot colors"};
+	if (m == "spot.create") return {"Made the color " + Quote(p.str("name")), "make a color"};
+	if (m == "spot.delete") return {"Deleted the color " + Quote(p.str("name")), "delete a color"};
+	if (m == "gradient.list") return {"Looked at the gradients", "list gradients"};
+	if (m == "gradient.create") return {"Made the gradient " + Quote(p.str("name")), "make a gradient"};
+	if (m == "gradient.set") return {"Changed the gradient " + Quote(p.str("name")), "change a gradient"};
+	if (m == "gradient.delete") return {"Deleted the gradient " + Quote(p.str("name")), "delete a gradient"};
+	if (m == "pattern.list") return {"Looked at the patterns", "list patterns"};
+	if (m == "pattern.create") return {"Made the pattern " + Quote(p.str("name")), "make a pattern"};
+	if (m == "pattern.delete") return {"Deleted the pattern " + Quote(p.str("name")), "delete a pattern"};
+	if (m == "color.used") return {"Looked at the colors in use", "list colors"};
+	if (m == "color.replace") return {"Replaced a color", "replace a color"};
+	if (m == "color.adjust") return {"Recolored (" + p.str("mode") + ")", "recolor"};
+	if (m == "appearance.get") return {"Looked at the appearance of " + Target(p, json::Value()), "read an appearance"};
+	if (m == "appearance.set") {
+		if (p.has("opacity")) return {"Set " + Target(p, json::Value()) + " to " + Num(p.get("opacity").asNumber()) + "% opacity", "change opacity"};
+		return {"Changed the transparency of " + Target(p, json::Value()), "change transparency"};
+	}
+	if (m == "appearance.add") return {"Added a " + p.str("kind") + " to " + Target(p, json::Value()), "add a " + p.str("kind")};
+	if (m == "appearance.clear") return {"Cleared effects from " + Target(p, json::Value()), "clear effects"};
+	if (m == "appearance.copy") return {"Copied an appearance to " + Target(p, json::Value()), "copy an appearance"};
+	if (m == "effect.list") return {"Looked at the effects", "list effects"};
+	if (m == "effect.apply") return {"Added " + Quote(p.str("effect")) + " to " + Target(p, json::Value()), "add " + Quote(p.str("effect"))};
+	if (m == "style.list") return {"Looked at the graphic styles", "list graphic styles"};
+	if (m == "style.apply") return {"Applied the style " + Quote(p.str("name")), "apply " + Quote(p.str("name"))};
+	if (m == "style.create") return {"Made the graphic style " + Quote(r.str("name")), "make a graphic style"};
+	if (m == "style.redefine") return {"Redefined the style " + Quote(p.str("name")), "redefine a style"};
+	if (m == "style.delete") return {"Deleted the style " + Quote(p.str("name")), "delete a style"};
 	if (m == "history.undo") {
 		int n = p.get("steps").isNumber() ? p.get("steps").asInt() : 1;
 		return {n == 1 ? "Undid the last change" : "Undid " + std::to_string(n) + " changes", "undo"};

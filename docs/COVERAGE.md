@@ -48,18 +48,25 @@ Legend: ✅ covered and tested · 🔨 built, not yet tested in Illustrator · �
 
 ## Phase 2 — color, paint and appearance
 
+Every fill / stroke (art.set, shape.*, path.create...) now takes named paint:
+`{"swatch": n}`, `{"spot": n, "tint"}`, `{"gradient": n, "angle"}` (spans the art
+unless origin / length are given), `{"pattern": n, "scale"}` - and reads come
+back in the same shape.
+
 | Area | Commands | Suite | Status |
 |---|---|---|---|
-| Fill / stroke detail | dashes, caps, joins, miter, stroke alignment, overprint, even-odd | AIPathStyle, AIPaintStyle | ◐ (color + width only) |
-| Swatches | `swatch.list/create/set/delete`, groups, apply by name | AISwatchList, AISwatchLibraries | ✗ |
-| Spot / global colors | `color.spot.*` | AICustomColor | ✗ |
-| Gradients | `gradient.list/create/set` (stops, type, angle), apply to fill/stroke | AIGradient, AIPathStyle | ✗ |
-| Patterns | `pattern.list/create/edit` | AIPattern | ✗ |
-| Graphic styles | `style.list/apply/create/redefine/delete` | AIArtStyle | ✗ |
-| Appearance stack | `appearance.get/set`: multiple fills/strokes, order, effects | AIArtStyleParser | ✗ |
-| Opacity / blend mode | `art.set {opacity, blendMode}` | ArtStyleParser blend field (the public SDK has no blend-style suite; to research) | ✗ |
-| Live effects | `effect.list`, `effect.apply {name, params}` (drop shadow, offset path, round corners, blur...) | AILiveEffect | ✗ |
-| Recolor | `color.recolor`, `color.reduce` | AIColorHarmony, AIPathStyle::AdjustObjectAIColors | ✗ |
+| Stroke / fill detail | `art.set` dash, dashOffset, cap, join, miterLimit, strokeAlign, fillOverprint, strokeOverprint, evenOdd; read back by `art.get` | AIPathStyle, AIPaintStyle | 🔨 |
+| Swatches | `swatch.list`, `.create`, `.set`, `.delete`, `swatch.group.create` | AISwatchList, AISwatchGroup | 🔨 |
+| Spot / global colors | `spot.list`, `.create`, `.delete` | AICustomColor | 🔨 |
+| Gradients | `gradient.list`, `.create`, `.set`, `.delete` (linear / radial, stops with midpoint + opacity) | AIGradient | 🔨 |
+| Patterns | `pattern.list`, `.create` (from art, tile size), `.delete` | AIPattern | 🔨 |
+| Graphic styles | `style.list`, `.apply`, `.create`, `.redefine`, `.delete` | AIArtStyle | 🔨 |
+| Appearance | `appearance.get` (fills / strokes, effects with settings, transparency), `.add` (extra fill / stroke), `.clear`, `.copy` (eyedropper) | AIArtStyleParser | 🔨 |
+| Opacity / blend mode | `appearance.set`, `art.set {opacity, blendMode}` - via the blend dictionary (keys Mode / Opacity / Isolated / Knockout from older SDKs; `appearance.get` shows the raw dictionary to confirm) | AIArtStyleParser | 🔨 |
+| Live effects | `effect.list`, `effect.apply {effect, settings}` (settings read off existing art with appearance.get) | AILiveEffect | 🔨 |
+| Recolor | `color.used`, `color.replace`, `color.adjust` (invert / grayscale / brightness) | AIPathStyle | 🔨 |
+| Pattern / gradient editing in place | enter pattern edit mode | AIPattern::EnterPatternEditMode | ✗ |
+| Color guide / harmony | Recolor Artwork dialog | AIColorHarmony (dialog-driven) | ✗ `menu.run` |
 
 ## Phase 3 — shapes and path operations
 
