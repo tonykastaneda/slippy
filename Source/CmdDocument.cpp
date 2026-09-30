@@ -398,10 +398,10 @@ json::Value GuideCreate(const json::Value& p)
 	std::string o = ReqStr(p, "orientation");
 	if (o != "horizontal" && o != "vertical") Fail(kErrInvalidParams, "'orientation' must be horizontal or vertical");
 	double at = ReqNum(p, "position");
-	const double far = 16000;   // across the whole canvas
+	const double reach = 16000;   // across the whole canvas
 	AIPathSegment segs[2];
-	AIRealPoint a = o == "horizontal" ? AIRealPoint{(AIReal) -far, (AIReal) at} : AIRealPoint{(AIReal) at, (AIReal) far};
-	AIRealPoint b = o == "horizontal" ? AIRealPoint{(AIReal) far, (AIReal) at} : AIRealPoint{(AIReal) at, (AIReal) -far};
+	AIRealPoint a = o == "horizontal" ? AIRealPoint{(AIReal) -reach, (AIReal) at} : AIRealPoint{(AIReal) at, (AIReal) reach};
+	AIRealPoint b = o == "horizontal" ? AIRealPoint{(AIReal) reach, (AIReal) at} : AIRealPoint{(AIReal) at, (AIReal) -reach};
 	segs[0].p = segs[0].in = segs[0].out = a; segs[0].corner = true;
 	segs[1].p = segs[1].in = segs[1].out = b; segs[1].corner = true;
 	AIArtHandle guide = nullptr;
