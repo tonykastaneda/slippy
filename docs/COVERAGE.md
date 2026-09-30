@@ -110,20 +110,20 @@ back in the same shape.
 
 | Area | Commands | Suite | Status |
 |---|---|---|---|
-| Artboards | `artboard.list/add/delete/set` (name, bounds, order), `.fitToArt`, select | AIArtboard | ◐ (read) |
-| Document setup | units, color mode convert, ruler origin, bleed, raster effect resolution | AIDocument | ◐ |
-| Layers | sublayers, move/reorder, color, template, printable, dim images, merge | AILayer, AILayerList | ◐ |
-| Selection | select by type / fill / stroke / style / symbol ("Select > Same") | AIMatchingArt, AIArtSet | ◐ |
-| Clipboard | cut / copy / paste / paste in place / in front / behind | menu commands, AIClipboard | ✗ (via `menu.run` only) |
-| Guides / grid | `guide.create/clear`, grid settings, snapping | AIPath (guides), AIGrid | ✗ |
-| Images | embed / relink / rasterize / trace (Image Trace) / crop | AIPlaced, AIRaster, AIRasterize, AIVectorize | ◐ (place) |
-| Metadata | art / document key-values, XMP | AIDictionary, AITag, AIXMLElement | ✗ |
-| Slices | `slice.*` | AISlicing | ✗ |
-| Transform again | `art.transformAgain` | AITransformAgain | ✗ |
-| Print | `document.print` | AIDocumentList::Print | ✗ |
-| Cloud documents | open / save to cloud, recents | AICloudDocument, AIDocumentList | ✗ |
-| Recent files | list / open | AIDocumentList | ✗ |
-| Preferences | read / write | AIPreference | ✗ |
+| Artboards | `artboard.list`, `.add`, `.set` (name, bounds, locked, active), `.delete`, `.fit` (to art / selection / everything) | AIArtboard | 🔨 |
+| Document setup | `document.settings` (ruler units, bleed, color mode), `document.xmp` | AIDocument | 🔨 |
+| Layers | `layer.tree` (sub-layers), `layer.create {parent / above / below}`, `layer.set` template, printable, preview, dim images, color | AILayer | 🔨 |
+| Selection | `select.matching` (type, fill, stroke, name, layer), `select.same` (10 attributes), `select.all`, `.none`, `.inverse` | AIMatchingArt + Select menu | 🔨 |
+| Clipboard | `edit.copy`, `edit.cut`, `edit.paste {where: center / front / back / inPlace / allArtboards}` | Edit menu | 🔨 |
+| Guides | `guide.create`, `.list`, `.make`, `.release`, `.clear` | AIPath (guide flag) | 🔨 |
+| Images | `image.info`, `.embed`, `.relink`, `.trace` (default preset), `art.rasterize` | AIPlaced, AIRasterize, AIArtSet, AIVectorize | 🔨 |
+| Data | `data` - key-value data on art or the document, saved in the file | AIDictionary | 🔨 |
+| Transform again | `art.transformAgain` | Object menu | 🔨 |
+| Print | `document.print` (dialog by default) | AIDocumentList | 🔨 |
+| Recent files | `document.recent {open}` | AIDocumentList | 🔨 |
+| Preferences | `preference {prefix, suffix, type, value}` | AIPreference | 🔨 |
+| Image Trace presets / options | | AIVectorize options dictionary | ✗ |
+| Slices, cloud documents, workspaces | | AISlicing, AICloudDocument, AIWorkspace | ✗ |
 
 ## Covered today
 

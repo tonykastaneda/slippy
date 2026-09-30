@@ -1054,7 +1054,18 @@ json::Value LayerCreate(const json::Value& p)
 {
 	ActiveDocument();
 	AILayerHandle layer = nullptr;
-	Check(sAILayer->InsertLayer(nullptr, kPlaceAboveAll, &layer), "InsertLayer");
+	// Inside 'parent' (a sub-layer), right 'above' / 'below' another layer, or on top.
+	auto named = [](const json::Value& v, const char* what) {
+		json::Value q;
+		q["layer"] = v;
+		AILayerHandle h = LayerByParam(q);
+		if (!h) Fail(kErrInvalidParams, std::string("'") + what + "' must be a layer name or index");
+		return h;
+	};
+	if (p.has("parent")) Check(sAILayer->InsertLayer(named(p.get("parent"), "parent"), kPlaceInsideOnTop, &layer), "InsertLayer");
+	else if (p.has("above")) Check(sAILayer->InsertLayer(named(p.get("above"), "above"), kPlaceAbove, &layer), "InsertLayer");
+	else if (p.has("below")) Check(sAILayer->InsertLayer(named(p.get("below"), "below"), kPlaceBelow, &layer), "InsertLayer");
+	else Check(sAILayer->InsertLayer(nullptr, kPlaceAboveAll, &layer), "InsertLayer");
 	if (p.has("name")) Check(sAILayer->SetLayerTitle(layer, U(ReqStr(p, "name"))), "SetLayerTitle");
 	if (p.boolean("current", true)) sAILayer->SetCurrentLayer(layer);
 	json::Value v;
@@ -1071,6 +1082,19 @@ json::Value LayerSet(const json::Value& p)
 	if (p.has("visible")) Check(sAILayer->SetLayerVisible(layer, p.boolean("visible")), "SetLayerVisible");
 	if (p.has("locked")) Check(sAILayer->SetLayerEditable(layer, !p.boolean("locked")), "SetLayerEditable");
 	if (p.boolean("current", false)) Check(sAILayer->SetCurrentLayer(layer), "SetCurrentLayer");
+	if (p.has("template")) Check(sAILayer->SetLayerIsTemplate(layer, p.boolean("template")), "SetLayerIsTemplate");
+	if (p.has("printable")) Check(sAILayer->SetLayerPrinted(layer, p.boolean("printable")), "SetLayerPrinted");
+	if (p.has("preview")) Check(sAILayer->SetLayerPreview(layer, p.boolean("preview")), "SetLayerPreview");
+	if (p.has("dimImages")) Check(sAILayer->SetLayerDimPlacedImages(layer, p.boolean("dimImages")), "SetLayerDimPlacedImages");
+	if (p.has("color")) {
+		AIColor c = ParseColor(p.get("color"), "color");
+		if (c.kind != kThreeColor) Fail(kErrInvalidParams, "'color' must be \"#RRGGBB\" or {\"rgb\"}");
+		AIRGBColor rgb;
+		rgb.red = (ai::uint16) (c.c.rgb.red * 65535);
+		rgb.green = (ai::uint16) (c.c.rgb.green * 65535);
+		rgb.blue = (ai::uint16) (c.c.rgb.blue * 65535);
+		Check(sAILayer->SetLayerColor(layer, rgb), "SetLayerColor");
+	}
 	if (p.boolean("delete", false)) { Check(sAILayer->DeleteLayer(layer), "DeleteLayer"); return json::Value("deleted"); }
 	json::Value v;
 	v["name"] = LayerTitle(layer);
@@ -1711,9 +1735,13 @@ std::map<std::string, Command>& Table()
 			Params({{"index", "number"}, {"save", "boolean"}}), DocumentClose, true}},
 		{"document.redraw", {"Force a redraw.", Params({}), Redraw, false}},
 		{"layer.list", {"Layers top to bottom (index, name, visible, locked, current, id of its art group).", Params({}), LayerList, false}},
-		{"layer.create", {"New layer on top.", Params({{"name", "string"}, {"current", "boolean - make it current (default true)"}}), LayerCreate, true}},
-		{"layer.set", {"Change a layer.", Params({{"layer", "string | number - name or index"}, {"name", "string - rename"}, {"visible", "boolean"},
-			{"locked", "boolean"}, {"current", "boolean"}, {"delete", "boolean"}}), LayerSet, true}},
+		{"layer.create", {"New layer: on top, inside 'parent' (a sub-layer), or right above / below another layer.",
+			Params({{"name", "string"}, {"parent", "string | number - make it a sub-layer of this layer"}, {"above", "string | number - layer"},
+				{"below", "string | number - layer"}, {"current", "boolean - make it current (default true)"}}), LayerCreate, true}},
+		{"layer.set", {"Change a layer (name, visibility, lock, current, template, printable, preview, dim images, color) or delete it.",
+			Params({{"layer", "string | number - name or index"}, {"name", "string - rename"}, {"visible", "boolean"},
+			{"locked", "boolean"}, {"current", "boolean"}, {"template", "boolean"}, {"printable", "boolean"}, {"preview", "boolean - false = outline view"},
+			{"dimImages", "boolean"}, {"color", "\"#RRGGBB\" - the layer's selection color"}, {"delete", "boolean"}}), LayerSet, true}},
 		{"art.tree", {"The art tree: per layer, or below one art id.", Params({{"depth", "number - levels of children (default 3)"},
 			{"layer", "string | number - only this layer"}, {"id", "string - start at this art"}}), ArtTree, false}},
 		{"art.get", {"One art object in detail: bounds, style, path segments, text contents, layer, parent.",
@@ -1777,6 +1805,7 @@ std::map<std::string, Command>& Table()
 	AddAppearanceCommands(t);
 	AddShapeCommands(t);
 	AddTextCommands(t);
+	AddDocumentCommands(t);
 	return t;
 	}();
 	return table;

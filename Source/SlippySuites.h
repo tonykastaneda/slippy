@@ -53,6 +53,10 @@
 #include "AIPathConstruction.h"
 #include "AIFont.h"
 #include "AIATEPaint.h"
+#include "AIArtSet.h"
+#include "AIRasterize.h"
+#include "AIVectorize.h"
+#include "AIPreference.h"
 #include "SPInterf.h"
 #include "ATETextSuitesImportHelper.h"
 #include "AIAssert.hpp"
@@ -108,6 +112,10 @@ extern "C" AIRepeatSuite*			sAIRepeat;
 extern "C" AIPathConstructionSuite*	sAIPathConstruction;
 extern "C" AIFontSuite*				sAIFont;
 extern "C" AIATEPaintSuite*			sAIATEPaint;
+extern "C" AIArtSetSuite*			sAIArtSet;
+extern "C" AIRasterizeSuite*		sAIRasterize;
+extern "C" AIVectorizeSuite*		sAIVectorize;
+extern "C" AIPreferenceSuite*		sAIPreference;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.

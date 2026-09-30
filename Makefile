@@ -40,6 +40,7 @@ SOURCES := \
 	Source/CmdAppearance.cpp \
 	Source/CmdShapes.cpp \
 	Source/CmdText.cpp \
+	Source/CmdDocument.cpp \
 	$(COMMON)/source/Main.cpp \
 	$(COMMON)/source/Plugin.cpp \
 	$(COMMON)/source/Suites.cpp \

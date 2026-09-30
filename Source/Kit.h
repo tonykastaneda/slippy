@@ -127,7 +127,8 @@ void AddViewCommands(CommandTable& t);      // CmdView.cpp: view.*, hit.test
 void AddPaintCommands(CommandTable& t);     // CmdPaint.cpp: swatch.*, spot.*, gradient.*, pattern.*
 void AddAppearanceCommands(CommandTable& t);   // CmdAppearance.cpp: style.*, appearance.*, effect.*
 void AddShapeCommands(CommandTable& t);
-void AddTextCommands(CommandTable& t);      // CmdText.cpp: text.*, font.list, charStyle.*, paraStyle.*     // CmdShapes.cpp: shape.*, pathfinder.*, compound.*, path.*, envelope.*, repeat.*...
+void AddTextCommands(CommandTable& t);
+void AddDocumentCommands(CommandTable& t);  // CmdDocument.cpp: artboard.*, document settings, layer.tree, select.*, edit.*, guide.*, image.*, data      // CmdText.cpp: text.*, font.list, charStyle.*, paraStyle.*     // CmdShapes.cpp: shape.*, pathfinder.*, compound.*, path.*, envelope.*, repeat.*...
 
 } // namespace slippy
 
