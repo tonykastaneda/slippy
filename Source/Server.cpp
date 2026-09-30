@@ -115,7 +115,7 @@ static std::string LoadOrCreateToken()
 	return t;
 }
 
-bool Server::Start(Handler rpc, Handler mcp, int firstPort, const std::string& version, std::string& error)
+bool Server::Start(Handler rpc, McpHandler mcp, int firstPort, const std::string& version, std::string& error)
 {
 	fHandler = std::move(rpc);
 	fMcp = std::move(mcp);
@@ -270,7 +270,8 @@ void Server::Serve(intptr_t fd)
 	}
 	// Query strings don't matter here. The token can ride in the path
 	// (/mcp/<token>), so one URL is all an agent needs; or in a header.
-	std::string path = target.substr(0, target.find('?')), pathToken;
+	size_t q = target.find('?');
+	std::string path = target.substr(0, q), pathToken, query = q == std::string::npos ? "" : target.substr(q + 1);
 	for (const char* base : {"/mcp/", "/rpc/"}) {
 		if (path.rfind(base, 0) == 0) {
 			pathToken = path.substr(strlen(base), path.find('/', strlen(base)) - strlen(base));
@@ -314,12 +315,12 @@ void Server::Serve(intptr_t fd)
 	if (request.isArray()) {
 		json::Value out = json::Value::MakeArray();
 		for (const json::Value& m : request.asArray()) {
-			json::Value r = fMcp(m);
+			json::Value r = fMcp(m, query);
 			if (!r.isNull()) out.push(r);
 		}
 		if (out.size()) reply = out;
 	}
-	else reply = fMcp(request);
+	else reply = fMcp(request, query);
 	if (reply.isNull()) Respond(fd, 202, json::Value());
 	else Respond(fd, 200, reply);
 }

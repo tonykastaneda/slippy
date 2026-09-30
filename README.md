@@ -121,7 +121,13 @@ server's tools on a reload or restart. An agent with a shell can also use
 it straight away over plain HTTP (`/rpc/<token>`, below). One without the
 token is told to ask you for this URL, not to go reading the token file.
 
-Every command is a tool (`art.transform` becomes `art_transform`). There are
+**Tools an agent sees:** the everyday commands as their own tools
+(`art_tree`, `art_get`, `art_set`, `art_transform`, `shape_rect`,
+`document_info`...), plus `slippy_find` to search all ~190 commands by words
+("symbol", "gradient", "artboard") and `slippy_call` to run any of them. That's
+about 17 tools, which fits every MCP client. Clients that take hundreds of
+tools can use `http://127.0.0.1:7331/mcp/<token>?tools=all` to get every
+command as its own tool (`art.transform` becomes `art_transform`). There are
 also `slippy_batch`, which runs many calls as one undo step, and
 `slippy_status`. The token also works as a header (`Authorization: Bearer
 <token>` or `X-Slippy-Token`) on `http://127.0.0.1:7331/mcp`. For a client

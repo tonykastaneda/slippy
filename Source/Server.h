@@ -30,10 +30,12 @@ namespace slippy {
 class Server {
 public:
 	using Handler = std::function<json::Value(const json::Value& request)>;
+	// MCP gets the URL's query string too (?tools=all).
+	using McpHandler = std::function<json::Value(const json::Value& message, const std::string& query)>;
 
 	// Binds 127.0.0.1 on the first free port from firstPort (up to 10 tries).
 	// mcp returns null for a message that gets no response (a notification).
-	bool Start(Handler rpc, Handler mcp, int firstPort, const std::string& version, std::string& error);
+	bool Start(Handler rpc, McpHandler mcp, int firstPort, const std::string& version, std::string& error);
 	void Stop();
 
 	int Port() const { return fPort; }
@@ -43,7 +45,7 @@ public:
 
 private:
 	Handler fHandler;
-	Handler fMcp;
+	McpHandler fMcp;
 	intptr_t fListenFd = -1;   // a socket (SOCKET on Windows)
 	int fPort = 0;
 	std::string fToken;

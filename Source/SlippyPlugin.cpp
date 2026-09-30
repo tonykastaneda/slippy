@@ -181,7 +181,9 @@ ASErr SlippyPlugin::PostStartupPlugin()
 	slippy::platform::MainThreadAfter(3, [] { HideMenuItemTitled(kSlippyRunItemName); });
 	int port = kSlippyDefaultPort;
 	if (const char* env = getenv("SLIPPY_PORT")) if (atoi(env) > 0) port = atoi(env);
-	auto mcp = [](const json::Value& message) { return slippy::HandleMcp(message, Submit); };
+	auto mcp = [](const json::Value& message, const std::string& query) {
+		return slippy::HandleMcp(message, Submit, query.find("tools=all") != std::string::npos);
+	};
 	if (fServer.Start(Submit, mcp, port, kSlippyVersion, fServerError))
 		PanelSetStatus("Listening on 127.0.0.1:" + std::to_string(fServer.Port()), true);
 	else

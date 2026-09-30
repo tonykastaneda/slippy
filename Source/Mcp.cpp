@@ -11,10 +11,16 @@ namespace {
 const char* kProtocol = "2025-06-18";
 
 const char* kInstructions =
-	"Slippy drives Adobe Illustrator directly through a native plug-in (no JSX). "
+	"Slippy drives Adobe Illustrator directly through a native plug-in (no JSX). It has about 190 commands - symbols, swatches, "
+	"gradients, appearance and effects, pathfinder, text and styles, artboards, layers, images and more. Only the everyday ones are "
+	"tools here: find the rest with slippy_find (search words like \"symbol\", \"gradient\", \"artboard\") and run them with slippy_call. "
 	"Coordinates are Illustrator artwork points with y growing upward; call document_info first for the artboard bounds. "
 	"Art ids are strings from art_tree / art_selection / creation results. Commands that take ids act on the selection when none are given. "
 	"Every call is one step on Edit > Undo; use slippy_batch to make several calls one step.";
+
+// The tools every agent gets directly; everything else is one slippy_find away.
+const char* const kEveryday[] = {"document.info", "art.tree", "art.get", "art.selection", "art.select", "art.set", "art.transform",
+	"art.delete", "shape.rect", "path.create", "text.create", "document.export", "history.undo"};
 
 json::Value Error(const json::Value& id, int code, const std::string& message)
 {
@@ -61,7 +67,19 @@ json::Value SchemaFor(const json::Value& params)
 	return schema;
 }
 
-json::Value ToolList()
+json::Value CommandTool(const json::Value& c)
+{
+	json::Value t;
+	t["name"] = ToolName(c.get("method").asString());
+	t["description"] = c.get("description").asString() + (c.boolean("changesDocument") ? " (changes the document)" : "");
+	t["inputSchema"] = SchemaFor(c.get("params"));
+	if (!c.boolean("changesDocument")) t["annotations"]["readOnlyHint"] = true;
+	return t;
+}
+
+// allTools: every command as its own tool (for clients that take ~200 tools);
+// otherwise the everyday ones plus slippy_find / slippy_call.
+json::Value ToolList(bool allTools)
 {
 	json::Value tools = json::Value::MakeArray();
 	{
@@ -70,6 +88,30 @@ json::Value ToolList()
 		t["description"] = "Check that Illustrator and Slippy are reachable: versions, open document count, undo steps.";
 		t["inputSchema"]["type"] = "object";
 		t["inputSchema"]["properties"] = json::Value::MakeObject();
+		t["annotations"]["readOnlyHint"] = true;
+		tools.push(t);
+	}
+	{
+		json::Value t;
+		t["name"] = "slippy_find";
+		t["description"] = "Search Slippy's ~190 commands by words (\"symbol edit\", \"gradient\", \"artboard\", \"opacity\", \"font\"): "
+			"returns each match's method, what it does and its parameters. Run one with slippy_call. No search: the command families.";
+		t["inputSchema"]["type"] = "object";
+		t["inputSchema"]["properties"]["search"]["type"] = "string";
+		t["inputSchema"]["properties"]["search"]["description"] = "words to look for in command names, descriptions and parameters";
+		t["annotations"]["readOnlyHint"] = true;
+		tools.push(t);
+	}
+	{
+		json::Value t;
+		t["name"] = "slippy_call";
+		t["description"] = "Run any Slippy command by its method name from slippy_find (e.g. \"symbol.edit\", \"swatch.create\"), with its params.";
+		t["inputSchema"]["type"] = "object";
+		t["inputSchema"]["properties"]["method"]["type"] = "string";
+		t["inputSchema"]["properties"]["method"]["description"] = "dotted method name, e.g. \"gradient.create\"";
+		t["inputSchema"]["properties"]["params"]["type"] = "object";
+		t["inputSchema"]["properties"]["params"]["description"] = "the command's parameters, as slippy_find lists them";
+		t["inputSchema"]["required"] = json::Array{"method"};
 		tools.push(t);
 	}
 	{
@@ -92,14 +134,52 @@ json::Value ToolList()
 	for (const json::Value& c : commands.asArray()) {
 		const std::string& method = c.get("method").asString();
 		if (method == "commands.list") continue;   // tools/list already is that
-		json::Value t;
-		t["name"] = ToolName(method);
-		t["description"] = c.get("description").asString() + (c.boolean("changesDocument") ? " (changes the document)" : "");
-		t["inputSchema"] = SchemaFor(c.get("params"));
-		if (!c.boolean("changesDocument")) t["annotations"]["readOnlyHint"] = true;
-		tools.push(t);
+		bool everyday = false;
+		for (const char* e : kEveryday) if (method == e) everyday = true;
+		if (allTools || everyday) tools.push(CommandTool(c));
 	}
 	return tools;
+}
+
+std::string LowerCase(std::string s)
+{
+	for (char& c : s) if (c >= 'A' && c <= 'Z') c = (char) (c - 'A' + 'a');
+	return s;
+}
+
+// Every word must appear in the method, its description or its parameters.
+json::Value Find(const std::string& search)
+{
+	json::Value commands = Describe();
+	json::Value out;
+	if (search.empty()) {
+		json::Value families = json::Value::MakeObject();
+		for (const json::Value& c : commands.asArray()) {
+			std::string m = c.get("method").asString();
+			std::string family = m.substr(0, m.find('.'));
+			families[family] = (families.get(family).isNumber() ? families.get(family).asNumber() : 0) + 1;
+		}
+		out["families"] = families;
+		out["next"] = "slippy_find {search: \"<family or words>\"} for the commands and their parameters";
+		return out;
+	}
+	std::vector<std::string> words;
+	for (size_t i = 0, j; i < search.size(); i = j + 1) {
+		j = search.find(' ', i);
+		if (j == std::string::npos) j = search.size();
+		if (j > i) words.push_back(LowerCase(search.substr(i, j - i)));
+	}
+	json::Value list = json::Value::MakeArray();
+	for (const json::Value& c : commands.asArray()) {
+		std::string hay = LowerCase(c.get("method").asString() + " " + c.get("description").asString() + " " + c.get("params").dump());
+		bool all = true;
+		for (const std::string& w : words) if (hay.find(w) == std::string::npos) all = false;
+		if (all) list.push(c);
+	}
+	out["commands"] = list;
+	out["run"] = "slippy_call {method, params}";
+	if (list.size() == 0) out["hint"] = "nothing matched every word - try fewer or broader words, or no search for the families";
+	return out;
 }
 
 // A command's JSON-RPC response as an MCP tool result.
@@ -161,14 +241,37 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 		return out;
 	}
 
-	std::string method = name == "slippy_status" ? "app.info" : name;
-	if (name != "slippy_status") {
-		size_t dot = method.find('_');   // group_action -> group.action
-		if (dot != std::string::npos) method[dot] = '.';
+	if (name == "slippy_find") {
+		json::Value r;
+		r["result"] = Find(arguments.str("search", ""));
+		return ToolResult(r);
 	}
+
 	json::Value req;
 	req["jsonrpc"] = "2.0";
 	req["id"] = 1;
+	if (name == "slippy_call") {
+		if (!arguments.get("method").isString()) {
+			json::Value e;
+			e["error"]["message"] = "slippy_call needs 'method' - find one with slippy_find";
+			return ToolResult(e);
+		}
+		req["method"] = arguments.get("method");
+		req["params"] = arguments.get("params").isObject() ? arguments.get("params") : json::Value::MakeObject();
+		return ToolResult(run(req));
+	}
+	// A command's own tool: its name back to the dotted method (swatch_group_create -> swatch.group.create).
+	std::string method = name == "slippy_status" ? "app.info" : "";
+	if (method.empty()) {
+		json::Value commands = Describe();
+		for (const json::Value& c : commands.asArray())
+			if (ToolName(c.get("method").asString()) == name) method = c.get("method").asString();
+		if (method.empty()) {
+			json::Value e;
+			e["error"]["message"] = "unknown tool '" + name + "' - use slippy_find, then slippy_call";
+			return ToolResult(e);
+		}
+	}
 	req["method"] = method;
 	req["params"] = arguments;
 	return ToolResult(run(req));
@@ -176,7 +279,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 
 } // namespace
 
-json::Value HandleMcp(const json::Value& message, const RunCall& run)
+json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTools)
 {
 	if (!message.isObject() || !message.get("method").isString()) {
 		// A response to something we asked (we never ask), or junk.
@@ -203,7 +306,7 @@ json::Value HandleMcp(const json::Value& message, const RunCall& run)
 	if (method == "ping") return Result(id, json::Value::MakeObject());
 	if (method == "tools/list") {
 		json::Value r;
-		r["tools"] = ToolList();
+		r["tools"] = ToolList(allTools);
 		return Result(id, r);
 	}
 	if (method == "tools/call") {
