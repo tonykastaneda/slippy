@@ -59,13 +59,6 @@ AISymbolRegistrationPoint Registration(const json::Value& p)
 	Fail(kErrInvalidParams, "'registration' must be center, top, bottom, left, right, topLeft, topRight, bottomLeft or bottomRight");
 }
 
-// Selects exactly these, as the "from selection" calls want.
-void SelectOnly(const std::vector<AIArtHandle>& arts)
-{
-	Need(sAIMatchingArt, "The matching art suite")->DeselectAll();
-	for (AIArtHandle a : arts) sAIArt->SetArtUserAttr(a, kArtSelected, kArtSelected);
-}
-
 std::vector<AIArtHandle> Instances()
 {
 	std::vector<AIArtHandle> out;

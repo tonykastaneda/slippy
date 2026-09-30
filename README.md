@@ -162,7 +162,8 @@ What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs
 | art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.duplicate`, `.arrange`, `.delete` |
 | structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.unclip` |
 | files | `art.place` (link or embed an image / PDF / .ai, into a group or next to an object, scaled to `fitTo` another object) |
-| create | `shape.rect`, `shape.ellipse`, `path.create` (corners or Bézier anchors), `text.create` |
+| create | `shape.rect`, `.ellipse`, `.roundedRect`, `.polygon`, `.star`, `.spiral`, `.pie`, `path.create` (corners or Bézier anchors), `text.create` |
+| path operations | `pathfinder.*` (unite, intersect, exclude, minusFront, minusBack, divide, trim, merge, crop, outline), `compound.make/release`, `path.measure/pointAt/reverse/setClosed/simplify/offset/outlineStroke/join/addAnchors/removeAnchors`, `art.outline/toPaths/expand/expandAppearance`, `envelope.*`, `repeat.*`, `blend.*`, `livePaint.*` |
 | paint | swatches (`swatch.*`), spot / global colors (`spot.*`), `gradient.*`, `pattern.*`; any color param also takes `{"swatch"}`, `{"spot"}`, `{"gradient"}`, `{"pattern"}` by name; `color.used`, `.replace`, `.adjust` |
 | appearance | `appearance.get`, `.set` (opacity, blend mode), `.add` (extra fills / strokes), `.clear`, `.copy`; `effect.list`, `effect.apply`; graphic styles `style.*` |
 | symbols | `symbol.list`, `.instances`, `.create`, `.place`, `.replace`, `.break`, `.edit` / `.finish` (edit a definition in place), `.redefine`, `.rename`, `.delete` |
@@ -226,7 +227,7 @@ What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs
 | `Source/Raster.*` | `document.export` PNG / JPEG: draws the PDF copy's page (Core Graphics / Windows.Data.Pdf + WIC) |
 | `Source/Commands.*` | The command table and the core commands: JSON in and out, undo labels |
 | `Source/Kit.h` | What every command file shares: errors, params, art ids, paint |
-| `Source/Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test), `CmdPaint` (swatches, spots, gradients, patterns, recolor), `CmdAppearance` (appearance, effects, graphic styles) |
+| `Source/Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test), `CmdPaint` (swatches, spots, gradients, patterns, recolor), `CmdAppearance` (appearance, effects, graphic styles), `CmdShapes` (shapes, pathfinder, path operations, envelopes, repeats) |
 | `tools/sdk_catalog.py` | Build step: the menu commands, action events and tools the SDK names, for `menu.list` and friends |
 | `Source/Narrate.*` | Turns each call into the feed's plain-English line |
 | `Source/Overlay.*` | The canvas overlay: box, cursor and label for what each call touched |

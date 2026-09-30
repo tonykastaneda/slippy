@@ -72,19 +72,23 @@ back in the same shape.
 
 | Area | Commands | Suite | Status |
 |---|---|---|---|
-| Shapes | `shape.roundedRect`, `.polygon`, `.star`, `.spiral`, `.line`, `.arc`, `.pie` | AIShapeConstruction | ◐ (rect, ellipse) |
-| Pathfinder | `pathfinder.unite/intersect/exclude/minusFront/minusBack/divide/trim/merge/crop/outline`, compound shapes | AIPathfinder | ✗ |
-| Compound paths | `art.compound`, `art.releaseCompound` | AIArt, AIGroup | ✗ |
-| Path edits | reverse, close/open, simplify, smooth, measure (length/area), add/delete anchors, point at length | AIPath, AIPathConstruction, AICurveFitting | ◐ (create only) |
-| Convert | outline stroke, expand, expand appearance, convert to paths, flatten transparency | AIArtConverter, AIExpand, AIMaskFlattener | ✗ |
-| Blends | `blend.make/release/expand`, steps, spine | AIPathInterpolate | ✗ |
-| Envelopes | `envelope.warp/mesh/fromTop/release/expand` | AIEnvelope | ✗ |
-| Gradient mesh | `mesh.create/get/setColor` | AIMesh | ✗ |
-| Repeats | `repeat.radial/grid/mirror` | AIRepeat | ✗ |
-| Live Paint | `livePaint.make/expand` | AIPlanarObject | ✗ |
-| Brushes / width | stroke profiles, arrowheads, art brushes | AIBeautifulStrokes | ✗ |
-| Perspective | grid show/plane, put art in perspective | AIPerspectiveGrid, AIPerspectiveTransform | ✗ |
-| Dimensions | read / expand dimension objects | AIDimensionObject | ✗ |
+| Shapes | `shape.roundedRect`, `.polygon`, `.star`, `.spiral`, `.pie` (plus `shape.rect`, `.ellipse`, `path.create`) | AIShapeConstruction | 🔨 |
+| Pathfinder | `pathfinder.unite`, `.intersect`, `.exclude`, `.minusFront`, `.minusBack`, `.divide`, `.trim`, `.merge`, `.crop`, `.outline` | AIPathfinder | 🔨 |
+| Compound paths | `compound.make`, `compound.release` | AIArt | 🔨 |
+| Path edits | `path.measure` (length, area, direction), `.pointAt`, `.reverse`, `.setClosed`, `.simplify` | AIPath, AIPathConstruction | 🔨 |
+| Offset / outline | `path.offset` (Offset Path live effect, expanded), `path.outlineStroke`, `art.outline` | AILiveEffect, AIArtConverter | 🔨 |
+| Convert / expand | `art.toPaths`, `art.expand`, `art.expandAppearance` | AIArtConverter, AIExpand, AIArtStyle | 🔨 |
+| Envelopes | `envelope.warp` (15 styles), `.fromTop`, `.release`, `.expand` | AIEnvelope | 🔨 |
+| Repeats | `repeat.radial`, `.grid`, `.mirror` (angle units assumed radians in the SDK) | AIRepeat | 🔨 |
+| Blends | `blend.make`, `.release`, `.expand` | menu commands (no SDK call makes a blend) | 🔨 |
+| Live Paint | `livePaint.make`, `.expand`, `.release` | menu commands | 🔨 |
+| Join / anchors | `path.join`, `path.addAnchors`, `path.removeAnchors` | menu commands | 🔨 |
+| Blend steps / spine | blend options | dialog only | ✗ |
+| Gradient mesh | `mesh.*` | AIMesh | ✗ |
+| Width profiles, brushes, arrowheads | | AIBeautifulStrokes | ✗ |
+| Perspective grid | | AIPerspectiveGrid / Transform | ✗ |
+| Flatten transparency | | AIMaskFlattener (needs art sets) | ✗ |
+| Dimensions | | AIDimensionObject | ✗ |
 
 ## Phase 4 — text
 

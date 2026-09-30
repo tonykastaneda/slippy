@@ -61,6 +61,7 @@ AIArtHandle ArtById(const std::string& idText);   // fails with kErrNotFound
 bool IsId(const json::Value& v);
 std::string IdText(const json::Value& v);
 std::vector<AIArtHandle> SelectedArt();
+void SelectOnly(const std::vector<AIArtHandle>& arts);
 // 'id' / 'ids' from p; or the selection when selectionIfMissing.
 std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing = false);
 short ArtType(AIArtHandle art);
@@ -105,6 +106,7 @@ struct Command {
 using CommandTable = std::map<std::string, Command>;
 
 json::Value Params(std::initializer_list<std::pair<const char*, const char*>> list);
+json::Value RunCommand(const std::string& method, const json::Value& params);   // one command from another
 
 inline const char* const kWhere = "'layer' (name/index) or 'parent' (group id) to place it; default: top of the current layer";
 inline const char* const kPaint = "\"#RRGGBB\" | \"none\" | {\"rgb\":[0-255 x3]} | {\"cmyk\":[0-100 x4]} | {\"gray\":0-100} | "
@@ -119,6 +121,7 @@ void AddSymbolCommands(CommandTable& t);    // CmdSymbols.cpp: symbol.*, isolati
 void AddViewCommands(CommandTable& t);      // CmdView.cpp: view.*, hit.test
 void AddPaintCommands(CommandTable& t);     // CmdPaint.cpp: swatch.*, spot.*, gradient.*, pattern.*
 void AddAppearanceCommands(CommandTable& t);   // CmdAppearance.cpp: style.*, appearance.*, effect.*
+void AddShapeCommands(CommandTable& t);     // CmdShapes.cpp: shape.*, pathfinder.*, compound.*, path.*, envelope.*, repeat.*...
 
 } // namespace slippy
 

@@ -184,6 +184,13 @@ std::vector<AIArtHandle> SelectedArt()
 	return out;
 }
 
+// Selects exactly these, as the SDK's "from selection" calls want.
+void SelectOnly(const std::vector<AIArtHandle>& arts)
+{
+	Need(sAIMatchingArt, "The matching art suite")->DeselectAll();
+	for (AIArtHandle a : arts) sAIArt->SetArtUserAttr(a, kArtSelected, kArtSelected);
+}
+
 // Ids are strings ("476"); agents often send them as numbers, so take both.
 bool IsId(const json::Value& v) { return v.isString() || (v.isNumber() && v.asNumber() == std::floor(v.asNumber())); }
 
@@ -1768,6 +1775,7 @@ std::map<std::string, Command>& Table()
 	AddViewCommands(t);
 	AddPaintCommands(t);
 	AddAppearanceCommands(t);
+	AddShapeCommands(t);
 	return t;
 	}();
 	return table;
@@ -1826,6 +1834,14 @@ json::Value RunOne(const json::Value& call)
 } // namespace
 
 void SetCallObserver(CallObserver observer) { gObserver = std::move(observer); }
+
+// One command from inside another (no feed line of its own); errors throw.
+json::Value RunCommand(const std::string& method, const json::Value& params)
+{
+	auto it = Table().find(method);
+	if (it == Table().end()) Fail(kErrInternal, "no command " + method);
+	return it->second.run(params);
+}
 
 json::Value Describe()
 {

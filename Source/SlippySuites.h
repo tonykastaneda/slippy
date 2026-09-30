@@ -44,6 +44,13 @@
 #include "AILiveEffect.h"
 #include "AIDictionary.h"
 #include "AIPaintStyle.h"
+#include "AIShapeConstruction.h"
+#include "AIPathfinder.h"
+#include "AIArtConverter.h"
+#include "AIExpand.h"
+#include "AIEnvelope.h"
+#include "AIRepeat.h"
+#include "AIPathConstruction.h"
 #include "SPInterf.h"
 #include "ATETextSuitesImportHelper.h"
 #include "AIAssert.hpp"
@@ -90,6 +97,13 @@ extern "C" AILiveEffectSuite*		sAILiveEffect;
 extern "C" AIDictionarySuite*		sAIDictionary;
 extern "C" AIDictionaryIteratorSuite*	sAIDictionaryIterator;
 extern "C" AIPaintStyleSuite*		sAIPaintStyle;
+extern "C" AIShapeConstructionSuite*	sAIShapeConstruction;
+extern "C" AIPathfinderSuite*		sAIPathfinder;
+extern "C" AIArtConverterSuite*		sAIArtConverter;
+extern "C" AIExpandSuite*			sAIExpand;
+extern "C" AIEnvelopeSuite*			sAIEnvelope;
+extern "C" AIRepeatSuite*			sAIRepeat;
+extern "C" AIPathConstructionSuite*	sAIPathConstruction;
 
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.

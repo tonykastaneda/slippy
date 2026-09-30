@@ -44,6 +44,13 @@ extern "C" {
 	AIDictionarySuite*		sAIDictionary = nullptr;
 	AIDictionaryIteratorSuite*	sAIDictionaryIterator = nullptr;
 	AIPaintStyleSuite*		sAIPaintStyle = nullptr;
+	AIShapeConstructionSuite*	sAIShapeConstruction = nullptr;
+	AIPathfinderSuite*		sAIPathfinder = nullptr;
+	AIArtConverterSuite*	sAIArtConverter = nullptr;
+	AIExpandSuite*			sAIExpand = nullptr;
+	AIEnvelopeSuite*		sAIEnvelope = nullptr;
+	AIRepeatSuite*			sAIRepeat = nullptr;
+	AIPathConstructionSuite*	sAIPathConstruction = nullptr;
 	EXTERN_TEXT_SUITES
 #if AI_ASSERTS_ENABLED
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
@@ -97,6 +104,13 @@ ImportSuite gImportSuites[] =
 	kAIDictionarySuite, kAIDictionarySuiteVersion, &sAIDictionary,
 	kAIDictionaryIteratorSuite, kAIDictionaryIteratorSuiteVersion, &sAIDictionaryIterator,
 	kAIPaintStyleSuite, kAIPaintStyleSuiteVersion, &sAIPaintStyle,
+	kAIShapeConstructionSuite, kAIShapeConstructionSuiteVersion, &sAIShapeConstruction,
+	kAIPathfinderSuite, kAIPathfinderSuiteVersion, &sAIPathfinder,
+	kAIArtConverterSuite, kAIArtConverterSuiteVersion, &sAIArtConverter,
+	kAIExpandSuite, kAIExpandSuiteVersion, &sAIExpand,
+	kAIEnvelopeSuite, kAIEnvelopeSuiteVersion, &sAIEnvelope,
+	kAIRepeatSuite, kAIRepeatSuiteVersion, &sAIRepeat,
+	kAIPathConstructionSuite, kAIPathConstructionSuiteVersion, &sAIPathConstruction,
 	IMPORT_TEXT_SUITES
 #if AI_ASSERTS_ENABLED
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,
