@@ -30,7 +30,9 @@ extern "C" {
 	ASUserInteractionSuite*	sASUserInteraction = nullptr;
 	SPInterfaceSuite*		sSPInterface = nullptr;
 	EXTERN_TEXT_SUITES
+#if AI_ASSERTS_ENABLED
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
+#endif
 };
 
 // Only what the plug-in can't start without is required; commands check the
@@ -66,7 +68,9 @@ ImportSuite gImportSuites[] =
 	kASUserInteractionSuite, kASUserInteractionSuiteVersion, &sASUserInteraction,	// alerts off while agents run
 	kSPInterfaceSuite, kSPInterfaceSuiteVersion, &sSPInterface,		// plugin.message
 	IMPORT_TEXT_SUITES
+#if AI_ASSERTS_ENABLED
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,
+#endif
 	nullptr, 0, nullptr
 };
 

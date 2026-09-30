@@ -9,6 +9,10 @@
 #include "Platform.h"
 #include "Raster.h"
 
+#ifdef SendMessage
+#undef SendMessage   // windows.h's; this file means SPInterfaceSuite::SendMessage
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>

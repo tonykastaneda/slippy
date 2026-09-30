@@ -82,6 +82,8 @@ target_compile_definitions(Slippy PRIVATE
 target_compile_options(Slippy PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8 /EHsc /W3 /FI${COMMON}/win/pragma.h /wd4996>)
 # C++/WinRT (Windows.Data.Pdf for PNG / JPEG export) wants these.
 set_source_files_properties(Source/Raster.cpp PROPERTIES COMPILE_OPTIONS "/bigobj;/permissive-;/Zc:__cplusplus")
+# The SDK headers' std names meet GDI+'s 'byte'; the panel doesn't need std::byte.
+set_source_files_properties(Source/SlippyPanelWin.cpp PROPERTIES COMPILE_DEFINITIONS "_HAS_STD_BYTE=0")
 
 target_link_libraries(Slippy PRIVATE user32 gdi32 gdiplus comctl32 ole32 shell32 shcore ws2_32 bcrypt windowscodecs windowsapp)
 

@@ -29,6 +29,37 @@ make install         # later updates, no sudo
 Quit Illustrator before installing, then restart it. Open **Window > Utilities >
 Slippy** to show the panel.
 
+## Build and install (Windows)
+
+It needs Visual Studio 2022 (C++ workload), CMake and Python 3, and the
+Illustrator 2026 SDK:
+
+```sh
+cmake -S . -B build-win -A x64 -DAI_SDK="C:/path/to/AdobeIllustratorSDK"   # or -A ARM64
+cmake --build build-win --config Release    # -> build-win/Release/Slippy.aip
+```
+
+Quit Illustrator and copy `Slippy.aip` into
+`C:\Program Files\Adobe\Adobe Illustrator 2026\Plug-ins`, then restart it.
+The Windows build is untested in Illustrator so far: it compiles in CI, but
+the panel, the server and PNG/JPEG export haven't been run there yet.
+
+## CI builds
+
+`.github/workflows/build.yml` builds on every push: a macOS `Slippy.aip`
+(signed with Developer ID and notarized once the secrets below are set, ad
+hoc until then) and Windows x64 / ARM64. Download them from the run's
+artifacts. Pushing a `v*` tag also publishes them as a GitHub release. The
+Illustrator SDK comes from this private repo's `sdk-illustrator-2026` release.
+
+| Setting | What |
+|---|---|
+| secret `MACOS_CERT_P12` | base64 of the Developer ID Application certificate, exported as a .p12 |
+| secret `MACOS_CERT_PASSWORD` | that .p12's password |
+| secret `APPLE_ID` | the Apple ID email |
+| secret `APPLE_APP_PASSWORD` | an app-specific password for that Apple ID |
+| variable `APPLE_TEAM_ID` | the developer team (GM98GV6S97) |
+
 ## The panel and Slippy
 
 Slippy the mascot is a frog's face: a green head with two eye bumps on top
@@ -49,7 +80,8 @@ hops, squash and stretch, and breathing each run on their own layer. Each call a
 from Slippy (teal = read, amber = edit, red = error), kicks its command group's
 bar, and slides into the feed as a plain-English line ("Rotated “Slippy” 15°", "Couldn't find that object"), with the time of day. Hover a line for the technical command, how long it took and any full error. The panel also has
 **Pause agents**, which refuses calls, and **Copy connection**, which copies
-the `claude mcp add` line with the token. With macOS Reduce Motion on, Slippy
+the `claude mcp add` line with the token. With macOS Reduce Motion on (on
+Windows: "Show animations in Windows" off), Slippy
 moves about a third as much, feed lines fade in without sliding, and the Z's
 light up in place one after another instead of drifting. Launch Illustrator
 with `SLIPPY_FULL_MOTION=1` in its environment to get full motion anyway.
@@ -70,10 +102,10 @@ he dozes off.
 
 ## Connecting an agent
 
-Slippy keeps one token in `~/Library/Application Support/Slippy/token` (mode 0600).
-It stays the same across launches, so saved agent configs keep working. Delete
-the file to rotate it; the next launch makes a new one.
-`~/Library/Application Support/Slippy/session.json` has the current URLs and
+Slippy keeps one token in `~/Library/Application Support/Slippy/token` (mode 0600;
+on Windows `%APPDATA%\Slippy\token`). It stays the same across launches, so
+saved agent configs keep working. Delete the file to rotate it; the next
+launch makes a new one. `session.json` next to it has the current URLs and
 token.
 
 **Claude Code:** click **Copy connection** in the Slippy panel and paste. It
@@ -174,13 +206,16 @@ sets how long the client waits.
 | File | Role |
 |---|---|
 | `Source/Server.*` | Loopback HTTP server on its own threads; never touches the SDK |
-| `Source/SlippyPlugin.*` | Plug-in entry. Queues each request, wakes the main thread (GCD), runs the queue in a one-tick timer message, a normal plug-in context |
+| `Source/SlippyPlugin.*` | Plug-in entry. Queues each request, wakes the main thread, runs the queue in a one-tick timer message, a normal plug-in context |
+| `Source/Platform.*` | What differs between macOS and Windows outside the panel: files, randomness, waking the main thread (GCD / a message window) |
+| `Source/Raster.*` | `document.export` PNG / JPEG: draws the PDF copy's page (Core Graphics / Windows.Data.Pdf + WIC) |
 | `Source/Commands.*` | The command table: every SDK call, JSON in and out, undo labels |
 | `Source/Narrate.*` | Turns each call into the feed's plain-English line |
 | `Source/Overlay.*` | The canvas overlay: box, cursor and label for what each call touched |
 | `Source/Mcp.*` | MCP over HTTP: handshake, tool list built from the command table, tool calls |
 | `Source/SlippyPanelView.*` | The panel and Slippy (Cocoa + Core Animation, no SDK) |
 | `Source/SlippyPanel.*` | Puts the panel view into Illustrator's docked panel |
+| `Source/SlippyPanelWin.cpp` | The panel and Slippy on Windows (GDI+, with a small keyframe / spring engine standing in for Core Animation) |
 | `Source/Preview.mm` | `make preview`: the panel in a plain window with made-up calls |
 | `Source/SlippySuites.*` | Suite imports; everything except the core suites is optional and checked before use |
 | `Source/Json.*` | Self-contained JSON (no third-party runtime dependency) |
@@ -188,7 +223,7 @@ sets how long the client waits.
 
 Findings from testing on Illustrator 30.2:
 
-- Timer messages record no undo history, and 30.2's timer suite (version 5) can't ask for one. So Slippy runs calls through its own menu command, "Slippy Run Agent Calls", which is hidden from the Window menu. It invokes that command when calls arrive, and Illustrator gives menu commands a normal undo context. The timer is only a fallback.
+- Timer messages record no undo history, and 30.2's timer suite (version 5) can't ask for one. So Slippy runs calls through its own menu command, "Slippy Run Agent Calls", which is hidden from the Window menu (on macOS; Windows still lists it, and choosing it just runs any queued calls). It invokes that command when calls arrive, and Illustrator gives menu commands a normal undo context. The timer is only a fallback.
 - `TransformArt` on a group moves it but records no undo step, so groups are transformed through their contents.
 - The native AI writer shows its Options dialog even with `kFileFormatSuppressUI`, so `.ai` saves play `adobe_saveDocumentAs` with the dialog off.
 - `GetSelectedArt` includes layer groups as "partially selected". `art.selection`, and every command that defaults to the selection, uses only fully selected, top-level objects.
