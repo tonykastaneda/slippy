@@ -1776,6 +1776,7 @@ std::map<std::string, Command>& Table()
 	AddPaintCommands(t);
 	AddAppearanceCommands(t);
 	AddShapeCommands(t);
+	AddTextCommands(t);
 	return t;
 	}();
 	return table;

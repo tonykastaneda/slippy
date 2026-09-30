@@ -73,6 +73,11 @@ AILayerHandle LayerByParam(const json::Value& p);
 // Where new art goes: 'parent' group, top of 'layer', or the current layer.
 void Placement(const json::Value& p, ai::int16& order, AIArtHandle& prep);
 
+// ---- text (Commands.cpp)
+
+std::string TextOf(AIArtHandle art);
+void SetText(AIArtHandle art, const std::string& text, const json::Value& p);
+
 // ---- paint
 
 json::Value ColorJson(const AIColor& c);
@@ -121,7 +126,8 @@ void AddSymbolCommands(CommandTable& t);    // CmdSymbols.cpp: symbol.*, isolati
 void AddViewCommands(CommandTable& t);      // CmdView.cpp: view.*, hit.test
 void AddPaintCommands(CommandTable& t);     // CmdPaint.cpp: swatch.*, spot.*, gradient.*, pattern.*
 void AddAppearanceCommands(CommandTable& t);   // CmdAppearance.cpp: style.*, appearance.*, effect.*
-void AddShapeCommands(CommandTable& t);     // CmdShapes.cpp: shape.*, pathfinder.*, compound.*, path.*, envelope.*, repeat.*...
+void AddShapeCommands(CommandTable& t);
+void AddTextCommands(CommandTable& t);      // CmdText.cpp: text.*, font.list, charStyle.*, paraStyle.*     // CmdShapes.cpp: shape.*, pathfinder.*, compound.*, path.*, envelope.*, repeat.*...
 
 } // namespace slippy
 

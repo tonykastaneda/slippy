@@ -94,12 +94,16 @@ back in the same shape.
 
 | Area | Commands | Suite | Status |
 |---|---|---|---|
-| Frames | area text, text on a path, threading (link / unlink), orientation | AITextFrame | ◐ (point text) |
-| Character | font, size, leading, tracking, kerning, color, case, baseline... on ranges | ATE | ◐ (size) |
-| Paragraph | alignment, indents, spacing, hyphenation | ATE | ✗ |
-| Styles | `textStyle.char/para.list/create/apply` | ATE, AIATECurrTextFeatures | ✗ |
-| Fonts | `font.list`, `font.find` | AIFont | ✗ |
-| Outlines | `text.outline` | AITextFrame::CreateOutline | ✗ |
+| Frames | `text.area` (in a rectangle or any path), `text.onPath`, `text.link` / `text.unlink` (threading), orientation | AITextFrame | 🔨 |
+| Reading | `text.get` - kind, contents, formatting ("mixed" where it varies), threaded | ATE | 🔨 |
+| Character | `text.format` font (PostScript or family + style), size, leading / auto, tracking, baseline shift, scale, caps, underline, strikethrough, fill / stroke paint - whole frame or a `range` | ATE ICharFeatures | 🔨 |
+| Paragraph | `text.format` align, indents, space before / after, hyphenate | ATE IParaFeatures | 🔨 |
+| Case | `text.format {case: upper | lower | title | sentence}` | ATE ChangeCase | 🔨 |
+| Styles | `charStyle.list/create/apply/delete`, `paraStyle.list/create/apply/delete` | ATE document text resources | 🔨 |
+| Fonts | `font.list {search}` | AIFont | 🔨 |
+| Outlines | `text.outline` | AITextFrame::CreateOutline | 🔨 |
+| Find / replace | `text.find`, `text.replace` across every frame | ATE ranges | 🔨 |
+| OpenType features, tabs, lists, text wrap | | ATE | ✗ |
 | Legacy text | convert | AILegacyTextConversion | ✗ |
 
 ## Phase 5 — document, artboards, layers, images

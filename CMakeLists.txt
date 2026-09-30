@@ -41,6 +41,7 @@ add_library(Slippy SHARED
 	Source/CmdPaint.cpp
 	Source/CmdAppearance.cpp
 	Source/CmdShapes.cpp
+	Source/CmdText.cpp
 	Source/SlippyPanelWin.cpp
 	${COMMON}/source/Main.cpp
 	${COMMON}/source/Plugin.cpp

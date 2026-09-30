@@ -284,6 +284,20 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	if (m == "blend.release") return {"Released a blend", "release a blend"};
 	if (m == "blend.expand") return {"Expanded a blend", "expand a blend"};
 	if (m.rfind("livePaint.", 0) == 0) return {"Live Paint: " + m.substr(10), "live paint " + m.substr(10)};
+	if (m == "text.get") return {"Read " + Target(p, json::Value()), "read text"};
+	if (m == "text.format") return {"Formatted " + Target(p, json::Value()), "format text"};
+	if (m == "text.area") return {"Added area text " + Quote(p.str("contents")), "add area text"};
+	if (m == "text.onPath") return {"Put text on a path " + Quote(p.str("contents")), "put text on a path"};
+	if (m == "text.outline") return {"Outlined text", "outline text"};
+	if (m == "text.link") return {"Threaded text", "thread text"};
+	if (m == "text.unlink") return {"Unthreaded text", "unthread text"};
+	if (m == "text.find") return {"Searched text for " + Quote(p.str("search")), "search text"};
+	if (m == "text.replace") return {"Replaced " + Quote(p.str("search")) + " with " + Quote(p.str("replace")), "replace text"};
+	if (m == "font.list") return {"Looked up fonts", "look up fonts"};
+	if (m == "charStyle.list" || m == "paraStyle.list") return {"Looked at the text styles", "list text styles"};
+	if (m == "charStyle.create" || m == "paraStyle.create") return {"Made the text style " + Quote(p.str("name")), "make a text style"};
+	if (m == "charStyle.apply" || m == "paraStyle.apply") return {"Applied the text style " + Quote(p.str("name")), "apply a text style"};
+	if (m == "charStyle.delete" || m == "paraStyle.delete") return {"Deleted the text style " + Quote(p.str("name")), "delete a text style"};
 	if (m == "history.undo") {
 		int n = p.get("steps").isNumber() ? p.get("steps").asInt() : 1;
 		return {n == 1 ? "Undid the last change" : "Undid " + std::to_string(n) + " changes", "undo"};

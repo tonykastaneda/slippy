@@ -51,6 +51,8 @@ extern "C" {
 	AIEnvelopeSuite*		sAIEnvelope = nullptr;
 	AIRepeatSuite*			sAIRepeat = nullptr;
 	AIPathConstructionSuite*	sAIPathConstruction = nullptr;
+	AIFontSuite*			sAIFont = nullptr;
+	AIATEPaintSuite*		sAIATEPaint = nullptr;
 	EXTERN_TEXT_SUITES
 #if AI_ASSERTS_ENABLED
 	AIAssertionSuite*		sAIAssertion = nullptr;	// used by the SDK's IAIArtboards.cpp asserts
@@ -111,6 +113,8 @@ ImportSuite gImportSuites[] =
 	kAIEnvelopeSuite, kAIEnvelopeSuiteVersion, &sAIEnvelope,
 	kAIRepeatSuite, kAIRepeatSuiteVersion, &sAIRepeat,
 	kAIPathConstructionSuite, kAIPathConstructionSuiteVersion, &sAIPathConstruction,
+	kAIFontSuite, kAIFontSuiteVersion, &sAIFont,
+	kAIATEPaintSuite, kAIATEPaintSuiteVersion, &sAIATEPaint,
 	IMPORT_TEXT_SUITES
 #if AI_ASSERTS_ENABLED
 	kAIAssertionSuite, kAIAssertionSuiteVersion, &sAIAssertion,
