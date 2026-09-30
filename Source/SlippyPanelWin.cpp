@@ -10,6 +10,7 @@
 #include "SlippySuites.h"
 #include "AIUITheme.h"
 #include "Platform.h"
+#include "FrogShape.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -445,14 +446,20 @@ public:
 		g.TranslateTransform((REAL) left, (REAL) (top + fH));
 		g.ScaleTransform(1, -1);
 
-		// Ripples, under Slippy.
+		// Ripples, under Slippy: Slippy's own outline, growing from the middle of it.
+		static const std::vector<slippy::FrogPoint> outline = slippy::FrogOutline(kEyeX, kEyeY, kBumpR);
 		for (size_t i = 0; i < fRipples.size();) {
 			double p = (now - fRipples[i].start) / 0.75;
 			if (p >= 1) { fRipples.erase(fRipples.begin() + (long) i); continue; }
 			double e = kEaseOut(p), s = 1 + 0.8 * Motion() * e, opacity = 0.9 * (1 - e);
+			std::vector<PointF> pts;
+			double mx = slippy::kFrogMidX, my = slippy::kFrogMidY;
+			double ox = fCenterX - fD / 2, oy = fCenterY - fD / 2;
+			for (auto& q : outline)
+				pts.push_back(PointF((REAL) (ox + (mx + (q.x - mx) * s) * fD), (REAL) (oy + (my + (q.y - my) * s) * fD)));
 			Pen pen(C(fRipples[i].color, opacity * alpha), (REAL) (2 * s));
-			REAL r = (REAL) ((fD / 2 - 1) * s);
-			g.DrawEllipse(&pen, (REAL) fCenterX - r, (REAL) fCenterY - r, 2 * r, 2 * r);
+			pen.SetLineJoin(LineJoinRound);
+			g.DrawPolygon(&pen, pts.data(), (INT) pts.size());
 			i++;
 		}
 

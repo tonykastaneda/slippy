@@ -1,4 +1,5 @@
 #import "SlippyPanelView.h"
+#include "FrogShape.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -775,12 +776,21 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 - (void)ripple:(NSColor*)color
 {
 	if (_D < 1) return;
+	// Slippy's own outline, growing from the middle of it.
 	CAShapeLayer* ring = [CAShapeLayer layer];
 	ring.bounds = CGRectMake(0, 0, _D, _D);
-	ring.position = _center;
-	CGPathRef path = CGPathCreateWithEllipseInRect(CGRectInset(ring.bounds, 1, 1), nullptr);
+	ring.anchorPoint = CGPointMake(slippy::kFrogMidX, slippy::kFrogMidY);
+	ring.position = CGPointMake(_center.x - _D / 2 + slippy::kFrogMidX * _D, _center.y - _D / 2 + slippy::kFrogMidY * _D);
+	static const std::vector<slippy::FrogPoint> outline = slippy::FrogOutline(kEyeX, kEyeY, kBumpR);
+	CGMutablePathRef path = CGPathCreateMutable();
+	for (size_t i = 0; i < outline.size(); i++) {
+		if (i == 0) CGPathMoveToPoint(path, nullptr, outline[i].x * _D, outline[i].y * _D);
+		else CGPathAddLineToPoint(path, nullptr, outline[i].x * _D, outline[i].y * _D);
+	}
+	CGPathCloseSubpath(path);
 	ring.path = path;
 	CGPathRelease(path);
+	ring.lineJoin = kCALineJoinRound;
 	ring.fillColor = nil;
 	ring.lineWidth = 2;
 	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{ ring.strokeColor = color.CGColor; }];

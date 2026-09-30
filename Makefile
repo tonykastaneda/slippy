@@ -109,7 +109,7 @@ install: all
 	ditto $(BUNDLE) "$(AI_APP)/Plug-ins.localized/$(NAME).aip"
 
 # The panel in a plain window with made-up calls - watch Slippy without Illustrator.
-$(BUILD)/SlippyPreview: Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/Narrate.cpp Source/Json.cpp
+$(BUILD)/SlippyPreview: Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/FrogShape.h Source/Narrate.cpp Source/Json.cpp
 	mkdir -p $(BUILD)
 	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource Source/Preview.mm Source/SlippyPanelView.mm Source/Narrate.cpp Source/Json.cpp \
 		-framework Cocoa -framework QuartzCore -o $@
