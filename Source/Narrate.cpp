@@ -195,6 +195,31 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	}
 	if (m == "action.play") return {"Played the action " + Quote(p.str("event")), "play " + Quote(p.str("event"))};
 	if (m == "plugin.message") return {"Sent " + p.str("plugin") + " " + Quote(p.str("selector")), "message " + p.str("plugin")};
+	if (m == "menu.list") return {p.has("search") ? "Looked up menu commands for " + Quote(p.str("search")) : "Listed the menu commands", "look up menu commands"};
+	if (m == "action.list") return {"Listed the actions", "list actions"};
+	if (m == "action.describe") return {"Looked up the action " + Quote(p.str("event")), "look up " + Quote(p.str("event"))};
+	if (m == "tool.list") return {"Listed the tools", "list tools"};
+	if (m == "tool.current") return {"Checked the current tool", "check the current tool"};
+	if (m == "tool.select") return {"Switched to " + (r.get("title").isString() ? Quote(r.get("title").asString()) : Quote(p.str("name"))), "switch to " + Quote(p.str("name"))};
+	if (m == "symbol.list") return {"Listed the symbols", "list symbols"};
+	if (m == "symbol.instances") return {"Found the symbol instances", "find symbol instances"};
+	if (m == "symbol.create") return {"Made the symbol " + Quote(r.str("symbol")), "make a symbol"};
+	if (m == "symbol.place") return {"Placed " + Quote(p.str("symbol")), "place " + Quote(p.str("symbol"))};
+	if (m == "symbol.replace") return {"Swapped " + Target(p, r) + " to " + Quote(p.str("symbol")), "swap to " + Quote(p.str("symbol"))};
+	if (m == "symbol.break") return {"Broke the link to a symbol", "break a symbol link"};
+	if (m == "symbol.edit") return {"Editing the symbol " + Quote(r.str("editing")), "edit a symbol"};
+	if (m == "symbol.finish") return {(r.get("saved").isBool() && !r.get("saved").asBool() ? "Discarded changes to " : "Saved the symbol ") + Quote(r.str("symbol")), "finish the symbol edit"};
+	if (m == "symbol.redefine") return {"Redefined " + Quote(p.str("symbol")), "redefine " + Quote(p.str("symbol"))};
+	if (m == "symbol.rename") return {"Renamed a symbol to " + Quote(p.str("name")), "rename a symbol"};
+	if (m == "symbol.delete") return {"Deleted the symbol " + Quote(r.str("deleted")), "delete a symbol"};
+	if (m == "isolation.state") return {"Checked isolation mode", "check isolation mode"};
+	if (m == "isolation.enter") return {"Isolated " + Target(p, json::Value()), "isolate " + Target(p, json::Value())};
+	if (m == "isolation.exit") return {"Left isolation mode", "leave isolation mode"};
+	if (m == "view.get") return {"Checked the view", "check the view"};
+	if (m == "view.set") return {"Changed the view", "change the view"};
+	if (m == "view.fit") return {"Zoomed to fit", "zoom to fit"};
+	if (m == "view.screenshot") return {"Took a screenshot of the window", "take a screenshot"};
+	if (m == "hit.test") return {r.get("hit").isBool() && r.get("hit").asBool() ? std::string("Found ") + KindOf(r.get("art").str("type")) + " at a point" : "Found nothing at that point", "look at a point"};
 	if (m == "history.undo") {
 		int n = p.get("steps").isNumber() ? p.get("steps").asInt() : 1;
 		return {n == 1 ? "Undid the last change" : "Undid " + std::to_string(n) + " changes", "undo"};

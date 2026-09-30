@@ -33,6 +33,9 @@ SOURCES := \
 	Source/Json.cpp \
 	Source/Platform.cpp \
 	Source/Raster.cpp \
+	Source/CmdCatalog.cpp \
+	Source/CmdSymbols.cpp \
+	Source/CmdView.cpp \
 	$(COMMON)/source/Main.cpp \
 	$(COMMON)/source/Plugin.cpp \
 	$(COMMON)/source/Suites.cpp \
@@ -55,7 +58,7 @@ vpath %.mm $(sort $(dir $(MM_SOURCES)))
 
 CXX      := clang++
 ARCH     := -arch arm64 -mmacosx-version-min=12.0
-INCLUDES := -ISource -I$(COMMON)/includes \
+INCLUDES := -ISource -I$(BUILD) -I$(COMMON)/includes \
 	-I$(API)/illustrator -I$(API)/illustrator/actions -I$(API)/pica_sp -I$(API)/ate
 CXXFLAGS := $(ARCH) -std=c++17 -stdlib=libc++ -x objective-c++ -O2 -g \
 	-fvisibility=hidden -fvisibility-inlines-hidden \
@@ -75,6 +78,12 @@ $(OBJDIR)/%.o: %.mm | $(OBJDIR)
 
 $(OBJDIR):
 	mkdir -p $@
+
+# The menu commands, action events and tools the SDK names (menu.list...).
+$(BUILD)/SdkCatalog.inc: tools/sdk_catalog.py
+	mkdir -p $(BUILD)
+	python3 tools/sdk_catalog.py "$(SDK)" $@
+$(OBJDIR)/CmdCatalog.o: $(BUILD)/SdkCatalog.inc
 
 $(EXE): $(OBJECTS)
 	mkdir -p $(dir $@)

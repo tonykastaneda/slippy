@@ -1,5 +1,6 @@
 #include "IllustratorSDK.h"
 #include "Commands.h"
+#include "Kit.h"
 #include "Narrate.h"
 #include "Overlay.h"
 #include "SlippySuites.h"
@@ -22,15 +23,10 @@
 
 namespace slippy {
 
-namespace {
+// Shared helpers (Kit.h) first; this file's own commands follow in an
+// anonymous namespace.
 
 // ------------------------------------------------------------------ errors
-
-struct CommandError {
-	int code;
-	std::string message;
-	AIErr aiError = kNoErr;
-};
 
 [[noreturn]] void Fail(int code, const std::string& message) { throw CommandError{code, message}; }
 
@@ -47,17 +43,16 @@ void Check(AIErr e, const char* what)
 	if (e) throw CommandError{kErrIllustrator, std::string(what) + " failed (" + ErrText(e) + ")", e};
 }
 
-template <typename T>
-T* Need(T* suite, const char* name)
-{
-	if (!suite) Fail(kErrUnavailable, std::string(name) + " isn't available in this Illustrator");
-	return suite;
-}
-
 // ------------------------------------------------------------------ strings
 
 ai::UnicodeString U(const std::string& s) { return ai::UnicodeString::FromUTF8(s); }
 std::string S(const ai::UnicodeString& u) { return u.as_UTF8(); }
+
+std::string Lower(std::string s)
+{
+	for (char& c : s) c = (char) tolower((unsigned char) c);
+	return s;
+}
 
 // ------------------------------------------------------------------ params
 
@@ -199,7 +194,7 @@ std::string IdText(const json::Value& v)
 	Fail(kErrInvalidParams, "art ids are strings like \"476\"");
 }
 
-std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing = false)
+std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing)
 {
 	std::vector<AIArtHandle> out;
 	const json::Value& ids = p.get("ids");
@@ -548,21 +543,16 @@ void SetText(AIArtHandle art, const std::string& text, const json::Value& p)
 	}
 }
 
-// ------------------------------------------------------------------ commands
-
-struct Command {
-	std::string description;
-	json::Value params;   // name -> "type - meaning"
-	std::function<json::Value(const json::Value&)> run;
-	bool changesDocument;
-};
-
 json::Value Params(std::initializer_list<std::pair<const char*, const char*>> list)
 {
 	json::Value v = json::Value::MakeObject();
 	for (auto& kv : list) v[kv.first] = kv.second;
 	return v;
 }
+
+// ------------------------------------------------------------------ commands
+
+namespace {
 
 std::map<std::string, Command>& Table();
 
@@ -786,12 +776,6 @@ void SaveAsNative(const std::string& path, const std::string& format)
 }
 
 // ------------------------------------------------------------------ export
-
-std::string Lower(std::string s)
-{
-	for (char& c : s) c = (char) tolower((unsigned char) c);
-	return s;
-}
 
 // Short names agents use, and Illustrator's own name for each writer.
 const std::map<std::string, std::string>& Writers()
@@ -1528,8 +1512,10 @@ json::Value MenuRun(const json::Value& p)
 	Need(sAICommandManager, "The command manager suite");
 	std::string name = ReqStr(p, "command");
 	AICommandID id = 0;
-	if (sAICommandManager->GetCommandIDFromName(name.c_str(), &id) || !id)
-		Fail(kErrNotFound, "no menu command named '" + name + "' (use the same names as app.executeMenuCommand, e.g. \"group\", \"selectall\", \"outline\")");
+	// Its name ("group"), or the label people see ("Group").
+	if ((sAICommandManager->GetCommandIDFromName(name.c_str(), &id) || !id) &&
+		(sAICommandManager->GetCommandIDFromLocalizedName(U(name), &id) || !id))
+		Fail(kErrNotFound, "no menu command named '" + name + "' - find it with menu.list {search: \"" + name + "\"}");
 	// Illustrator runs a command that doesn't apply as a no-op (its alert is
 	// suppressed), so compare before and after to say whether anything happened.
 	if (sAIDocument) sAIDocument->SyncDocument();
@@ -1637,12 +1623,10 @@ json::Value Redraw(const json::Value&)
 	return json::Value("redrawn");
 }
 
-const char* kWhere = "'layer' (name/index) or 'parent' (group id) to place it; default: top of the current layer";
-const char* kPaint = "\"#RRGGBB\" | \"none\" | {\"rgb\":[0-255 x3]} | {\"cmyk\":[0-100 x4]} | {\"gray\":0-100}";
-
 std::map<std::string, Command>& Table()
 {
-	static std::map<std::string, Command> table = {
+	static std::map<std::string, Command> table = [] {
+	CommandTable t = {
 		{"app.info", {"Illustrator + Slippy versions, open document count, missing suites.", Params({}), AppInfo, false}},
 		{"commands.list", {"Every command with its parameters.", Params({}), [](const json::Value&) { return Describe(); }, false}},
 		{"document.list", {"Open documents (index, name, path, active).", Params({}), DocumentList, false}},
@@ -1707,7 +1691,7 @@ std::map<std::string, Command>& Table()
 				{"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), PathCreate, true}},
 		{"text.create", {"Point text; 'position' is the first baseline's start.", Params({{"position", "[x, y]"}, {"contents", "string (\\n = new paragraph)"},
 			{"size", "number - font size"}, {"name", "string"}, {"layer", kWhere}, {"parent", kWhere}, {"select", "boolean"}}), TextCreate, true}},
-		{"menu.run", {"Run any menu command by name, as app.executeMenuCommand does (\"outline\", \"selectall\", \"Live Pathfinder Add\"...). "
+		{"menu.run", {"Run any menu command by its name from menu.list (\"outline\", \"selectall\"), as app.executeMenuCommand does, or by its on-screen label. "
 			"Acts on the selection; 'changed' says whether anything happened. Prefer the art.* commands for grouping, masks and moving art.",
 			Params({{"command", "string"}}), MenuRun, true}},
 		{"action.play", {"Play an action event (e.g. \"adobe_paste\") with typed parameters, no dialog by default.",
@@ -1719,6 +1703,11 @@ std::map<std::string, Command>& Table()
 		{"history.undo", {"Undo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryUndo, false}},
 		{"history.redo", {"Redo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryRedo, false}},
 	};
+	AddCatalogCommands(t);
+	AddSymbolCommands(t);
+	AddViewCommands(t);
+	return t;
+	}();
 	return table;
 }
 

@@ -35,6 +35,9 @@ add_library(Slippy SHARED
 	Source/Json.cpp
 	Source/Platform.cpp
 	Source/Raster.cpp
+	Source/CmdCatalog.cpp
+	Source/CmdSymbols.cpp
+	Source/CmdView.cpp
 	Source/SlippyPanelWin.cpp
 	${COMMON}/source/Main.cpp
 	${COMMON}/source/Plugin.cpp
@@ -103,5 +106,18 @@ add_custom_target(SlippyPipl DEPENDS "${PIPL}")
 add_dependencies(Slippy SlippyPipl)
 set_source_files_properties(Resources/Win/Slippy.rc PROPERTIES OBJECT_DEPENDS "${PIPL};${CMAKE_CURRENT_SOURCE_DIR}/Resources/raw/IDToFile.txt;${CMAKE_CURRENT_SOURCE_DIR}/Resources/raw/slippy_panel_light.svg;${CMAKE_CURRENT_SOURCE_DIR}/Resources/raw/slippy_panel_dark.svg")
 target_include_directories(Slippy PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+
+# The menu commands, action events and tools the SDK names (menu.list...).
+set(CATALOG "${CMAKE_CURRENT_BINARY_DIR}/SdkCatalog.inc")
+add_custom_command(
+	OUTPUT "${CATALOG}"
+	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/sdk_catalog.py" "${AI_SDK}" "${CATALOG}"
+	DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/sdk_catalog.py"
+	COMMENT "Generating the SDK catalog"
+	VERBATIM
+)
+add_custom_target(SlippyCatalog DEPENDS "${CATALOG}")
+add_dependencies(Slippy SlippyCatalog)
+set_source_files_properties(Source/CmdCatalog.cpp PROPERTIES OBJECT_DEPENDS "${CATALOG}")
 
 configure_file(Resources/Win/SlippyVersion.h.in "${CMAKE_CURRENT_BINARY_DIR}/SlippyVersion.h" @ONLY)

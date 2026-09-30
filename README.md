@@ -152,6 +152,8 @@ sets how long the client waits.
 
 ## Commands
 
+What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs/COVERAGE.md).
+
 | Group | Methods |
 |---|---|
 | app | `app.info`, `commands.list` (full parameter docs) |
@@ -161,7 +163,12 @@ sets how long the client waits.
 | structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.unclip` |
 | files | `art.place` (link or embed an image / PDF / .ai, into a group or next to an object, scaled to `fitTo` another object) |
 | create | `shape.rect`, `shape.ellipse`, `path.create` (corners or Bézier anchors), `text.create` |
-| escape hatches | `menu.run` (any menu command by name, like `app.executeMenuCommand`), `action.play` (any action event with typed params), `plugin.message` (send another plug-in a script message, like `app.sendScriptMessage`) |
+| symbols | `symbol.list`, `.instances`, `.create`, `.place`, `.replace`, `.break`, `.edit` / `.finish` (edit a definition in place), `.redefine`, `.rename`, `.delete` |
+| isolation | `isolation.state`, `.enter`, `.exit` |
+| view | `view.get`, `.set` (zoom, center, screen / preview mode, guides, grid...), `.fit`, `.screenshot`, `hit.test` |
+| tools | `tool.list`, `tool.current`, `tool.select` |
+| find what to run | `menu.list` (every menu command, with its menu path and label), `action.list`, `action.describe` |
+| escape hatches | `menu.run` (any menu command by name or label, like `app.executeMenuCommand`), `action.play` (any action event with typed params), `plugin.message` (send another plug-in a script message, like `app.sendScriptMessage`) |
 | history | `history.undo`, `history.redo` |
 
 - **Exporting:** `document.export {path}` picks the format from the extension
@@ -215,7 +222,10 @@ sets how long the client waits.
 | `Source/SlippyPlugin.*` | Plug-in entry. Queues each request, wakes the main thread, runs the queue in a one-tick timer message, a normal plug-in context |
 | `Source/Platform.*` | What differs between macOS and Windows outside the panel: files, randomness, waking the main thread (GCD / a message window) |
 | `Source/Raster.*` | `document.export` PNG / JPEG: draws the PDF copy's page (Core Graphics / Windows.Data.Pdf + WIC) |
-| `Source/Commands.*` | The command table: every SDK call, JSON in and out, undo labels |
+| `Source/Commands.*` | The command table and the core commands: JSON in and out, undo labels |
+| `Source/Kit.h` | What every command file shares: errors, params, art ids, paint |
+| `Source/Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test) |
+| `tools/sdk_catalog.py` | Build step: the menu commands, action events and tools the SDK names, for `menu.list` and friends |
 | `Source/Narrate.*` | Turns each call into the feed's plain-English line |
 | `Source/Overlay.*` | The canvas overlay: box, cursor and label for what each call touched |
 | `Source/Mcp.*` | MCP over HTTP: handshake, tool list built from the command table, tool calls |
