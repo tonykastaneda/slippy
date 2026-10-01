@@ -2,8 +2,8 @@
 
 The marks Slippy's panel shows beside the call counts for whoever sent the
 last call. Each file is named after the agent as `AgentName()` in
-`Source/Mcp.cpp` reports it; `tools/agent_logos.py` builds them in, and
-brand colors live in that script. Drop in another SVG (a single 24 x 24
+`Source/Mcp.cpp` reports it, with `_` for spaces (`VS_Code.svg`);
+`tools/agent_logos.py` builds them in, and brand colors live in that script. Drop in another SVG (a single 24 x 24
 path set) to add an agent.
 
 Sources:

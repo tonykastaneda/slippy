@@ -5,8 +5,9 @@ as SVG path data (24 x 24), its fill rule, and the color the panel draws it in.
     python3 tools/agent_logos.py <Resources/agents> <output .inc>
 
 The file name is the agent's name as Mcp.cpp's AgentName() gives it
-("Claude", "Codex", "VS Code"...). Marks with a brand color get it; single-
-color marks follow the panel's text color (light on dark, dark on light).
+("Claude", "Codex"...), with _ for spaces ("VS_Code.svg" is "VS Code").
+Marks with a brand color get it; single-color marks follow the panel's text
+color (light on dark, dark on light).
 """
 import os
 import re
@@ -31,7 +32,7 @@ def main():
     for name in sorted(os.listdir(folder)):
         if not name.endswith(".svg"):
             continue
-        agent = name[:-4]
+        agent = name[:-4].replace("_", " ")   # file names avoid spaces (make): Roo_Code -> Roo Code
         with open(os.path.join(folder, name), encoding="utf-8") as f:
             svg = f.read()
         paths = re.findall(r'<path[^>]*\sd="([^"]+)"', svg)
