@@ -6,6 +6,7 @@
 //   build/SlippyPreview --snapshot DIR  still PNGs of each face (for checking the drawing)
 
 #import "SlippyPanelView.h"
+#import "Terminal.h"
 #include "Json.h"
 #include "Narrate.h"
 
@@ -74,6 +75,15 @@ static void Snapshot(NSView* view, NSString* path)
 	system(cmd.UTF8String);
 }
 
+// The scripted modes run inside [app run], or WebKit never draws the terminal.
+// From a timer, not the main queue: their waits must let main-queue work
+// (WebKit loading the page, the shell's output) run.
+static void RunScript(NSApplication* app, void (^script)(void))
+{
+	[NSTimer scheduledTimerWithTimeInterval:0 repeats:NO block:^(NSTimer*) { script(); exit(0); }];
+	[app run];
+}
+
 int main(int argc, const char* argv[])
 {
 	@autoreleasepool {
@@ -84,6 +94,10 @@ int main(int argc, const char* argv[])
 		win.title = @"Slippy preview";
 		win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];   // like Illustrator's dark UI
 		win.backgroundColor = [NSColor colorWithWhite:0.22 alpha:1];
+		SlippyTerminal.shared.stateDirectory = [NSTemporaryDirectory() stringByAppendingPathComponent:@"SlippyPreview"];
+		SlippyTerminal.shared.environment = @{@"SLIPPY_URL": @"(preview)"};
+		[NSNotificationCenter.defaultCenter addObserverForName:NSApplicationWillTerminateNotification object:nil queue:nil
+			usingBlock:^(NSNotification*) { [SlippyTerminal.shared shutdown]; }];
 		SlippyPanelView* panel = [[SlippyPanelView alloc] initWithFrame:win.contentView.bounds];
 		[win.contentView addSubview:panel];
 		[panel setStatus:@"Listening on 127.0.0.1:7331" listening:YES];
@@ -95,7 +109,7 @@ int main(int argc, const char* argv[])
 			[win setFrame:f display:YES animate:YES];
 		};
 
-		if (argc == 3 && !strcmp(argv[1], "--snapshot")) {
+		if (argc == 3 && !strcmp(argv[1], "--snapshot")) RunScript(app, ^{
 			[win makeKeyAndOrderFront:nil];
 			[app activateIgnoringOtherApps:YES];
 			// Each face after its blink has finished (a snapshot shows model values, not
@@ -113,19 +127,45 @@ int main(int argc, const char* argv[])
 			wait(0.3);
 			Snapshot(panel, [dir stringByAppendingPathComponent:@"4-ouch.png"]);
 			// The terminal drawer open (the window grows like the panel would).
+			__weak SlippyPanelView* weakPanel = panel;
 			panel.onDrawer = ^(BOOL open, CGFloat extra) {
 				NSRect f = win.frame;
 				f.size.height += open ? extra : -extra;
 				f.origin.y -= open ? extra : -extra;
 				[win setFrame:f display:NO];
-				panel.frame = win.contentView.bounds;
+				weakPanel.frame = win.contentView.bounds;
 			};
 			[panel toggleDrawer];
 			wait(0.4);
 			Snapshot(panel, [dir stringByAppendingPathComponent:@"5-drawer.png"]);
-			return 0;
-		}
+		});
 
+		if (argc == 4 && !strcmp(argv[1], "--terminal")) RunScript(app, ^{
+			// The terminal: open the drawer (or find it resumed), run a command,
+			// snapshot to argv[3], then quit the way Illustrator does (saving it).
+			// Room above the bottom of the screen for the drawer to grow into.
+			NSRect screen = win.screen.visibleFrame;
+			[win setFrame:NSMakeRect(NSMinX(screen) + 80, NSMaxY(screen) - 820, 290, 800) display:NO];
+			panel.frame = win.contentView.bounds;
+			[win makeKeyAndOrderFront:nil];
+			[app activateIgnoringOtherApps:YES];
+			auto wait = [](double s) { [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:s]]; };
+			// WebKit doesn't draw (xterm stalls) until the window server says the window is visible.
+			for (int i = 0; i < 60 && !(win.occlusionState & NSWindowOcclusionStateVisible); i++) wait(0.05);
+			wait(0.5);
+			if (!SlippyTerminal.shared.running && ![SlippyTerminal.shared hasSavedSession]) [panel toggleDrawer];
+			// The page loads, then the shell starts (resuming if there's a saved session).
+			for (int i = 0; i < 200 && !SlippyTerminal.shared.running; i++) wait(0.05);
+			wait(1.0);
+			NSString* cmd = [NSString stringWithFormat:@"echo \"hello from Slippy ($SLIPPY_URL)\"; cd /tmp; pwd\r"];
+			[SlippyTerminal.shared write:[cmd dataUsingEncoding:NSUTF8StringEncoding]];
+			wait(1.5);
+			Snapshot(panel, [NSString stringWithUTF8String:argv[3]]);
+			[SlippyTerminal.shared shutdown];
+		});
+
+		// Resumed with the drawer open: grow the window the way Illustrator keeps the panel's size.
+		if (panel.drawerOpen) panel.onDrawer(YES, SlippyPanelView.drawerHeight);
 		[win makeKeyAndOrderFront:nil];
 		[app activateIgnoringOtherApps:YES];
 		Driver* driver = [Driver new];

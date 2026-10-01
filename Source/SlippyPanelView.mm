@@ -1,4 +1,5 @@
 #import "SlippyPanelView.h"
+#import "Terminal.h"
 #include "FrogShape.h"
 #include "AgentLogo.h"
 #import <QuartzCore/QuartzCore.h>
@@ -40,6 +41,12 @@ int GroupOf(const std::string& method)
 	std::string g = method.substr(0, method.find('.'));
 	for (int i = 0; i < kGroupCount; i++) if (g == kGroups[i]) return i;
 	return kGroupCount - 1;
+}
+
+// The header's type is Helvetica (the system font if it's ever missing).
+NSFont* Helvetica(CGFloat size, bool bold)
+{
+	return [NSFont fontWithName:bold ? @"Helvetica-Bold" : @"Helvetica" size:size] ?: [NSFont systemFontOfSize:size weight:bold ? NSFontWeightBold : NSFontWeightRegular];
 }
 
 NSTextField* Label(CGFloat size, NSFontWeight weight, NSColor* color)
@@ -979,7 +986,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 + (NSColor*)colorFor:(NSString*)agent
 {
 	static NSDictionary<NSString*, NSNumber*>* colors = @{
-		@"Claude": @0xD97757, @"Codex": @0x10A37F, @"ChatGPT": @0x10A37F, @"Cursor": @0x9A9A9A, @"Gemini": @0x4C8DF6,
+		@"Claude": @0xD97757, @"Codex": @0x385FF0, @"ChatGPT": @0x10A37F, @"Cursor": @0x9A9A9A, @"Gemini": @0x4C8DF6,
 		@"Qwen": @0x6E5CF0, @"Kimi": @0x2F7BF5, @"Grok": @0xE6E6E6, @"Copilot": @0x8957E5, @"VS Code": @0x23A9F2,
 		@"Windsurf": @0x09B6A2, @"Cline": @0xF2A93B, @"Roo Code": @0xE5484D, @"OpenCode": @0xB0B0B0, @"Zed": @0x5A8DEE,
 		@"Script": @0x8E8E93};
@@ -996,6 +1003,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 
 namespace {
 using slippy::AgentLogo;
+using slippy::LogoGlow;
 #include "AgentLogos.inc"
 }
 
@@ -1018,6 +1026,18 @@ using slippy::AgentLogo;
 		path.windingRule = logo.evenOdd ? NSWindingRuleEvenOdd : NSWindingRuleNonZero;
 		[(logo.color < 0 ? NSColor.labelColor : SRGB(logo.color)) setFill];
 		[path fill];
+		if (logo.glowCount) {
+			[NSGraphicsContext saveGraphicsState];
+			[path addClip];
+			for (int i = 0; i < logo.glowCount; i++) {
+				const slippy::LogoGlow& glow = logo.glows[i];
+				NSColor* c = SRGB(glow.color);
+				NSGradient* fade = [[NSGradient alloc] initWithColors:@[c, c, [c colorWithAlphaComponent:0]]   // solid near the tip, then fading
+					atLocations:(const CGFloat[]){0, 0.3, 1} colorSpace:NSColorSpace.sRGBColorSpace];
+				[fade drawFromCenter:at(glow.x, glow.y) radius:0 toCenter:at(glow.x, glow.y) radius:glow.r * k options:0];
+			}
+			[NSGraphicsContext restoreGraphicsState];
+		}
 		return;
 	}
 	// No logo for this one: a colored disc with its initial.
@@ -1045,7 +1065,7 @@ using slippy::AgentLogo;
 
 @implementation SlippyDrawerHandle
 - (BOOL)acceptsFirstMouse:(NSEvent*)event { return YES; }
-- (void)setOpen:(BOOL)open { _open = open; self.needsDisplay = YES; self.toolTip = open ? @"Close the terminal" : @"Open the terminal"; }
+- (void)setOpen:(BOOL)open { _open = open; self.needsDisplay = YES; self.toolTip = open ? @"Close and clear the terminal" : @"Open the terminal"; }
 - (void)mouseDown:(NSEvent*)event { if (self.onClick) self.onClick(); }
 - (void)resetCursorRects { [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor]; }
 - (void)drawRect:(NSRect)dirty
@@ -1065,21 +1085,33 @@ using slippy::AgentLogo;
 }
 @end
 
-// The terminal's home (the terminal itself comes next).
-@interface SlippyTerminalView : NSView
+// The version beside Slippy's name: gray text in a gray outline, sitting on
+// the name's baseline.
+@interface SlippyBadgeView : NSView
+@property (nonatomic, copy) NSString* text;
+@property (nonatomic) CGFloat baseline;   // from the top, where the text sits
 @end
 
-@implementation SlippyTerminalView
-- (instancetype)initWithFrame:(NSRect)frame
+@implementation SlippyBadgeView
+- (BOOL)isFlipped { return YES; }
+- (void)setText:(NSString*)text { _text = [text copy]; self.needsDisplay = YES; }
++ (NSFont*)font { return Helvetica(13.75, false); }
++ (CGFloat)padLeft { return 7.7; }
++ (CGFloat)padRight { return 6; }   // the 1 brings its own room
+- (CGFloat)fittingWidth { return ceil([_text sizeWithAttributes:@{NSFontAttributeName: SlippyBadgeView.font}].width + SlippyBadgeView.padLeft + SlippyBadgeView.padRight); }
+- (void)drawRect:(NSRect)dirty
 {
-	if ((self = [super initWithFrame:frame])) {
-		self.wantsLayer = YES;
-		self.layer.cornerRadius = 10;
-		self.layer.backgroundColor = [NSColor colorWithWhite:0 alpha:0.18].CGColor;
-	}
-	return self;
+	NSColor* gray = [NSColor.labelColor colorWithAlphaComponent:0.35];
+	NSBezierPath* box = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 0.625, 0.625) xRadius:3.5 yRadius:3.5];
+	box.lineWidth = 1.25;
+	[gray setStroke];
+	[box stroke];
+	NSFont* font = SlippyBadgeView.font;
+	[_text drawWithRect:NSMakeRect(SlippyBadgeView.padLeft, _baseline, 0, 0) options:0   // options 0: the rect's origin is the baseline
+		attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: gray}];
 }
 @end
+
 
 // ------------------------------------------------------------------ the panel
 
@@ -1087,7 +1119,7 @@ using slippy::AgentLogo;
 	SlippyMascotView* _slippy;
 	SlippyBarsView* _bars;
 	NSTextField* _title;
-	NSTextField* _version;
+	SlippyBadgeView* _version;
 	SlippyAgentView* _agent;
 	NSTextField* _counts;
 	NSTextField* _status;
@@ -1113,15 +1145,12 @@ const CGFloat kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
 		_slippy = [[SlippyMascotView alloc] initWithFrame:NSZeroRect];
 		_bars = [[SlippyBarsView alloc] initWithFrame:NSZeroRect];
 		_title = Label(20, NSFontWeightBold, NSColor.labelColor);
+		_title.font = Helvetica(20.5, true);
 		_title.stringValue = @"Slippy";
-		_version = Label(11, NSFontWeightRegular, NSColor.secondaryLabelColor);
-		_version.alignment = NSTextAlignmentCenter;
-		_version.wantsLayer = YES;
-		_version.layer.cornerRadius = 4;
-		_version.layer.borderWidth = 1;
+		_version = [[SlippyBadgeView alloc] initWithFrame:NSZeroRect];
 		_agent = [[SlippyAgentView alloc] initWithFrame:NSZeroRect];
 		_counts = Label(11, NSFontWeightRegular, NSColor.labelColor);
-		_counts.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
+		_counts.font = Helvetica(11.25, false);   // its digits are all one width already
 		_status = Label(10, NSFontWeightRegular, NSColor.secondaryLabelColor);
 		_copy = [NSButton buttonWithTitle:@"Copy connection" target:self action:@selector(copyConnection:)];
 		_copy.controlSize = NSControlSizeSmall;
@@ -1132,53 +1161,62 @@ const CGFloat kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
 		_feed.layer.masksToBounds = YES;
 		_terminal = [[SlippyTerminalView alloc] initWithFrame:NSZeroRect];
 		_terminal.hidden = YES;
+		// A terminal still running, or saved by the last Illustrator: the drawer
+		// comes back open (the panel keeps the size Illustrator remembered).
+		_drawerOpen = SlippyTerminal.shared.running || [SlippyTerminal.shared hasSavedSession];
 		_handle = [[SlippyDrawerHandle alloc] initWithFrame:NSZeroRect];
 		__weak SlippyPanelView* weakSelf = self;
 		_handle.onClick = ^{ [weakSelf toggleDrawer]; };
-		_handle.open = NO;
+		_handle.open = _drawerOpen;
+		if (_drawerOpen) [_terminal attach];
 		_rows = [NSMutableArray array];
 		for (NSView* v in @[_slippy, _bars, _title, _version, _agent, _counts, _status, _copy, _feed, _terminal, _handle]) [self addSubview:v];
 		self.version = @"0.1";
 		[self setStatus:@"Starting…" listening:NO];
 		[self updateCounts];
-		[self tint];
 	}
 	return self;
 }
 
-- (void)tint
-{
-	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{
-		self->_version.layer.borderColor = [NSColor.secondaryLabelColor colorWithAlphaComponent:0.5].CGColor;
-	}];
-}
-
-- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self tint]; }
 
 - (void)setVersion:(NSString*)version
 {
-	_version.stringValue = [@"v." stringByAppendingString:version ?: @""];
+	_version.text = [@"v." stringByAppendingString:version ?: @""];
 	self.needsLayout = YES;
 }
 
-- (NSString*)version { return [_version.stringValue substringFromIndex:2]; }
+- (NSString*)version { return [_version.text substringFromIndex:2]; }
 
 - (void)layout
 {
 	[super layout];
 	CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-	// Header: Slippy on the left, name + version and the agent + counts beside him.
-	_slippy.frame = NSMakeRect(kPad - 4, 4, 110, 110);
-	CGFloat tx = kPad + 120;
+	// Header: Slippy, then name + version over the agent + counts, centered as a
+	// group (from his left edge to the version's right; his box has room around
+	// him for the Z's and the hop). Text is placed by baseline (labels draw 2 pt in).
+	const CGFloat inkLeft = 34, textX = 120;   // in his 110 pt box
 	[_title sizeToFit];
-	_title.frame = NSMakeRect(tx, 50, _title.frame.size.width, 26);
-	[_version sizeToFit];
-	CGFloat vw = _version.frame.size.width + 10;
-	_version.frame = NSMakeRect(NSMaxX(_title.frame) + 8, 55, vw, 18);
+	CGFloat titleW = _title.frame.size.width, badgeW = [_version fittingWidth];
+	CGFloat groupW = textX - inkLeft + titleW - 2 + 5.1 + badgeW;
+	CGFloat sx = MAX(kPad - 4, floor((w - groupW) / 2) - inkLeft);
+	_slippy.frame = NSMakeRect(sx, 4, 110, 110);
+	CGFloat tx = sx + textX;
+	CGFloat titleBase = 74.5, countsBase = titleBase + 22.9;   // the text block centered on him
+	NSFont* tf = _title.font;
+	_title.frame = NSMakeRect(tx, titleBase - _title.firstBaselineOffsetFromTop, titleW, _title.frame.size.height);
+	CGFloat badgeTop = titleBase - tf.capHeight - 1.6;
+	_version.frame = NSMakeRect(NSMaxX(_title.frame) - 2 + 5.1, badgeTop, badgeW, 21);
+	_version.baseline = titleBase - 1.6 - badgeTop;
+	NSFont* cf = _counts.font;
 	CGFloat cx = tx;
 	_agent.hidden = !_agent.agent.length;
-	if (!_agent.hidden) { _agent.frame = NSMakeRect(tx, 84, 15, 15); cx += 21; }
-	_counts.frame = NSMakeRect(cx, 83, MAX(0, w - cx - kPad), 16);
+	if (!_agent.hidden) {
+		CGFloat logo = 17.5, mid = countsBase - cf.capHeight / 2;
+		_agent.frame = NSMakeRect(tx + 0.5, round(mid - logo / 2), logo, logo);
+		cx = NSMinX(_agent.frame) + 25.1 - 2;
+	}
+	[_counts sizeToFit];
+	_counts.frame = NSMakeRect(cx, countsBase - _counts.firstBaselineOffsetFromTop, MAX(0, w - cx - kPad), _counts.frame.size.height);
 	// Activity bars, then the connection row.
 	_bars.frame = NSMakeRect(kPad, 130, w - 2 * kPad, 46);
 	[_copy sizeToFit];
@@ -1197,10 +1235,28 @@ const CGFloat kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
 	_handle.frame = NSMakeRect(0, h - kHandleH, w, kHandleH);
 }
 
+// The chevron opens the terminal, and closing it is the one way to end and
+// clear it (closing the panel leaves it running).
++ (CGFloat)drawerHeight { return kTerminalH; }
+
 - (void)toggleDrawer
 {
+	if (_drawerOpen) {
+		NSString* busy = SlippyTerminal.shared.busyProcess;
+		if (busy) {
+			NSAlert* alert = [NSAlert new];
+			alert.messageText = [NSString stringWithFormat:@"End “%@” and clear the terminal?", busy];
+			alert.informativeText = @"Closing the terminal ends whatever is running in it and clears its history.";
+			[alert addButtonWithTitle:@"End and Clear"];
+			[alert addButtonWithTitle:@"Cancel"];
+			if ([alert runModal] != NSAlertFirstButtonReturn) return;
+		}
+		[SlippyTerminal.shared clear];
+		[_terminal reset];
+	}
 	_drawerOpen = !_drawerOpen;
 	_handle.open = _drawerOpen;
+	if (_drawerOpen) [_terminal attach];
 	if (self.onDrawer) self.onDrawer(_drawerOpen, kTerminalH);   // the panel grows / shrinks to make room
 	self.needsLayout = YES;
 }

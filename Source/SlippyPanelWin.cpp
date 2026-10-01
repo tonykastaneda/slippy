@@ -213,6 +213,7 @@ void RunDue()
 // ------------------------------------------------------------------ look
 
 using slippy::AgentLogo;
+using slippy::LogoGlow;
 #include "AgentLogos.inc"
 
 const char* kGroups[] = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
@@ -1095,10 +1096,31 @@ private:
 			}
 			SolidBrush fill(C(logo.color < 0 ? LabelColor() : Rgb(logo.color)));
 			g.FillPath(&fill, &path);
+			if (logo.glowCount) {
+				GraphicsState saved = g.Save();
+				g.SetClip(&path, CombineModeIntersect);
+				for (int i = 0; i < logo.glowCount; i++) {
+					const slippy::LogoGlow& glow = logo.glows[i];
+					PointF c = at(glow.x, glow.y);
+					REAL rad = (REAL) (glow.r * k);
+					GraphicsPath spot;
+					spot.AddEllipse(c.X - rad, c.Y - rad, 2 * rad, 2 * rad);
+					PathGradientBrush fade(&spot);
+					fade.SetCenterPoint(c);
+					fade.SetCenterColor(C(Rgb(glow.color)));
+					Color clear(0, (BYTE) ((glow.color >> 16) & 0xFF), (BYTE) ((glow.color >> 8) & 0xFF), (BYTE) (glow.color & 0xFF));
+					int one = 1;
+					fade.SetSurroundColors(&clear, &one);
+					REAL factors[] = {0, 1, 1}, positions[] = {0, 0.7f, 1};   // solid near the tip, then fading (as on the Mac)
+					fade.SetBlend(factors, positions, 3);
+					g.FillPath(&fade, &spot);
+				}
+				g.Restore(saved);
+			}
 			return;
 		}
 		static const std::pair<const wchar_t*, int> colors[] = {
-			{L"Claude", 0xD97757}, {L"Codex", 0x10A37F}, {L"ChatGPT", 0x10A37F}, {L"Cursor", 0x9A9A9A}, {L"Gemini", 0x4C8DF6},
+			{L"Claude", 0xD97757}, {L"Codex", 0x385FF0}, {L"ChatGPT", 0x10A37F}, {L"Cursor", 0x9A9A9A}, {L"Gemini", 0x4C8DF6},
 			{L"Qwen", 0x6E5CF0}, {L"Kimi", 0x2F7BF5}, {L"Grok", 0xE6E6E6}, {L"Copilot", 0x8957E5}, {L"VS Code", 0x23A9F2},
 			{L"Windsurf", 0x09B6A2}, {L"Cline", 0xF2A93B}, {L"Roo Code", 0xE5484D}, {L"OpenCode", 0xB0B0B0}, {L"Zed", 0x5A8DEE}, {L"Script", 0x8E8E93}};
 		int rgb = 0x8E8E93;

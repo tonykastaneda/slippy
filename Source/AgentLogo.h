@@ -21,11 +21,20 @@ struct LogoOp {
 	double v[6];      // M / L: x y; C: x1 y1 x2 y2 x y
 };
 
+// A soft spot of color over the base fill, fading out by radius (24 x 24 grid):
+// how a gradient mark like Gemini's is drawn.
+struct LogoGlow {
+	int color;        // 0xRRGGBB
+	double x, y, r;
+};
+
 struct AgentLogo {
 	const char* agent;
 	int color;        // 0xRRGGBB, or -1: the panel's text color (single-color marks)
 	bool evenOdd;
 	const char* path; // SVG path data
+	const LogoGlow* glows = nullptr;   // over the base color, clipped to the path
+	int glowCount = 0;
 };
 
 namespace logo_detail {

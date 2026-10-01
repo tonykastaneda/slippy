@@ -4,6 +4,8 @@
 #include "SlippyID.h"
 
 #import "SlippyPanelView.h"
+#import "Terminal.h"
+#include "Platform.h"
 
 #include <algorithm>
 
@@ -28,6 +30,8 @@ void Install()
 	if (sAIPanel->GetPlatformWindow(gPanel, host) || !host) return;
 	if (gView && gView.superview == host) return;
 	if (!gView) {
+		// The terminal's session is saved here between launches (before the view, which may resume it).
+		SlippyTerminal.shared.stateDirectory = NS(slippy::platform::SupportDir());
 		gView = [[SlippyPanelView alloc] initWithFrame:host.bounds];
 		gView.connectionInfo = ^NSString* { return gCallbacks.connectionInfo ? NS(gCallbacks.connectionInfo()) : @""; };
 		NSString* version = NS(kSlippyVersion);   // "0.1.0" -> "0.1"
@@ -63,6 +67,7 @@ void PanelAttach(AIPanelRef panel, PanelCallbacks callbacks)
 void PanelDetach()
 {
 	@autoreleasepool {
+		[SlippyTerminal.shared shutdown];   // Illustrator is quitting: save the terminal for next time
 		[gView removeFromSuperview];
 		gView = nil;
 		gPanel = nullptr;
@@ -72,6 +77,8 @@ void PanelDetach()
 void PanelSetStatus(const std::string& text, bool listening)
 {
 	@autoreleasepool {
+		// Agents started in the terminal find Slippy here.
+		if (listening && gCallbacks.connectionInfo) SlippyTerminal.shared.environment = @{@"SLIPPY_URL": NS(gCallbacks.connectionInfo())};
 		gStatus = NS(text);
 		gListening = listening;
 		Install();

@@ -300,7 +300,7 @@ std::string AgentName(const std::string& clientInfo)
 	std::string s = LowerCase(clientInfo);
 	static const std::pair<const char*, const char*> known[] = {
 		{"claude", "Claude"}, {"anthropic", "Claude"}, {"codex", "Codex"}, {"openai", "Codex"}, {"chatgpt", "ChatGPT"},
-		{"cursor", "Cursor"}, {"gemini", "Gemini"}, {"qwen", "Qwen"}, {"kimi", "Kimi"}, {"moonshot", "Kimi"},
+		{"cursor", "Cursor"}, {"gemini", "Gemini"}, {"antigravity", "Gemini"}, {"qwen", "Qwen"}, {"kimi", "Kimi"}, {"moonshot", "Kimi"},
 		{"grok", "Grok"}, {"xai", "Grok"}, {"copilot", "Copilot"}, {"visual studio code", "VS Code"}, {"vscode", "VS Code"},
 		{"windsurf", "Windsurf"}, {"codeium", "Windsurf"}, {"cline", "Cline"}, {"roo", "Roo Code"}, {"opencode", "OpenCode"},
 		{"zed", "Zed"}, {"goose", "Goose"}, {"mcp-remote", "mcp-remote"}, {"python", "Script"}, {"curl", "Script"}};

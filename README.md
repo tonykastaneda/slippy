@@ -82,8 +82,13 @@ bar, and slides into the feed as a plain-English line ("Rotated “Slippy” 15�
 **Copy connection**, which copies Slippy's URL (token included) to hand to an
 agent. Beside the call counts is the logo of the agent that sent the last call
 (Claude, Codex, Cursor, Gemini, Grok...; `Resources/agents`). **Pause agents**,
-which refuses calls, is in the panel's flyout menu. The strip along the bottom
-opens a drawer for the terminal that's coming. Every call is also logged to
+which refuses calls, is in the panel's flyout menu. The chevron along the bottom
+opens a terminal (macOS for now): your own login shell, with Slippy's URL in
+`SLIPPY_URL` so an agent started there can connect. It keeps running while
+Illustrator does, panel shown or not, and when Illustrator quits its history
+and folder are saved and resume on the next launch. Closing it with the
+chevron is the one way to end and clear it (it asks first if something is
+running). ⌘C / ⌘V / ⌘A work in it. Every call is also logged to
 `calls.log` next to the token (read it with `app.log`). With macOS Reduce Motion on (on
 Windows: "Show animations in Windows" off), Slippy
 moves about a third as much, feed lines fade in without sliding, and the Z's
@@ -248,6 +253,7 @@ What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs
 | `Source/Mcp.*` | MCP over HTTP: handshake, tool list built from the command table, tool calls |
 | `Source/SlippyPanelView.*` | The panel and Slippy (Cocoa + Core Animation, no SDK) |
 | `Source/SlippyPanel.*` | Puts the panel view into Illustrator's docked panel |
+| `Source/Terminal.*` | The drawer's terminal: the shell in a pseudo-terminal (one per Illustrator session, saved and resumed), shown with xterm.js (`Resources/terminal`) |
 | `Source/SlippyPanelWin.cpp` | The panel and Slippy on Windows (GDI+, with a small keyframe / spring engine standing in for Core Animation) |
 | `Source/Preview.mm` | `make preview`: the panel in a plain window with made-up calls |
 | `Source/SlippySuites.*` | Suite imports; everything except the core suites is optional and checked before use |

@@ -55,7 +55,8 @@ SOURCES := \
 
 MM_SOURCES := \
 	Source/SlippyPanel.mm \
-	Source/SlippyPanelView.mm
+	Source/SlippyPanelView.mm \
+	Source/Terminal.mm
 
 OBJECTS := $(addprefix $(OBJDIR)/,$(notdir $(SOURCES:.cpp=.o) $(MM_SOURCES:.mm=.o)))
 vpath %.cpp $(sort $(dir $(SOURCES)))
@@ -70,7 +71,7 @@ CXXFLAGS := $(ARCH) -std=c++17 -stdlib=libc++ -x objective-c++ -O2 -g \
 	-Wno-deprecated-declarations -Wno-unknown-pragmas \
 	-include $(COMMON)/includes/IllustratorSDKRelease.pch \
 	$(INCLUDES) -MMD -MP
-LDFLAGS  := $(ARCH) -bundle -stdlib=libc++ -framework Cocoa -framework QuartzCore -framework CoreFoundation -framework ImageIO
+LDFLAGS  := $(ARCH) -bundle -stdlib=libc++ -framework Cocoa -framework QuartzCore -framework CoreFoundation -framework ImageIO -framework WebKit
 
 .PHONY: all clean install preview
 all: $(BUILD)/.signed
@@ -110,7 +111,7 @@ $(BUILD)/$(NAME).rsrc: Resources/$(NAME).r
 	mkdir -p $(BUILD)
 	Rez -useDF -o $@ $<
 
-$(BUILD)/.signed: $(EXE) Resources/Info.plist Resources/raw/slippy_panel_light.svg Resources/raw/slippy_panel_dark.svg Resources/raw/IDToFile.txt $(BUILD)/plugin.pipl $(BUILD)/$(NAME).rsrc
+$(BUILD)/.signed: $(EXE) $(wildcard Resources/terminal/*) Resources/Info.plist Resources/raw/slippy_panel_light.svg Resources/raw/slippy_panel_dark.svg Resources/raw/IDToFile.txt $(BUILD)/plugin.pipl $(BUILD)/$(NAME).rsrc
 	mkdir -p $(BUNDLE)/Contents/Resources/pipl
 	cp $(BUILD)/$(NAME).rsrc $(BUNDLE)/Contents/Resources/$(NAME).rsrc
 	cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
@@ -119,6 +120,8 @@ $(BUILD)/.signed: $(EXE) Resources/Info.plist Resources/raw/slippy_panel_light.s
 	mkdir -p $(BUNDLE)/Contents/Resources/svg $(BUNDLE)/Contents/Resources/txt
 	cp Resources/raw/slippy_panel_light.svg Resources/raw/slippy_panel_dark.svg $(BUNDLE)/Contents/Resources/svg/
 	cp Resources/raw/IDToFile.txt $(BUNDLE)/Contents/Resources/txt/IDToFile.txt
+	mkdir -p $(BUNDLE)/Contents/Resources/terminal
+	cp Resources/terminal/terminal.html Resources/terminal/xterm.js Resources/terminal/xterm.css Resources/terminal/addon-fit.js $(BUNDLE)/Contents/Resources/terminal/
 	codesign --force --sign "$(SIGN_ID)" $(SIGN_FLAGS) $(BUNDLE)
 	codesign --verify --strict $(BUNDLE)
 	touch $@
@@ -129,10 +132,10 @@ install: all
 	ditto $(BUNDLE) "$(AI_APP)/Plug-ins.localized/$(NAME).aip"
 
 # The panel in a plain window with made-up calls - watch Slippy without Illustrator.
-$(BUILD)/SlippyPreview: $(BUILD)/AgentLogos.inc Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/FrogShape.h Source/AgentLogo.h Source/Narrate.cpp Source/Json.cpp
+$(BUILD)/SlippyPreview: $(BUILD)/AgentLogos.inc Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/FrogShape.h Source/AgentLogo.h Source/Terminal.mm Source/Terminal.h Source/Narrate.cpp Source/Json.cpp
 	mkdir -p $(BUILD)
-	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource -I$(BUILD) Source/Preview.mm Source/SlippyPanelView.mm Source/Narrate.cpp Source/Json.cpp \
-		-framework Cocoa -framework QuartzCore -o $@
+	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource -I$(BUILD) Source/Preview.mm Source/SlippyPanelView.mm Source/Terminal.mm Source/Narrate.cpp Source/Json.cpp \
+		-framework Cocoa -framework QuartzCore -framework WebKit -o $@
 
 preview: $(BUILD)/SlippyPreview
 	./$(BUILD)/SlippyPreview

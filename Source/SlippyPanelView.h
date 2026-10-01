@@ -24,6 +24,8 @@
 - (void)setStatus:(NSString*)text listening:(BOOL)listening;
 - (void)setPaused:(BOOL)paused;   // from the panel's flyout menu
 - (void)toggleDrawer;            // the terminal drawer (also the handle at the bottom)
+@property (nonatomic, readonly) BOOL drawerOpen;   // open from the start when a terminal is resumed
++ (CGFloat)drawerHeight;         // how much taller the panel is with the drawer open
 // line: what happened in plain English; method + ms go in the row's tooltip.
 // agent: who sent it ("Claude", "Codex"...), shown beside the counts.
 - (void)call:(NSString*)method line:(NSString*)line ok:(BOOL)ok edit:(BOOL)edit ms:(double)ms agent:(NSString*)agent;

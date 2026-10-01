@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- The Slippy panel's terminal: xterm.js in the drawer's web view. The shell
+     itself runs natively (Source/Terminal.mm); this page draws it and sends
+     keys and size back through window.webkit.messageHandlers.slippy. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="xterm.css">
+<style>
+	html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+	#term { position: absolute; inset: 8px 4px 6px 10px; }
+	/* xterm.css paints these black; let the drawer's rounded well show through. */
+	.xterm .xterm-viewport, .xterm .xterm-screen { background-color: transparent !important; }
+	/* xterm 6 scrolls with its own slider (themed below); the old native one stays hidden. */
+	.xterm .xterm-viewport::-webkit-scrollbar { display: none; }
+</style>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+</head>
+<body>
+<div id="term"></div>
+<script>
+	const send = (m) => window.webkit.messageHandlers.slippy.postMessage(m);
+	const term = new Terminal({
+		fontFamily: 'Menlo, "SF Mono", Consolas, monospace',
+		fontSize: 11.5,
+		lineHeight: 1.15,
+		cursorBlink: true,
+		scrollback: 10000,
+		allowTransparency: true,
+		macOptionIsMeta: true,
+		theme: {
+			background: 'rgba(0, 0, 0, 0)',
+			foreground: '#E6E6E6',
+			cursor: '#92F607',
+			cursorAccent: '#1E1E1E',
+			selectionBackground: 'rgba(146, 246, 7, 0.28)',
+			scrollbarSliderBackground: 'rgba(255, 255, 255, 0.18)',
+			scrollbarSliderHoverBackground: 'rgba(255, 255, 255, 0.3)',
+			scrollbarSliderActiveBackground: 'rgba(255, 255, 255, 0.4)',
+		},
+	});
+	const fit = new FitAddon.FitAddon();
+	term.loadAddon(fit);
+	term.open(document.getElementById('term'));
+	fit.fit();
+
+	term.onData((data) => send({ type: 'input', data }));
+	term.onBinary((data) => send({ type: 'input', data }));
+	term.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
+	new ResizeObserver(() => { try { fit.fit(); } catch (e) {} }).observe(document.body);
+
+	// Called by Slippy.
+	window.slippyWrite = (b64) => {
+		const raw = atob(b64), bytes = new Uint8Array(raw.length);
+		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+		term.write(bytes);
+	};
+	window.slippyPaste = (text) => term.paste(text);
+	window.slippySelection = () => term.getSelection();
+	window.slippySelectAll = () => term.selectAll();
+	window.slippyReset = () => term.reset();
+	window.slippyFocus = () => term.focus();
+
+	send({ type: 'ready', cols: term.cols, rows: term.rows });
+</script>
+</body>
+</html>
