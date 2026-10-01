@@ -144,21 +144,38 @@ ASErr SlippyPlugin::StartupPlugin(SPInterfaceMessage* message)
 	return kNoErr;
 }
 
+namespace {
+const ai::uint32 kPauseItem = 1;
+AIPanelFlyoutMenuRef gFlyout = nullptr;
+
+// The panel's flyout menu: Pause agents (refuses calls until unticked).
+void AIAPI FlyoutChose(AIPanelRef, ai::uint32 item)
+{
+	if (item != kPauseItem) return;
+	gPaused = !gPaused;
+	if (gFlyout && sAIPanelFlyoutMenu)
+		sAIPanelFlyoutMenu->SetItemMark(gFlyout, kPauseItem, gPaused ? kAIPanelFlyoutMenuItemMark_CHECK : kAIPanelFlyoutMenuItemMark_NONE);
+	PanelSetPaused(gPaused);
+}
+} // namespace
+
 void SlippyPlugin::AddPanel()
 {
 	if (!sAIPanel) return;
-	AISize minSize = {220, 260};
-	if (sAIPanel->Create(fPluginRef, ai::UnicodeString::FromUTF8("Slippy"), ai::UnicodeString::FromUTF8("Slippy"), 1, minSize, true, nullptr, this, fPanel)) {
+	if (sAIPanelFlyoutMenu && !sAIPanelFlyoutMenu->Create(gFlyout))
+		sAIPanelFlyoutMenu->AppendItem(gFlyout, kPauseItem, ai::UnicodeString::FromUTF8("Pause agents"));
+	AISize minSize = {240, 300};
+	if (sAIPanel->Create(fPluginRef, ai::UnicodeString::FromUTF8("Slippy"), ai::UnicodeString::FromUTF8("Slippy"), 1, minSize, true, gFlyout, this, fPanel)) {
 		fPanel = nullptr;
 		return;
 	}
+	if (gFlyout) sAIPanel->SetFlyoutMenuProc(fPanel, FlyoutChose);
 	sAIPanel->SetSVGIconResourceID(fPanel, kSlippyPanelIconID, kSlippyPanelDarkIconID);
 	PanelCallbacks cb;
-	cb.setPaused = [](bool paused) { gPaused = paused; };
 	cb.connectionInfo = [this] { return ConnectionInfo(); };
 	PanelAttach(fPanel, cb);
-	slippy::SetCallObserver([](const std::string& method, bool ok, bool changes, double ms, const std::string& line) {
-		PanelCall(method, ok, changes, ms, line);
+	slippy::SetCallObserver([](const std::string& method, bool ok, bool changes, double ms, const std::string& line, const std::string& agent) {
+		PanelCall(method, ok, changes, ms, line, agent);
 	});
 }
 
@@ -181,10 +198,19 @@ ASErr SlippyPlugin::PostStartupPlugin()
 	slippy::platform::MainThreadAfter(3, [] { HideMenuItemTitled(kSlippyRunItemName); });
 	int port = kSlippyDefaultPort;
 	if (const char* env = getenv("SLIPPY_PORT")) if (atoi(env) > 0) port = atoi(env);
-	auto mcp = [](const json::Value& message, const std::string& query) {
-		return slippy::HandleMcp(message, Submit, query.find("tools=all") != std::string::npos);
+	auto mcp = [](const json::Value& message, const slippy::Server::Caller& caller) {
+		return slippy::HandleMcp(message, Submit, caller.query.find("tools=all") != std::string::npos, caller.userAgent);
 	};
-	if (fServer.Start(Submit, mcp, port, kSlippyVersion, fServerError))
+	// Scripts (client/slippy, curl) get named from their User-Agent too.
+	auto rpc = [](const json::Value& request, const slippy::Server::Caller& caller) {
+		std::string agent = slippy::AgentName(caller.userAgent);
+		if (agent.empty()) agent = caller.userAgent;
+		json::Value tagged = request;
+		if (tagged.isArray()) { for (json::Value& c : tagged.asArray()) if (c.isObject() && !c.has("agent")) c["agent"] = agent; }
+		else if (tagged.isObject() && !tagged.has("agent")) tagged["agent"] = agent;
+		return Submit(tagged);
+	};
+	if (fServer.Start(rpc, mcp, port, kSlippyVersion, fServerError))
 		PanelSetStatus("Listening on 127.0.0.1:" + std::to_string(fServer.Port()), true);
 	else
 		PanelSetStatus("Not listening: " + (fServerError.empty() ? std::string("the server didn't start") : fServerError), false);
@@ -208,6 +234,7 @@ ASErr SlippyPlugin::ShutdownPlugin(SPInterfaceMessage* message)
 	slippy::overlay::Shutdown();
 	PanelDetach();
 	if (fPanel && sAIPanel) { sAIPanel->Destroy(fPanel); fPanel = nullptr; }
+	if (gFlyout && sAIPanelFlyoutMenu) { sAIPanelFlyoutMenu->Destroy(gFlyout); gFlyout = nullptr; }
 	slippy::platform::MainThreadShutdown();
 	return Plugin::ShutdownPlugin(message);
 }

@@ -1,5 +1,6 @@
 #import "SlippyPanelView.h"
 #include "FrogShape.h"
+#include "AgentLogo.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -17,7 +18,7 @@ namespace {
 const char* kGroups[] = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
 const int kGroupCount = sizeof kGroups / sizeof kGroups[0];
 const int kFeedRows = 8;
-const CGFloat kPad = 12;
+const CGFloat kPad = 16;
 
 NSColor* ReadColor() { return NSColor.systemTealColor; }
 NSColor* EditColor() { return NSColor.systemOrangeColor; }
@@ -69,14 +70,19 @@ enum class Mood { Asleep, Waking, Working, Dozing };
 // Slippy is a frog's face: a green head with two eye bumps on top, and the
 // eyes sitting in the bumps. No mouth, no body - the eyes do the talking.
 // Units of D, from the box's bottom-left.
-const CGFloat kEyeX = 0.22, kEyeY = 0.70;   // eye (bump) centers: 0.5 +/- kEyeX, kEyeY
-const CGFloat kBumpR = 0.2;
+using slippy::kEyeX;   // the shape lives in FrogShape.h
+using slippy::kEyeY;
+using slippy::kBumpR;
 const CGFloat kBumpFollow = 0.35;   // how much of a look the bumps follow
 
 // Where the eye pair sits for each face: sleepy eyes droop, happy ones lift.
 CGFloat EyeLift(Face f) { return f == Face::Sleep ? -0.03 : f == Face::Happy ? 0.02 : 0.0; }
 
-CGPathRef HeadPath(CGFloat D) { return CGPathCreateWithEllipseInRect(CGRectMake(0, 0.06 * D, D, 0.62 * D), nullptr); }
+CGPathRef HeadPath(CGFloat D)
+{
+	using namespace slippy;
+	return CGPathCreateWithEllipseInRect(CGRectMake((kHeadCX - kHeadRX) * D, (kHeadCY - kHeadRY) * D, 2 * kHeadRX * D, 2 * kHeadRY * D), nullptr);
+}
 
 // The two eye bumps. They follow the eyes part of the way (kBumpFollow), so a
 // look turns the whole eye without the bumps leaving the head.
@@ -93,9 +99,9 @@ CGPathRef EyePath(Face f, bool right, CGFloat D)
 {
 	CGMutablePathRef p = CGPathCreateMutable();
 	switch (f) {
-	case Face::Sleep:   // —
-		CGPathMoveToPoint(p, nullptr, -0.105 * D, 0);
-		CGPathAddLineToPoint(p, nullptr, 0.105 * D, 0);
+	case Face::Sleep:   // a soft ‿, closed and content
+		CGPathMoveToPoint(p, nullptr, -0.095 * D, 0.012 * D);
+		CGPathAddQuadCurveToPoint(p, nullptr, 0, -0.07 * D, 0.095 * D, 0.012 * D);
 		break;
 	case Face::Happy:   // ^
 		CGPathMoveToPoint(p, nullptr, -0.075 * D, -0.06 * D);
@@ -289,6 +295,9 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	NSSize s = self.bounds.size;
 	CGFloat oldD = _D;
 	_D = std::floor(std::min(s.width, s.height) * 0.64);
+	// Moves in flight were sized for the old Slippy (or none, before the first
+	// layout): let them go, or the eyes and bumps hang where the old size put them.
+	if (_D != oldD) for (CALayer* l in @[_eyes, _bumps]) [l removeAnimationForKey:@"position"];
 	// Low and to the right, leaving the upper left for the Z's.
 	_center = CGPointMake(s.width - _D / 2 - s.width * 0.06, _D / 2 + s.height * 0.05);
 	[CATransaction begin];
@@ -781,7 +790,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	ring.bounds = CGRectMake(0, 0, _D, _D);
 	ring.anchorPoint = CGPointMake(slippy::kFrogMidX, slippy::kFrogMidY);
 	ring.position = CGPointMake(_center.x - _D / 2 + slippy::kFrogMidX * _D, _center.y - _D / 2 + slippy::kFrogMidY * _D);
-	static const std::vector<slippy::FrogPoint> outline = slippy::FrogOutline(kEyeX, kEyeY, kBumpR);
+	static const std::vector<slippy::FrogPoint> outline = slippy::FrogOutline();
 	CGMutablePathRef path = CGPathCreateMutable();
 	for (size_t i = 0; i < outline.size(); i++) {
 		if (i == 0) CGPathMoveToPoint(path, nullptr, outline[i].x * _D, outline[i].y * _D);
@@ -842,6 +851,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 			NSTextField* l = Label(8, NSFontWeightMedium, NSColor.tertiaryLabelColor);
 			l.alignment = NSTextAlignmentCenter;
 			l.stringValue = [[NSString stringWithUTF8String:kGroups[i]] substringToIndex:3];
+			l.lineBreakMode = NSLineBreakByClipping;
 			[self addSubview:l];
 			[_labels addObject:l];
 		}
@@ -875,7 +885,7 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		CALayer* bar = _bars[i];
 		bar.bounds = CGRectMake(0, 0, w, 3);
 		bar.position = CGPointMake(slot * (i + 0.5), 12);
-		_labels[i].frame = NSMakeRect(slot * i, 0, slot, 11);
+		_labels[i].frame = NSMakeRect(slot * i - 6, 0, slot + 12, 11);   // a bit wider than the slot: "men" never clips
 	}
 	[CATransaction commit];
 }
@@ -956,23 +966,145 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 }
 @end
 
+// ------------------------------------------------------------------ agent mark
+// Who's calling, next to the counts: the agent's logo (Resources/agents), or
+// a colored disc with its initial when there isn't one. The name is the tooltip.
+
+@interface SlippyAgentView : NSView
+@property (nonatomic, copy) NSString* agent;
+@end
+
+@implementation SlippyAgentView
+
++ (NSColor*)colorFor:(NSString*)agent
+{
+	static NSDictionary<NSString*, NSNumber*>* colors = @{
+		@"Claude": @0xD97757, @"Codex": @0x10A37F, @"ChatGPT": @0x10A37F, @"Cursor": @0x9A9A9A, @"Gemini": @0x4C8DF6,
+		@"Qwen": @0x6E5CF0, @"Kimi": @0x2F7BF5, @"Grok": @0xE6E6E6, @"Copilot": @0x8957E5, @"VS Code": @0x23A9F2,
+		@"Windsurf": @0x09B6A2, @"Cline": @0xF2A93B, @"Roo Code": @0xE5484D, @"OpenCode": @0xB0B0B0, @"Zed": @0x5A8DEE,
+		@"Script": @0x8E8E93};
+	NSNumber* rgb = colors[agent];
+	return rgb ? SRGB(rgb.intValue) : NSColor.systemGrayColor;
+}
+
+- (void)setAgent:(NSString*)agent
+{
+	_agent = [agent copy];
+	self.toolTip = agent.length ? [NSString stringWithFormat:@"Last call from %@", agent] : nil;
+	self.needsDisplay = YES;
+}
+
+namespace {
+using slippy::AgentLogo;
+#include "AgentLogos.inc"
+}
+
+- (void)drawRect:(NSRect)dirty
+{
+	if (!_agent.length) return;
+	NSRect b = self.bounds;
+	// The agent's own mark (Resources/agents), filled in its brand color or the text color.
+	for (const AgentLogo& logo : kAgentLogos) {
+		if (![_agent isEqualToString:@(logo.agent)]) continue;
+		CGFloat k = std::min(b.size.width, b.size.height) / 24, h = b.size.height;
+		NSBezierPath* path = [NSBezierPath bezierPath];
+		auto at = [&](double x, double y) { return NSMakePoint(NSMinX(b) + x * k, h - y * k); };   // SVG is y-down
+		for (const slippy::LogoOp& o : slippy::ParseLogo(logo.path)) {
+			if (o.op == 'M') [path moveToPoint:at(o.v[0], o.v[1])];
+			else if (o.op == 'L') [path lineToPoint:at(o.v[0], o.v[1])];
+			else if (o.op == 'C') [path curveToPoint:at(o.v[4], o.v[5]) controlPoint1:at(o.v[0], o.v[1]) controlPoint2:at(o.v[2], o.v[3])];
+			else [path closePath];
+		}
+		path.windingRule = logo.evenOdd ? NSWindingRuleEvenOdd : NSWindingRuleNonZero;
+		[(logo.color < 0 ? NSColor.labelColor : SRGB(logo.color)) setFill];
+		[path fill];
+		return;
+	}
+	// No logo for this one: a colored disc with its initial.
+	b = NSInsetRect(b, 1, 1);
+	NSPoint c = NSMakePoint(NSMidX(b), NSMidY(b));
+	CGFloat r = std::min(b.size.width, b.size.height) / 2;
+	[[SlippyAgentView colorFor:_agent] setFill];
+	[[NSBezierPath bezierPathWithOvalInRect:b] fill];
+	NSString* initial = [[_agent substringToIndex:1] uppercaseString];
+	NSDictionary* attrs = @{NSFontAttributeName: [NSFont systemFontOfSize:r * 1.1 weight:NSFontWeightBold],
+		NSForegroundColorAttributeName: [NSColor colorWithWhite:0.08 alpha:1]};
+	NSSize size = [initial sizeWithAttributes:attrs];
+	[initial drawAtPoint:NSMakePoint(c.x - size.width / 2, c.y - size.height / 2) withAttributes:attrs];
+}
+@end
+
+// ------------------------------------------------------------------ drawer
+// A strip along the bottom with a chevron; a click opens or closes the
+// terminal drawer above it.
+
+@interface SlippyDrawerHandle : NSView
+@property (nonatomic) BOOL open;
+@property (nonatomic, copy) void (^onClick)(void);
+@end
+
+@implementation SlippyDrawerHandle
+- (BOOL)acceptsFirstMouse:(NSEvent*)event { return YES; }
+- (void)setOpen:(BOOL)open { _open = open; self.needsDisplay = YES; self.toolTip = open ? @"Close the terminal" : @"Open the terminal"; }
+- (void)mouseDown:(NSEvent*)event { if (self.onClick) self.onClick(); }
+- (void)resetCursorRects { [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor]; }
+- (void)drawRect:(NSRect)dirty
+{
+	[[NSColor colorWithWhite:0 alpha:0.14] setFill];
+	NSRectFill(self.bounds);
+	NSPoint c = NSMakePoint(NSMidX(self.bounds), NSMidY(self.bounds));
+	NSBezierPath* chevron = [NSBezierPath bezierPath];
+	CGFloat dy = self.isFlipped ? -1 : 1;
+	CGFloat tip = _open ? 2.5 : -2.5;   // closed: points down (open me); open: points up
+	[chevron moveToPoint:NSMakePoint(c.x - 7, c.y - tip * dy)];
+	[chevron lineToPoint:NSMakePoint(c.x, c.y + tip * dy)];
+	[chevron lineToPoint:NSMakePoint(c.x + 7, c.y - tip * dy)];
+	[chevron closePath];
+	[[NSColor.secondaryLabelColor colorWithAlphaComponent:0.6] setFill];
+	[chevron fill];
+}
+@end
+
+// The terminal's home (the terminal itself comes next).
+@interface SlippyTerminalView : NSView
+@end
+
+@implementation SlippyTerminalView
+- (instancetype)initWithFrame:(NSRect)frame
+{
+	if ((self = [super initWithFrame:frame])) {
+		self.wantsLayer = YES;
+		self.layer.cornerRadius = 10;
+		self.layer.backgroundColor = [NSColor colorWithWhite:0 alpha:0.18].CGColor;
+	}
+	return self;
+}
+@end
+
+// ------------------------------------------------------------------ the panel
+
 @implementation SlippyPanelView {
 	SlippyMascotView* _slippy;
 	SlippyBarsView* _bars;
 	NSTextField* _title;
-	NSTextField* _status;
+	NSTextField* _version;
+	SlippyAgentView* _agent;
 	NSTextField* _counts;
-	NSButton* _pause;
+	NSTextField* _status;
 	NSButton* _copy;
 	NSView* _feed;
+	SlippyTerminalView* _terminal;
+	SlippyDrawerHandle* _handle;
 	NSMutableArray<NSView*>* _rows;
 	NSTimer* _tick;
 	std::deque<double> _recent;   // call times, for how busy Slippy looks
 	long _calls, _errors;
-	BOOL _listening, _paused;
+	BOOL _listening, _paused, _drawerOpen;
 }
 
 - (BOOL)isFlipped { return YES; }
+
+const CGFloat kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -980,14 +1112,17 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 		_slippy = [[SlippyMascotView alloc] initWithFrame:NSZeroRect];
 		_bars = [[SlippyBarsView alloc] initWithFrame:NSZeroRect];
-		_title = Label(15, NSFontWeightBold, NSColor.labelColor);
+		_title = Label(20, NSFontWeightBold, NSColor.labelColor);
 		_title.stringValue = @"Slippy";
-		_status = Label(11, NSFontWeightRegular, NSColor.secondaryLabelColor);
-		_counts = Label(10, NSFontWeightRegular, NSColor.tertiaryLabelColor);
-		_counts.font = [NSFont monospacedDigitSystemFontOfSize:10 weight:NSFontWeightRegular];
-		_pause = [NSButton checkboxWithTitle:@"Pause agents" target:self action:@selector(togglePause:)];
-		_pause.controlSize = NSControlSizeSmall;
-		_pause.font = [NSFont systemFontOfSize:11];
+		_version = Label(11, NSFontWeightRegular, NSColor.secondaryLabelColor);
+		_version.alignment = NSTextAlignmentCenter;
+		_version.wantsLayer = YES;
+		_version.layer.cornerRadius = 4;
+		_version.layer.borderWidth = 1;
+		_agent = [[SlippyAgentView alloc] initWithFrame:NSZeroRect];
+		_counts = Label(11, NSFontWeightRegular, NSColor.labelColor);
+		_counts.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
+		_status = Label(10, NSFontWeightRegular, NSColor.secondaryLabelColor);
 		_copy = [NSButton buttonWithTitle:@"Copy connection" target:self action:@selector(copyConnection:)];
 		_copy.controlSize = NSControlSizeSmall;
 		_copy.bezelStyle = NSBezelStyleRounded;
@@ -995,33 +1130,79 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		_feed = [[SlippyFeedView alloc] initWithFrame:NSZeroRect];
 		_feed.wantsLayer = YES;
 		_feed.layer.masksToBounds = YES;
+		_terminal = [[SlippyTerminalView alloc] initWithFrame:NSZeroRect];
+		_terminal.hidden = YES;
+		_handle = [[SlippyDrawerHandle alloc] initWithFrame:NSZeroRect];
+		__weak SlippyPanelView* weakSelf = self;
+		_handle.onClick = ^{ [weakSelf toggleDrawer]; };
+		_handle.open = NO;
 		_rows = [NSMutableArray array];
-		for (NSView* v in @[_slippy, _bars, _title, _status, _counts, _pause, _copy, _feed]) [self addSubview:v];
+		for (NSView* v in @[_slippy, _bars, _title, _version, _agent, _counts, _status, _copy, _feed, _terminal, _handle]) [self addSubview:v];
+		self.version = @"0.1";
 		[self setStatus:@"Starting…" listening:NO];
 		[self updateCounts];
+		[self tint];
 	}
 	return self;
 }
+
+- (void)tint
+{
+	[self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+		self->_version.layer.borderColor = [NSColor.secondaryLabelColor colorWithAlphaComponent:0.5].CGColor;
+	}];
+}
+
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self tint]; }
+
+- (void)setVersion:(NSString*)version
+{
+	_version.stringValue = [@"v." stringByAppendingString:version ?: @""];
+	self.needsLayout = YES;
+}
+
+- (NSString*)version { return [_version.stringValue substringFromIndex:2]; }
 
 - (void)layout
 {
 	[super layout];
 	CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-	CGFloat slippy = 124, text = kPad + slippy + 2;
-	_slippy.frame = NSMakeRect(kPad - 6, kPad - 6, slippy, slippy);
-	_title.frame = NSMakeRect(text, kPad + 34, w - text - kPad, 20);
-	_status.frame = NSMakeRect(text, kPad + 56, w - text - kPad, 16);
-	_counts.frame = NSMakeRect(text, kPad + 74, w - text - kPad, 14);
-	CGFloat y = kPad + slippy;
-	_bars.frame = NSMakeRect(kPad, y, w - 2 * kPad, 54);
-	y += 62;
-	[_pause sizeToFit];
+	// Header: Slippy on the left, name + version and the agent + counts beside him.
+	_slippy.frame = NSMakeRect(kPad - 4, 4, 110, 110);
+	CGFloat tx = kPad + 120;
+	[_title sizeToFit];
+	_title.frame = NSMakeRect(tx, 50, _title.frame.size.width, 26);
+	[_version sizeToFit];
+	CGFloat vw = _version.frame.size.width + 10;
+	_version.frame = NSMakeRect(NSMaxX(_title.frame) + 8, 55, vw, 18);
+	CGFloat cx = tx;
+	_agent.hidden = !_agent.agent.length;
+	if (!_agent.hidden) { _agent.frame = NSMakeRect(tx, 84, 15, 15); cx += 21; }
+	_counts.frame = NSMakeRect(cx, 83, MAX(0, w - cx - kPad), 16);
+	// Activity bars, then the connection row.
+	_bars.frame = NSMakeRect(kPad, 130, w - 2 * kPad, 46);
 	[_copy sizeToFit];
-	_pause.frame = NSMakeRect(kPad, y + 2, _pause.frame.size.width, 18);
-	_copy.frame = NSMakeRect(w - kPad - _copy.frame.size.width, y, _copy.frame.size.width, 22);
-	y += 30;
-	_feed.frame = NSMakeRect(kPad, y, w - 2 * kPad, MAX(0, h - y - kPad));
-	for (NSView* row in _rows) row.frame = NSMakeRect(0, row.frame.origin.y, _feed.bounds.size.width, 18);   // rows lay out their own contents
+	CGFloat copyW = _copy.frame.size.width;
+	_copy.frame = NSMakeRect(w - kPad - copyW, 190, copyW, 22);
+	_status.frame = NSMakeRect(kPad, 194, MAX(0, w - 2 * kPad - copyW - 8), 15);
+	// The feed; with the drawer open, the terminal takes the room below it.
+	CGFloat y = 228, bottom = h - kHandleH;
+	CGFloat feedH = MAX(0, bottom - y - 8);
+	if (_drawerOpen) feedH = MIN(feedH, kFeedRows * (kRowH + kRowGap) - kRowGap);
+	_feed.frame = NSMakeRect(kPad, y, w - 2 * kPad, feedH);
+	for (NSView* row in _rows) row.frame = NSMakeRect(0, row.frame.origin.y, _feed.bounds.size.width, kRowH);   // rows lay out their own contents
+	CGFloat ty = y + feedH + 12;
+	_terminal.hidden = !_drawerOpen;
+	_terminal.frame = NSMakeRect(kPad, ty, w - 2 * kPad, MAX(0, bottom - ty - 10));
+	_handle.frame = NSMakeRect(0, h - kHandleH, w, kHandleH);
+}
+
+- (void)toggleDrawer
+{
+	_drawerOpen = !_drawerOpen;
+	_handle.open = _drawerOpen;
+	if (self.onDrawer) self.onDrawer(_drawerOpen, kTerminalH);   // the panel grows / shrinks to make room
+	self.needsLayout = YES;
 }
 
 - (void)setStatus:(NSString*)text listening:(BOOL)listening
@@ -1031,9 +1212,16 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	[_slippy setAvailable:_listening paused:_paused];
 }
 
+- (void)setPaused:(BOOL)paused
+{
+	_paused = paused;
+	[_slippy setAvailable:_listening paused:_paused];
+	if (paused) _status.stringValue = @"Paused - agents' calls are refused";
+}
+
 - (void)updateCounts
 {
-	_counts.stringValue = [NSString stringWithFormat:@"%ld call%@ · %ld error%@", _calls, _calls == 1 ? @"" : @"s", _errors, _errors == 1 ? @"" : @"s"];
+	_counts.stringValue = [NSString stringWithFormat:@"%ld call%@ • %ld error%@", _calls, _calls == 1 ? @"" : @"s", _errors, _errors == 1 ? @"" : @"s"];
 }
 
 // Busy: five or more calls in the last 3 s is flat out.
@@ -1058,10 +1246,16 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 
 - (void)call:(NSString*)method line:(NSString*)line ok:(BOOL)ok edit:(BOOL)edit ms:(double)ms
 {
+	[self call:method line:line ok:ok edit:edit ms:ms agent:nil];
+}
+
+- (void)call:(NSString*)method line:(NSString*)line ok:(BOOL)ok edit:(BOOL)edit ms:(double)ms agent:(NSString*)agent
+{
 	_calls++;
 	if (!ok) _errors++;
 	_recent.push_back(CACurrentMediaTime());
 	[self updateCounts];
+	if (agent.length && ![agent isEqualToString:_agent.agent]) { _agent.agent = agent; self.needsLayout = YES; }
 	NSColor* color = !ok ? ErrorColor() : edit ? EditColor() : ReadColor();
 	[self refreshBusy];
 	[_slippy callArrived:color ok:ok];
@@ -1070,7 +1264,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 	NSRange nl = [line rangeOfString:@"\n"];
 	NSString* shown = nl.location == NSNotFound ? line : [line substringToIndex:nl.location];
 	NSString* detail = nl.location == NSNotFound ? @"" : [[line substringFromIndex:nl.location + 1] stringByAppendingString:@"\n"];
-	NSString* tip = [NSString stringWithFormat:@"%@%@ · %@", detail, method, ms < 1 ? @"under 1 ms" : [NSString stringWithFormat:@"%.0f ms", ms]];
+	NSString* who = agent.length ? [NSString stringWithFormat:@" · %@", agent] : @"";
+	NSString* tip = [NSString stringWithFormat:@"%@%@ · %@%@", detail, method, ms < 1 ? @"under 1 ms" : [NSString stringWithFormat:@"%.0f ms", ms], who];
 	[self addRow:[[SlippyFeedRow alloc] initWithLine:shown tip:tip color:color ok:ok]];
 	[self startTicking];
 }
@@ -1078,9 +1273,9 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 // The newest call slides in on top; the rest move down and the oldest fades.
 - (void)addRow:(NSView*)row
 {
-	CGFloat width = _feed.bounds.size.width, rowH = 18;
+	CGFloat width = _feed.bounds.size.width;
 	bool still = ReduceMotion();
-	row.frame = NSMakeRect(still ? 0 : -24, 0, width, rowH);   // Reduce Motion: fades in, no slide
+	row.frame = NSMakeRect(still ? 0 : -24, 0, width, kRowH);   // Reduce Motion: fades in, no slide
 	row.alphaValue = 0;
 	[_feed addSubview:row];
 	[_rows insertObject:row atIndex:0];
@@ -1092,20 +1287,13 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 		ctx.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.22 :1 :0.36 :1];
 		for (NSUInteger i = 0; i < self->_rows.count; i++) {
 			NSView* r = self->_rows[i];
-			NSRect f = NSMakeRect(0, i * (rowH + 4), width, rowH);
+			NSRect f = NSMakeRect(0, i * (kRowH + kRowGap), width, kRowH);
 			if (still) r.frame = f;
 			else r.animator.frame = f;
 			r.animator.alphaValue = 1.0 - 0.08 * i;
 		}
 		if (drop) drop.animator.alphaValue = 0;
 	} completionHandler:^{ [drop removeFromSuperview]; }];
-}
-
-- (void)togglePause:(NSButton*)sender
-{
-	_paused = sender.state == NSControlStateValueOn;
-	if (self.onPause) self.onPause(_paused);
-	[_slippy setAvailable:_listening paused:_paused];
 }
 
 - (void)copyConnection:(id)sender

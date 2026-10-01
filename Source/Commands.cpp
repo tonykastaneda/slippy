@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -1710,6 +1711,8 @@ json::Value Redraw(const json::Value&)
 	return json::Value("redrawn");
 }
 
+json::Value AppLog(const json::Value& p);
+
 std::map<std::string, Command>& Table()
 {
 	static std::map<std::string, Command> table = [] {
@@ -1795,6 +1798,8 @@ std::map<std::string, Command>& Table()
 		{"plugin.message", {"Send another plug-in a script message, as app.sendScriptMessage(plugin, selector, param) does, and return its text reply. "
 			"The plug-in decides what the selector does; work it defers finishes after this returns.",
 			Params({{"plugin", "string - the plug-in's name, e.g. \"RAGE\""}, {"selector", "string"}, {"param", "string (optional)"}}), PluginMessage, true}},
+		{"app.log", {"Slippy's recent calls, newest last: time, method, params, and the error for any that failed (errors=true: failures only).",
+			Params({{"lines", "number (default 30)"}, {"errors", "boolean"}}), AppLog, false}},
 		{"history.undo", {"Undo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryUndo, false}},
 		{"history.redo", {"Redo steps in the active document.", Params({{"steps", "number (default 1)"}}), HistoryRedo, false}},
 	};
@@ -1845,6 +1850,42 @@ json::Value RunOneUntimed(const json::Value& call)
 
 CallObserver gObserver;
 
+// ~/Library/Application Support/Slippy/calls.log (or %APPDATA%): one line per
+// call - time, method, params, and the error if it failed - so a failure can
+// be read back later (app.log). About 1 MB, then it starts over.
+std::string LogPath() { return platform::JoinPath(platform::SupportDir(), "calls.log"); }
+
+void Log(const std::string& method, const json::Value& params, const json::Value& error, double ms, const std::string& agent)
+{
+	char when[32];
+	time_t now = time(nullptr);
+	strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", localtime(&now));
+	std::string p = params.isNull() ? "{}" : params.dump();
+	if (p.size() > 600) p = p.substr(0, 600) + "...";
+	char took[32];
+	snprintf(took, sizeof took, "%.0fms", ms);
+	std::string line = std::string(when) + "  " + (agent.empty() ? "?" : agent) + "  " + method + "  " + took + "  " + p;
+	if (!error.isNull()) line += "  ERROR " + error.dump();
+	platform::AppendLine(LogPath(), line, 1 << 20);
+}
+
+json::Value AppLog(const json::Value& p)
+{
+	std::string text = platform::ReadFile(LogPath());
+	size_t want = (size_t) std::max(1.0, p.num("lines", 30));
+	bool errorsOnly = p.boolean("errors", false);
+	std::vector<std::string> lines;
+	for (size_t i = 0, j; i < text.size(); i = j + 1) {
+		j = text.find('\n', i);
+		if (j == std::string::npos) j = text.size();
+		std::string l = text.substr(i, j - i);
+		if (!l.empty() && (!errorsOnly || l.find("  ERROR ") != std::string::npos)) lines.push_back(l);
+	}
+	json::Value out = json::Value::MakeArray();
+	for (size_t i = lines.size() > want ? lines.size() - want : 0; i < lines.size(); i++) out.push(lines[i]);
+	return out;
+}
+
 json::Value RunOne(const json::Value& call)
 {
 	auto start = std::chrono::steady_clock::now();
@@ -1856,7 +1897,9 @@ json::Value RunOne(const json::Value& call)
 	const json::Value& err = response.get("error");
 	std::string message = err.isNull() ? "" : err.get("message").isString() ? err.get("message").asString() : "error";
 	std::string line = Narrate(method, call.get("params"), response.get("result"), message);
-	if (gObserver) gObserver(method, err.isNull(), it != Table().end() && it->second.changesDocument, ms, line);
+	std::string agent = call.isObject() ? call.str("agent", "") : "";
+	Log(method, call.get("params"), err, ms, agent);
+	if (gObserver) gObserver(method, err.isNull(), it != Table().end() && it->second.changesDocument, ms, line, agent);
 	overlay::EndCall(line, err.isNull());
 	return response;
 }

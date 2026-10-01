@@ -20,7 +20,12 @@ namespace slippy {
 using RunCall = std::function<json::Value(const json::Value& jsonRpcRequest)>;
 
 // One MCP message in; its response out, or null for a notification.
-json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTools);
+// userAgent: the HTTP client's; with the client's MCP introduction it names the agent.
+json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTools, const std::string& userAgent);
+
+// A friendly agent name - "Claude", "Codex", "Cursor", "Gemini"... - from
+// whatever the client said about itself; "" when there's nothing to go on.
+std::string AgentName(const std::string& clientInfo);
 
 } // namespace slippy
 

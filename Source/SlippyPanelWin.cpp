@@ -8,9 +8,11 @@
 #include "IllustratorSDK.h"
 #include "SlippyPanel.h"
 #include "SlippySuites.h"
+#include "SlippyID.h"
 #include "AIUITheme.h"
 #include "Platform.h"
 #include "FrogShape.h"
+#include "AgentLogo.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -210,10 +212,14 @@ void RunDue()
 
 // ------------------------------------------------------------------ look
 
+using slippy::AgentLogo;
+#include "AgentLogos.inc"
+
 const char* kGroups[] = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
 const int kGroupCount = sizeof kGroups / sizeof kGroups[0];
 const int kFeedRows = 8;
-const double kPad = 12;
+const double kPad = 16;
+const double kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
 
 enum class Kind { Read, Edit, Error };
 
@@ -344,8 +350,9 @@ REAL TextWidth(Graphics& g, const std::wstring& s, REAL size, int style)
 enum class Face { Sleep, Happy, Awake, Ouch };
 enum class Mood { Asleep, Waking, Working, Dozing };
 
-const double kEyeX = 0.22, kEyeY = 0.70;
-const double kBumpR = 0.2;
+using slippy::kEyeX;   // the shape lives in FrogShape.h
+using slippy::kEyeY;
+using slippy::kBumpR;
 const double kBumpFollow = 0.35;
 double EyeLift(Face f) { return f == Face::Sleep ? -0.03 : f == Face::Happy ? 0.02 : 0.0; }
 double EyeWidth(Face f) { return f == Face::Sleep ? 0.045 : f == Face::Awake ? 0 : 0.055; }
@@ -447,7 +454,7 @@ public:
 		g.ScaleTransform(1, -1);
 
 		// Ripples, under Slippy: Slippy's own outline, growing from the middle of it.
-		static const std::vector<slippy::FrogPoint> outline = slippy::FrogOutline(kEyeX, kEyeY, kBumpR);
+		static const std::vector<slippy::FrogPoint> outline = slippy::FrogOutline();
 		for (size_t i = 0; i < fRipples.size();) {
 			double p = (now - fRipples[i].start) / 0.75;
 			if (p >= 1) { fRipples.erase(fRipples.begin() + (long) i); continue; }
@@ -472,7 +479,8 @@ public:
 
 		RGBA skin = Mix(SlippyGreen(), ErrorColor(), fFlash.Value(now));
 		SolidBrush skinBrush(C(skin, alpha));
-		g.FillEllipse(&skinBrush, 0.0f, (REAL) (0.06 * fD), (REAL) fD, (REAL) (0.62 * fD));
+		g.FillEllipse(&skinBrush, (REAL) ((slippy::kHeadCX - slippy::kHeadRX) * fD), (REAL) ((slippy::kHeadCY - slippy::kHeadRY) * fD),
+			(REAL) (2 * slippy::kHeadRX * fD), (REAL) (2 * slippy::kHeadRY * fD));
 		double bx = fBumpsX.Value(now), by = fBumpsY.Value(now);
 		for (double side : {-1.0, 1.0})
 			g.FillEllipse(&skinBrush, (REAL) ((0.5 + side * kEyeX - kBumpR) * fD + bx), (REAL) ((kEyeY - kBumpR) * fD + by),
@@ -524,7 +532,10 @@ private:
 		pen.SetLineCap(LineCapFlat, LineCapFlat, DashCapFlat);
 		pen.SetLineJoin(LineJoinMiter);
 		GraphicsPath p;
-		if (f == Face::Sleep) p.AddLine((REAL) (-0.105 * D), 0.0f, (REAL) (0.105 * D), 0.0f);
+		if (f == Face::Sleep) {   // a soft ‿: the quadratic (end, (0, -0.07), end) as a cubic
+			PointF a((REAL) (-0.095 * D), (REAL) (0.012 * D)), b((REAL) (0.095 * D), (REAL) (0.012 * D)), c(0, (REAL) (-0.07 * D));
+			p.AddBezier(a, PointF(a.X + (c.X - a.X) * 2 / 3, a.Y + (c.Y - a.Y) * 2 / 3), PointF(b.X + (c.X - b.X) * 2 / 3, b.Y + (c.Y - b.Y) * 2 / 3), b);
+		}
 		else if (f == Face::Happy) {
 			PointF pts[] = {PointF((REAL) (-0.075 * D), (REAL) (-0.06 * D)), PointF(0, (REAL) (0.07 * D)), PointF((REAL) (0.075 * D), (REAL) (-0.06 * D))};
 			p.AddLines(pts, 3);
@@ -834,8 +845,9 @@ struct Row {
 class Panel {
 public:
 	HWND hwnd = nullptr;
-	std::function<void(bool)> onPause;
 	std::function<std::string()> connectionInfo;
+	std::function<void(bool open, double extraHeight)> onDrawer;   // grow / shrink the panel for the terminal
+	std::wstring version = L"0.1";
 
 	Panel()
 	{
@@ -852,8 +864,15 @@ public:
 		fSlippy.SetAvailable(fListening, fPaused);
 	}
 
-	void Call(const std::string& method, const std::string& line, bool ok, bool edit, double ms)
+	void SetPaused(bool paused)
 	{
+		fPaused = paused;
+		fSlippy.SetAvailable(fListening, fPaused);
+	}
+
+	void Call(const std::string& method, const std::string& line, bool ok, bool edit, double ms, const std::string& agent)
+	{
+		if (!agent.empty()) fAgent = W(agent);
 		fCalls++;
 		if (!ok) fErrors++;
 		fRecent.push_back(Now());
@@ -868,7 +887,8 @@ public:
 		char took[32];
 		if (ms < 1) snprintf(took, sizeof took, "under 1 ms");
 		else snprintf(took, sizeof took, "%.0f ms", ms);
-		AddRow(W(shown), W(shown + "\n" + detail + method + " \xC2\xB7 " + took), KindColor(kind), ok);
+		std::string who = agent.empty() ? "" : " \xC2\xB7 " + agent;
+		AddRow(W(shown), W(shown + "\n" + detail + method + " \xC2\xB7 " + took + who), KindColor(kind), ok);
 	}
 
 	void Tick()
@@ -914,10 +934,9 @@ public:
 	{
 		double x = px / Scale(), y = py / Scale();
 		if (OverFrog(x, y)) { fSlippy.Click(); return; }
-		if (Inside(fPauseRect, x, y)) {
-			fPaused = !fPaused;
-			if (onPause) onPause(fPaused);
-			fSlippy.SetAvailable(fListening, fPaused);
+		if (Inside(fHandleRect, x, y)) {   // the drawer handle: open / close the terminal
+			fDrawerOpen = !fDrawerOpen;
+			if (onDrawer) onDrawer(fDrawerOpen, kTerminalH);
 			return;
 		}
 		if (Inside(fCopyRect, x, y)) { fPressed = true; SetCapture(hwnd); }
@@ -949,6 +968,7 @@ public:
 	void MouseLeave() { fHover = false; fTracking = false; fTipRow = -1; }
 
 	bool OverFrogPx(int px, int py) { return OverFrog(px / Scale(), py / Scale()); }
+	bool OverHandlePx(int px, int py) { return Inside(fHandleRect, px / Scale(), py / Scale()); }
 
 	const wchar_t* TipText()
 	{
@@ -979,7 +999,8 @@ private:
 	std::deque<double> fRecent;
 	std::wstring fStatus = L"Starting…";
 	long fCalls = 0, fErrors = 0;
-	bool fListening = false, fPaused = false;
+	bool fListening = false, fPaused = false, fDrawerOpen = false;
+	std::wstring fAgent;   // who sent the last call
 	bool fHover = false, fPressed = false, fTracking = false;
 	bool fCopied = false;
 	int fCopiedTimer = 0;
@@ -989,7 +1010,7 @@ private:
 
 	// Layout, in DIPs from the top-left.
 	double fW = 0, fH = 0;
-	RectF fSlippyRect, fBarsRect, fFeedRect, fPauseRect, fCopyRect;
+	RectF fSlippyRect, fBarsRect, fFeedRect, fCopyRect, fStatusRect, fTerminalRect, fHandleRect;
 	REAL fTextX = 0;
 
 	double Scale() const { UINT dpi = GetDpiForWindow(hwnd); return dpi ? dpi / 96.0 : 1.0; }
@@ -1002,20 +1023,24 @@ private:
 		return kGroupCount - 1;
 	}
 
+	// The same layout as the Mac panel (SlippyPanelView.mm), in DIPs from the top-left.
 	void Layout(double w, double h)
 	{
 		fW = w; fH = h;
-		const double slippy = 124;
-		fSlippyRect = RectF((REAL) (kPad - 6), (REAL) (kPad - 6), (REAL) slippy, (REAL) slippy);
+		const double slippy = 110;
+		fSlippyRect = RectF((REAL) (kPad - 4), 4, (REAL) slippy, (REAL) slippy);
 		fSlippy.Layout(slippy, slippy);
-		fTextX = (REAL) (kPad + slippy + 2);
-		double y = kPad + slippy;
-		fBarsRect = RectF((REAL) kPad, (REAL) y, (REAL) (w - 2 * kPad), 54);
-		y += 62;
-		fPauseRect = RectF((REAL) kPad, (REAL) (y + 2), 100, 18);
-		fCopyRect = RectF((REAL) (w - kPad - 112), (REAL) y, 112, 22);
-		y += 30;
-		fFeedRect = RectF((REAL) kPad, (REAL) y, (REAL) (w - 2 * kPad), (REAL) std::max(0.0, h - y - kPad));
+		fTextX = (REAL) (kPad + 120);
+		fBarsRect = RectF((REAL) kPad, 130, (REAL) (w - 2 * kPad), 46);
+		fCopyRect.Y = 190;   // its x and width follow the label, in DrawControls
+		fStatusRect = RectF((REAL) kPad, 194, (REAL) std::max(0.0, w - 2 * kPad - 120), 15);
+		double y = 228, bottom = h - kHandleH;
+		double feedH = std::max(0.0, bottom - y - 8);
+		if (fDrawerOpen) feedH = std::min(feedH, kFeedRows * (kRowH + kRowGap) - kRowGap);
+		fFeedRect = RectF((REAL) kPad, (REAL) y, (REAL) (w - 2 * kPad), (REAL) feedH);
+		double ty = y + feedH + 12;
+		fTerminalRect = RectF((REAL) kPad, (REAL) ty, (REAL) (w - 2 * kPad), (REAL) std::max(0.0, bottom - ty - 10));
+		fHandleRect = RectF(0, (REAL) (h - kHandleH), (REAL) w, (REAL) kHandleH);
 	}
 
 	bool OverFrog(double x, double y)
@@ -1027,15 +1052,82 @@ private:
 	{
 		double w = fW;
 		fSlippy.Draw(g, fSlippyRect.X, fSlippyRect.Y);
-		REAL tw = (REAL) std::max(0.0, w - fTextX - kPad);
-		Text(g, L"Slippy", RectF(fTextX, (REAL) (kPad + 34), tw, 20), 15, FontStyleBold, LabelColor(), AlignLeft);
-		Text(g, fStatus, RectF(fTextX, (REAL) (kPad + 56), tw, 16), 11, FontStyleRegular, SecondaryLabel(), AlignLeft);
+		// Name and version.
+		REAL titleW = TextWidth(g, L"Slippy", 20, FontStyleBold);
+		Text(g, L"Slippy", RectF(fTextX, 50, titleW + 4, 26), 20, FontStyleBold, LabelColor(), AlignLeft);
+		std::wstring v = L"v." + version;
+		REAL vw = TextWidth(g, v, 11, FontStyleRegular) + 10;
+		RectF badge(fTextX + titleW + 8, 55, vw, 18);
+		GraphicsPath bp;
+		RoundRect(bp, badge, 4);
+		RGBA edge = SecondaryLabel();
+		edge.a *= 0.6;
+		Pen bpen(C(edge), 1);
+		g.DrawPath(&bpen, &bp);
+		Text(g, v, badge, 11, FontStyleRegular, SecondaryLabel(), AlignCenter);
+		// Who's calling, and the counts.
+		REAL cx = fTextX;
+		if (!fAgent.empty()) { DrawAgent(g, RectF(fTextX, 84, 15, 15)); cx += 21; }
 		wchar_t counts[96];
-		swprintf(counts, 96, L"%ld call%ls · %ld error%ls", fCalls, fCalls == 1 ? L"" : L"s", fErrors, fErrors == 1 ? L"" : L"s");
-		Text(g, counts, RectF(fTextX, (REAL) (kPad + 74), tw, 14), 10, FontStyleRegular, TertiaryLabel(), AlignLeft);
+		swprintf(counts, 96, L"%ld call%ls \u2022 %ld error%ls", fCalls, fCalls == 1 ? L"" : L"s", fErrors, fErrors == 1 ? L"" : L"s");
+		Text(g, counts, RectF(cx, 83, (REAL) std::max(0.0, w - cx - kPad), 16), 11, FontStyleRegular, LabelColor(), AlignLeft);
 		DrawBars(g);
+		Text(g, fStatus, fStatusRect, 10, FontStyleRegular, SecondaryLabel(), AlignLeft);
 		DrawControls(g);
 		DrawFeed(g);
+		DrawDrawer(g);
+	}
+
+	// The agent's logo (Resources/agents), or a colored disc with its initial.
+	void DrawAgent(Graphics& g, RectF r)
+	{
+		for (const slippy::AgentLogo& logo : kAgentLogos) {
+			if (fAgent != W(logo.agent)) continue;
+			REAL k = std::min(r.Width, r.Height) / 24;
+			GraphicsPath path(logo.evenOdd ? FillModeAlternate : FillModeWinding);
+			PointF pen(0, 0), start(0, 0);
+			auto at = [&](double x, double y) { return PointF((REAL) (r.X + x * k), (REAL) (r.Y + y * k)); };
+			for (const slippy::LogoOp& o : slippy::ParseLogo(logo.path)) {
+				if (o.op == 'M') { path.StartFigure(); pen = start = at(o.v[0], o.v[1]); }
+				else if (o.op == 'L') { PointF p = at(o.v[0], o.v[1]); path.AddLine(pen, p); pen = p; }
+				else if (o.op == 'C') { PointF p = at(o.v[4], o.v[5]); path.AddBezier(pen, at(o.v[0], o.v[1]), at(o.v[2], o.v[3]), p); pen = p; }
+				else { path.CloseFigure(); pen = start; }
+			}
+			SolidBrush fill(C(logo.color < 0 ? LabelColor() : Rgb(logo.color)));
+			g.FillPath(&fill, &path);
+			return;
+		}
+		static const std::pair<const wchar_t*, int> colors[] = {
+			{L"Claude", 0xD97757}, {L"Codex", 0x10A37F}, {L"ChatGPT", 0x10A37F}, {L"Cursor", 0x9A9A9A}, {L"Gemini", 0x4C8DF6},
+			{L"Qwen", 0x6E5CF0}, {L"Kimi", 0x2F7BF5}, {L"Grok", 0xE6E6E6}, {L"Copilot", 0x8957E5}, {L"VS Code", 0x23A9F2},
+			{L"Windsurf", 0x09B6A2}, {L"Cline", 0xF2A93B}, {L"Roo Code", 0xE5484D}, {L"OpenCode", 0xB0B0B0}, {L"Zed", 0x5A8DEE}, {L"Script", 0x8E8E93}};
+		int rgb = 0x8E8E93;
+		for (auto& c : colors) if (fAgent == c.first) rgb = c.second;
+		REAL rad = std::min(r.Width, r.Height) / 2;
+		SolidBrush disc(C(Rgb(rgb)));
+		g.FillEllipse(&disc, r);
+		std::wstring initial(1, (wchar_t) towupper(fAgent[0]));
+		Text(g, initial, r, (REAL) (rad * 1.1), FontStyleBold, RGBA{0.08, 0.08, 0.08, 1}, AlignCenter);
+	}
+
+	// The terminal's home (the terminal itself comes next) and the handle that opens it.
+	void DrawDrawer(Graphics& g)
+	{
+		if (fDrawerOpen && fTerminalRect.Height > 0) {
+			GraphicsPath p;
+			RoundRect(p, fTerminalRect, 10);
+			SolidBrush well(Color(46, 0, 0, 0));
+			g.FillPath(&well, &p);
+		}
+		SolidBrush strip(Color(36, 0, 0, 0));
+		g.FillRectangle(&strip, fHandleRect);
+		REAL cx = fHandleRect.X + fHandleRect.Width / 2, cy = fHandleRect.Y + fHandleRect.Height / 2;
+		REAL tip = fDrawerOpen ? -2.5f : 2.5f;   // closed: points down (open me); open: points up
+		PointF chevron[] = {PointF(cx - 7, cy - tip), PointF(cx, cy + tip), PointF(cx + 7, cy - tip)};
+		RGBA c = SecondaryLabel();
+		c.a *= 0.6;
+		SolidBrush b(C(c));
+		g.FillPolygon(&b, chevron, 3);
 	}
 
 	// ---- bars
@@ -1067,7 +1159,7 @@ private:
 			SolidBrush b(C(color));
 			g.FillPath(&b, &p);
 			std::wstring label = W(std::string(kGroups[i]).substr(0, 3));
-			Text(g, label, RectF((REAL) (fBarsRect.X + slot * i), (REAL) (bottom - 11), (REAL) slot, 11), 8, FontStyleRegular, TertiaryLabel(), AlignCenter);
+			Text(g, label, RectF((REAL) (fBarsRect.X + slot * i - 6), (REAL) (bottom - 11), (REAL) (slot + 12), 11), 8, FontStyleRegular, TertiaryLabel(), AlignCenter);
 		}
 	}
 
@@ -1075,27 +1167,6 @@ private:
 
 	void DrawControls(Graphics& g)
 	{
-		// Pause agents
-		RectF box(fPauseRect.X, fPauseRect.Y + 3, 12, 12);
-		GraphicsPath p;
-		RoundRect(p, box, 2.5f);
-		if (fPaused) {
-			SolidBrush fill(C(Rgb(0x0A84FF)));
-			g.FillPath(&fill, &p);
-			Pen tick(Color(255, 255, 255, 255), 1.6f);
-			tick.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
-			tick.SetLineJoin(LineJoinRound);
-			PointF pts[] = {PointF(box.X + 2.8f, box.Y + 6.2f), PointF(box.X + 5.0f, box.Y + 8.6f), PointF(box.X + 9.4f, box.Y + 3.4f)};
-			g.DrawLines(&tick, pts, 3);
-		}
-		else {
-			Pen edge(C(SecondaryLabel()), 1);
-			g.DrawPath(&edge, &p);
-		}
-		REAL labelW = TextWidth(g, L"Pause agents", 11, FontStyleRegular);
-		fPauseRect.Width = 18 + labelW;
-		Text(g, L"Pause agents", RectF(fPauseRect.X + 18, fPauseRect.Y, labelW + 2, fPauseRect.Height), 11, FontStyleRegular, LabelColor(), AlignLeft);
-
 		// Copy connection
 		const wchar_t* title = fCopied ? L"Copied" : L"Copy connection";
 		REAL cw = TextWidth(g, L"Copy connection", 11, FontStyleRegular) + 22;
@@ -1142,7 +1213,7 @@ private:
 	// The newest call slides in on top; the rest move down and the oldest fades.
 	void AddRow(const std::wstring& line, const std::wstring& tip, RGBA color, bool ok)
 	{
-		const double rowH = 18;
+		const double rowH = kRowH;
 		bool still = ReduceMotion();
 		std::unique_ptr<Row> row(new Row);
 		row->line = line;
@@ -1163,7 +1234,7 @@ private:
 		}
 		for (size_t i = 0; i < fRows.size(); i++) {
 			Row& r = *fRows[i];
-			double y = i * (rowH + 4), a = 1.0 - 0.08 * i;
+			double y = i * (rowH + kRowGap), a = 1.0 - 0.08 * i;
 			if (still) { r.x.model = 0; r.y.model = y; }
 			else {
 				Play(r.x, "x", {0}, {0, 1}, {kEaseOut}, 0.3); r.x.model = 0;
@@ -1217,6 +1288,7 @@ PanelCallbacks gCallbacks;
 std::unique_ptr<Panel> gView;
 std::wstring gStatus = L"Starting…";
 bool gListening = false;
+bool gPaused = false;
 ULONG_PTR gGdiplus = 0;
 bool gClassRegistered = false;
 
@@ -1262,7 +1334,7 @@ LRESULT CALLBACK ViewProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			POINT pt;
 			GetCursorPos(&pt);
 			ScreenToClient(hwnd, &pt);
-			SetCursor(LoadCursor(nullptr, view->OverFrogPx(pt.x, pt.y) ? IDC_HAND : IDC_ARROW));
+			SetCursor(LoadCursor(nullptr, view->OverFrogPx(pt.x, pt.y) || view->OverHandlePx(pt.x, pt.y) ? IDC_HAND : IDC_ARROW));
 			return TRUE;
 		}
 		break;
@@ -1314,7 +1386,18 @@ void Install()
 		gClassRegistered = RegisterClassExW(&wc) != 0;
 	}
 	gView.reset(new Panel);
-	gView->onPause = [](bool paused) { if (gCallbacks.setPaused) gCallbacks.setPaused(paused); };
+	gView->onDrawer = [](bool open, double extra) {   // opening the terminal makes the panel taller
+		AISize size;
+		if (!gPanel || sAIPanel->GetSize(gPanel, size)) return;
+		size.height = (AIReal) std::max(260.0, size.height + (open ? extra : -extra));
+		sAIPanel->SetSize(gPanel, size);
+		Fit();
+	};
+	{
+		std::wstring v = W(kSlippyVersion);   // "0.1.0" -> "0.1"
+		if (v.size() > 2 && v.compare(v.size() - 2, 2, L".0") == 0) v.resize(v.size() - 2);
+		gView->version = v;
+	}
 	gView->connectionInfo = [] { return gCallbacks.connectionInfo ? gCallbacks.connectionInfo() : std::string(); };
 	RECT r;
 	GetClientRect(host, &r);
@@ -1323,6 +1406,7 @@ void Install()
 	if (!gView->hwnd) { gView.reset(); return; }
 	gView->MakeTooltip();
 	gView->SetStatus(gStatus, gListening);
+	gView->SetPaused(gPaused);
 	gView->Start();
 	SetTimer(gView->hwnd, kFrameTimer, 16, nullptr);
 	sAIPanel->SetSizeChangedNotifyProc(gPanel, SizeChanged);
@@ -1334,7 +1418,7 @@ void PanelAttach(AIPanelRef panel, PanelCallbacks callbacks)
 {
 	gPanel = panel;
 	gCallbacks = std::move(callbacks);
-	AISize minSize = {220, 260}, pref = {260, 380}, maxSize = {600, 2000};
+	AISize minSize = {240, 300}, pref = {290, 480}, maxSize = {700, 2400};
 	sAIPanel->SetSizes(gPanel, minSize, pref, pref, maxSize);
 	Install();
 }
@@ -1361,10 +1445,17 @@ void PanelSetStatus(const std::string& text, bool listening)
 	if (gView) gView->SetStatus(gStatus, gListening);
 }
 
-void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line)
+void PanelSetPaused(bool paused)
+{
+	gPaused = paused;
+	Install();
+	if (gView) gView->SetPaused(paused);
+}
+
+void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line, const std::string& agent)
 {
 	Install();
-	if (gView) gView->Call(method, line, ok, changesDocument, milliseconds);
+	if (gView) gView->Call(method, line, ok, changesDocument, milliseconds, agent);
 }
 
 // Windows keeps Slippy's internal "Run Agent Calls" command in the menu:

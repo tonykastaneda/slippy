@@ -17,10 +17,16 @@
 @end
 
 @interface SlippyPanelView : NSView
-@property (nonatomic, copy) void (^onPause)(BOOL paused);
 @property (nonatomic, copy) NSString* (^connectionInfo)(void);
+// The terminal drawer opened (or closed): make the panel taller by extraHeight (or shorter).
+@property (nonatomic, copy) void (^onDrawer)(BOOL open, CGFloat extraHeight);
+@property (nonatomic, copy) NSString* version;   // shown as "v.0.1"
 - (void)setStatus:(NSString*)text listening:(BOOL)listening;
+- (void)setPaused:(BOOL)paused;   // from the panel's flyout menu
+- (void)toggleDrawer;            // the terminal drawer (also the handle at the bottom)
 // line: what happened in plain English; method + ms go in the row's tooltip.
+// agent: who sent it ("Claude", "Codex"...), shown beside the counts.
+- (void)call:(NSString*)method line:(NSString*)line ok:(BOOL)ok edit:(BOOL)edit ms:(double)ms agent:(NSString*)agent;
 - (void)call:(NSString*)method line:(NSString*)line ok:(BOOL)ok edit:(BOOL)edit ms:(double)ms;
 @end
 

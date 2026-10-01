@@ -29,9 +29,14 @@ namespace slippy {
 
 class Server {
 public:
-	using Handler = std::function<json::Value(const json::Value& request)>;
-	// MCP gets the URL's query string too (?tools=all).
-	using McpHandler = std::function<json::Value(const json::Value& message, const std::string& query)>;
+	// Who sent a request and how: the URL's query string (?tools=all) and the
+	// client's User-Agent (which agent app is calling).
+	struct Caller {
+		std::string query;
+		std::string userAgent;
+	};
+	using Handler = std::function<json::Value(const json::Value& request, const Caller& caller)>;
+	using McpHandler = Handler;
 
 	// Binds 127.0.0.1 on the first free port from firstPort (up to 10 tries).
 	// mcp returns null for a message that gets no response (a notification).

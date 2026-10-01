@@ -90,6 +90,12 @@ $(BUILD)/SdkCatalog.inc: tools/sdk_catalog.py
 	python3 tools/sdk_catalog.py "$(SDK)" $@
 $(OBJDIR)/CmdCatalog.o: $(BUILD)/SdkCatalog.inc
 
+# The agents' logos for the panel (Resources/agents/*.svg).
+$(BUILD)/AgentLogos.inc: tools/agent_logos.py $(wildcard Resources/agents/*.svg)
+	mkdir -p $(BUILD)
+	python3 tools/agent_logos.py Resources/agents $@
+$(OBJDIR)/SlippyPanelView.o: $(BUILD)/AgentLogos.inc
+
 $(EXE): $(OBJECTS)
 	mkdir -p $(dir $@)
 	$(CXX) $(LDFLAGS) $^ -o $@
@@ -123,9 +129,9 @@ install: all
 	ditto $(BUNDLE) "$(AI_APP)/Plug-ins.localized/$(NAME).aip"
 
 # The panel in a plain window with made-up calls - watch Slippy without Illustrator.
-$(BUILD)/SlippyPreview: Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/FrogShape.h Source/Narrate.cpp Source/Json.cpp
+$(BUILD)/SlippyPreview: $(BUILD)/AgentLogos.inc Source/Preview.mm Source/SlippyPanelView.mm Source/SlippyPanelView.h Source/FrogShape.h Source/AgentLogo.h Source/Narrate.cpp Source/Json.cpp
 	mkdir -p $(BUILD)
-	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource Source/Preview.mm Source/SlippyPanelView.mm Source/Narrate.cpp Source/Json.cpp \
+	$(CXX) $(ARCH) -std=c++17 -fobjc-arc -O2 -ISource -I$(BUILD) Source/Preview.mm Source/SlippyPanelView.mm Source/Narrate.cpp Source/Json.cpp \
 		-framework Cocoa -framework QuartzCore -o $@
 
 preview: $(BUILD)/SlippyPreview

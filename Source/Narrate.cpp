@@ -329,6 +329,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	if (m == "art.transformAgain") return {"Transformed again", "transform again"};
 	if (m == "data") return {p.has("set") ? "Saved data on " + std::string(p.has("id") ? "an object" : "the document") : "Read saved data", "read data"};
 	if (m == "preference") return {p.has("value") ? "Changed a preference" : "Read a preference", "read a preference"};
+	if (m == "app.log") return {"Read the call log", "read the call log"};
 	if (m == "history.undo") {
 		int n = p.get("steps").isNumber() ? p.get("steps").asInt() : 1;
 		return {n == 1 ? "Undid the last change" : "Undid " + std::to_string(n) + " changes", "undo"};

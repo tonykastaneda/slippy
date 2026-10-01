@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 
 #ifdef _WIN32
 
@@ -114,6 +115,21 @@ bool ReadFirstWord(const std::string& path, std::string& word)
 	return (bool) (in >> word);
 }
 
+void AppendLine(const std::string& path, const std::string& line, size_t maxBytes)
+{
+	std::error_code ec;
+	if (fs::exists(Path(path), ec) && fs::file_size(Path(path), ec) > maxBytes)
+		MoveFileExW(Wide(path).c_str(), Wide(path + ".1").c_str(), MOVEFILE_REPLACE_EXISTING);
+	std::ofstream out(Path(path), std::ios::app | std::ios::binary);
+	out << line << "\n";
+}
+
+std::string ReadFile(const std::string& path)
+{
+	std::ifstream in(Path(path), std::ios::binary);
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
 void RemoveFile(const std::string& path) { DeleteFileW(Wide(path).c_str()); }
 
 bool Readable(const std::string& path)
@@ -222,6 +238,22 @@ bool ReadFirstWord(const std::string& path, std::string& word)
 {
 	std::ifstream in(path);
 	return (bool) (in >> word);
+}
+
+void AppendLine(const std::string& path, const std::string& line, size_t maxBytes)
+{
+	struct stat st;
+	if (stat(path.c_str(), &st) == 0 && (size_t) st.st_size > maxBytes) rename(path.c_str(), (path + ".1").c_str());
+	std::ofstream out(path, std::ios::app);
+	out << line << "\n";
+	out.close();
+	chmod(path.c_str(), 0600);
+}
+
+std::string ReadFile(const std::string& path)
+{
+	std::ifstream in(path, std::ios::binary);
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 void RemoveFile(const std::string& path) { unlink(path.c_str()); }

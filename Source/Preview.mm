@@ -34,7 +34,9 @@ static void Play(SlippyPanelView* panel, const Fake& f)
 	std::string line = slippy::Narrate(f.method, json::Parse(f.params), json::Parse(f.result), f.error);
 	NSString* m = [NSString stringWithUTF8String:f.method];
 	bool edit = ![@[@"app.info", @"art.tree", @"art.get"] containsObject:m];
-	[panel call:m line:[NSString stringWithUTF8String:line.c_str()] ok:!*f.error edit:edit ms:arc4random_uniform(40)];
+	static NSArray* agents = @[@"Claude", @"Claude", @"Codex", @"Gemini"];   // made-up callers
+	static int turn = 0;
+	[panel call:m line:[NSString stringWithUTF8String:line.c_str()] ok:!*f.error edit:edit ms:arc4random_uniform(40) agent:agents[turn++ / 5 % agents.count]];
 }
 
 @interface Driver : NSObject
@@ -64,14 +66,12 @@ static void Play(SlippyPanelView* panel, const Fake& f)
 
 static void Snapshot(NSView* view, NSString* path)
 {
+	// A real screenshot of the window (screencapture), so it looks exactly as on screen.
 	[view layoutSubtreeIfNeeded];
 	[view displayIfNeeded];
-	NSBitmapImageRep* rep = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
-	CGContextRef ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep].CGContext;
-	CGContextTranslateCTM(ctx, 0, view.bounds.size.height);   // the panel view is flipped
-	CGContextScaleCTM(ctx, 1, -1);
-	[view.layer renderInContext:ctx];
-	[[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+	[[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+	NSString* cmd = [NSString stringWithFormat:@"/usr/sbin/screencapture -x -o -l%ld '%@'", (long) view.window.windowNumber, path];
+	system(cmd.UTF8String);
 }
 
 int main(int argc, const char* argv[])
@@ -79,17 +79,25 @@ int main(int argc, const char* argv[])
 	@autoreleasepool {
 		NSApplication* app = NSApplication.sharedApplication;
 		app.activationPolicy = NSApplicationActivationPolicyRegular;
-		NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(200, 200, 260, 400)
+		NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(200, 200, 290, 480)
 			styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
 		win.title = @"Slippy preview";
 		win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];   // like Illustrator's dark UI
 		win.backgroundColor = [NSColor colorWithWhite:0.22 alpha:1];
 		SlippyPanelView* panel = [[SlippyPanelView alloc] initWithFrame:win.contentView.bounds];
 		[win.contentView addSubview:panel];
-		[panel setStatus:@"Preview - made-up calls" listening:YES];
+		[panel setStatus:@"Listening on 127.0.0.1:7331" listening:YES];
 		panel.connectionInfo = ^NSString* { return @"(preview)"; };
+		panel.onDrawer = ^(BOOL open, CGFloat extra) {   // the window grows like the panel would
+			NSRect f = win.frame;
+			f.size.height += open ? extra : -extra;
+			f.origin.y -= open ? extra : -extra;
+			[win setFrame:f display:YES animate:YES];
+		};
 
 		if (argc == 3 && !strcmp(argv[1], "--snapshot")) {
+			[win makeKeyAndOrderFront:nil];
+			[app activateIgnoringOtherApps:YES];
 			// Each face after its blink has finished (a snapshot shows model values, not
 			// the animation in flight).
 			NSString* dir = [NSString stringWithUTF8String:argv[2]];
@@ -104,6 +112,17 @@ int main(int argc, const char* argv[])
 			Play(panel, kSession[9]);
 			wait(0.3);
 			Snapshot(panel, [dir stringByAppendingPathComponent:@"4-ouch.png"]);
+			// The terminal drawer open (the window grows like the panel would).
+			panel.onDrawer = ^(BOOL open, CGFloat extra) {
+				NSRect f = win.frame;
+				f.size.height += open ? extra : -extra;
+				f.origin.y -= open ? extra : -extra;
+				[win setFrame:f display:NO];
+				panel.frame = win.contentView.bounds;
+			};
+			[panel toggleDrawer];
+			wait(0.4);
+			Snapshot(panel, [dir stringByAppendingPathComponent:@"5-drawer.png"]);
 			return 0;
 		}
 

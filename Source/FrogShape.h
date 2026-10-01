@@ -11,13 +11,20 @@
 
 namespace slippy {
 
+// Slippy's shape, from the art (slippy-ui.ai: a 46.92 x 38.37 head ellipse
+// with two 9.75-radius eye bumps), in units of its width, y up from its bottom.
+const double kHeadCX = 0.5, kHeadCY = 0.305, kHeadRX = 0.5, kHeadRY = 0.305;
+const double kEyeX = 0.208, kEyeY = 0.610;   // bump (eye) centers: 0.5 +/- kEyeX
+const double kBumpR = 0.2078;
+const double kFrogHeight = 0.818;
+
 struct FrogPoint { double x, y; };
 
 // Must match the drawing: the head ellipse and the bumps at 0.5 +/- eyeX, eyeY.
-inline std::vector<FrogPoint> FrogOutline(double eyeX = 0.22, double eyeY = 0.70, double bumpR = 0.2)
+inline std::vector<FrogPoint> FrogOutline(double eyeX = kEyeX, double eyeY = kEyeY, double bumpR = kBumpR)
 {
 	const double kTwoPi = 6.28318530717958647692;
-	const double hx = 0.5, hy = 0.37, ha = 0.5, hb = 0.31;   // head: box (0, 0.06, 1, 0.62)
+	const double hx = kHeadCX, hy = kHeadCY, ha = kHeadRX, hb = kHeadRY;
 	auto inHead = [&](double x, double y) { double u = (x - hx) / ha, v = (y - hy) / hb; return u * u + v * v < 1; };
 	auto inBump = [&](double x, double y, double side) { double dx = x - (0.5 + side * eyeX), dy = y - eyeY; return dx * dx + dy * dy < bumpR * bumpR; };
 
@@ -67,7 +74,7 @@ inline std::vector<FrogPoint> FrogOutline(double eyeX = 0.22, double eyeY = 0.70
 }
 
 // Where the ripples grow from: the middle of the silhouette.
-const double kFrogMidX = 0.5, kFrogMidY = 0.48;
+const double kFrogMidX = 0.5, kFrogMidY = 0.41;
 
 } // namespace slippy
 

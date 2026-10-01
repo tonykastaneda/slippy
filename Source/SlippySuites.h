@@ -80,6 +80,7 @@ extern "C" AIUndoSuite*				sAIUndo;
 extern "C" AIUUIDSuite*				sAIUUID;
 extern "C" AIRuntimeSuite*			sAIRuntime;
 extern "C" AIPanelSuite*			sAIPanel;
+extern "C" AIPanelFlyoutMenuSuite*	sAIPanelFlyoutMenu;
 extern "C" AIFileFormatSuite*		sAIFileFormat;
 extern "C" AIAnnotatorSuite*		sAIAnnotator;
 extern "C" AIAnnotatorDrawerSuite*	sAIAnnotatorDrawer;

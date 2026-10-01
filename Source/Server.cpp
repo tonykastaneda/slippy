@@ -241,7 +241,7 @@ void Server::Serve(intptr_t fd)
 	size_t p1 = requestLine.find(' '), p2 = requestLine.rfind(' ');
 	std::string target = p1 != std::string::npos && p2 > p1 ? requestLine.substr(p1 + 1, p2 - p1 - 1) : "";
 
-	std::string origin, token, contentLength;
+	std::string origin, token, contentLength, userAgent;
 	size_t pos = lineEnd == std::string::npos ? head.size() : lineEnd + 2;
 	while (pos < head.size()) {
 		size_t end = head.find("\r\n", pos);
@@ -253,6 +253,7 @@ void Server::Serve(intptr_t fd)
 		std::string key = Lower(Trim(line.substr(0, colon)));
 		std::string value = Trim(line.substr(colon + 1));
 		if (key == "origin") origin = value;
+		else if (key == "user-agent") userAgent = value;
 		else if (key == "x-slippy-token") token = value;
 		else if (key == "authorization" && Lower(value).rfind("bearer ", 0) == 0) token = Trim(value.substr(7));
 		else if (key == "content-length") contentLength = value;
@@ -308,19 +309,20 @@ void Server::Serve(intptr_t fd)
 		Respond(fd, 400, ErrorBody(e.what()));
 		return;
 	}
-	if (path == "/rpc") { Respond(fd, 200, fHandler(request)); return; }
+	Caller caller{query, userAgent};
+	if (path == "/rpc") { Respond(fd, 200, fHandler(request, caller)); return; }
 
 	// MCP: one message or an array; notifications get 202 and no body.
 	json::Value reply;
 	if (request.isArray()) {
 		json::Value out = json::Value::MakeArray();
 		for (const json::Value& m : request.asArray()) {
-			json::Value r = fMcp(m, query);
+			json::Value r = fMcp(m, caller);
 			if (!r.isNull()) out.push(r);
 		}
 		if (out.size()) reply = out;
 	}
-	else reply = fMcp(request, query);
+	else reply = fMcp(request, caller);
 	if (reply.isNull()) Respond(fd, 202, json::Value());
 	else Respond(fd, 200, reply);
 }

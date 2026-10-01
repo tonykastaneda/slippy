@@ -263,14 +263,44 @@ json::Value SymbolEdit(const json::Value& p)
 	return v;
 }
 
+// Ends a symbol edit, and never leaves the document stuck in one: if
+// Illustrator won't end the session normally, leave isolation mode (which
+// saves, as in the UI); if that fails too, discard the edit to get out.
 json::Value SymbolFinish(const json::Value& p)
 {
-	AIPatternHandle symbol = EditingSymbol(p);
+	Need(sAISymbol, "The symbol suite");
+	ActiveDocument();
 	bool save = p.boolean("save", true);
-	Check(sAISymbol->EndEditingSymbolDefinition(symbol, save), "EndEditingSymbolDefinition");
+	bool isolated = sAIIsolationMode && sAIIsolationMode->IsInIsolationMode();
+	if (!sAISymbol->GetSymbolEditMode() && !isolated) Fail(kErrInvalidParams, "no symbol is being edited");
 	json::Value v;
-	v["symbol"] = SymbolName(symbol);
-	v["saved"] = save;
+	std::string why;
+	AIPatternHandle symbol = nullptr;
+	if (sAISymbol->GetSymbolEditMode()) {
+		try { symbol = EditingSymbol(p); }
+		catch (const CommandError& e) { why = e.message; }
+	}
+	if (symbol) {
+		v["symbol"] = SymbolName(symbol);
+		AIErr e = sAISymbol->EndEditingSymbolDefinition(symbol, save);
+		if (!e) { v["saved"] = save; v["how"] = "ended the edit"; return v; }
+		why = "EndEditingSymbolDefinition failed (" + ErrText(e) + ")";
+	}
+	if (save && sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()) {
+		AIErr e = sAIIsolationMode->ExitIsolationMode();
+		if (!e && !sAISymbol->GetSymbolEditMode()) { v["saved"] = true; v["how"] = "left isolation mode, which saves the edit"; v["note"] = why; return v; }
+		if (e) why += "; ExitIsolationMode failed (" + ErrText(e) + ")";
+	}
+	if (sAISymbol->GetSymbolEditMode()) {
+		AIErr e = sAISymbol->ExitSymbolEditMode();   // discards every open symbol edit
+		if (e) why += "; ExitSymbolEditMode failed (" + ErrText(e) + ")";
+	}
+	if (sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()) sAIIsolationMode->CancelIsolationMode();
+	if (sAISymbol->GetSymbolEditMode() || (sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()))
+		Fail(kErrIllustrator, "couldn't leave the symbol edit: " + why);
+	v["saved"] = false;
+	v["how"] = save ? "couldn't save, so the edit was discarded to get out" : "discarded the edit";
+	if (!why.empty()) v["note"] = why;
 	return v;
 }
 
@@ -301,12 +331,16 @@ json::Value IsolationEnter(const json::Value& p)
 	return IsolationState(p);
 }
 
-json::Value IsolationExit(const json::Value&)
+// Leaves isolation mode; during a symbol edit, finishes it (save=true by default).
+json::Value IsolationExit(const json::Value& p)
 {
 	Need(sAIIsolationMode, "The isolation mode suite");
 	ActiveDocument();
-	if (sAISymbol && sAISymbol->GetSymbolEditMode()) Fail(kErrInvalidParams, "a symbol is being edited - use symbol.finish to save or discard it");
-	if (sAIIsolationMode->IsInIsolationMode()) Check(sAIIsolationMode->ExitIsolationMode(), "ExitIsolationMode");
+	if (sAISymbol && sAISymbol->GetSymbolEditMode()) return SymbolFinish(p);
+	if (sAIIsolationMode->IsInIsolationMode()) {
+		AIErr e = sAIIsolationMode->ExitIsolationMode();
+		if (e) { sAIIsolationMode->CancelIsolationMode(); if (sAIIsolationMode->IsInIsolationMode()) Check(e, "ExitIsolationMode"); }
+	}
 	json::Value v;
 	v["isolated"] = false;
 	return v;
@@ -330,7 +364,8 @@ void AddSymbolCommands(CommandTable& t)
 		Params({{"ids", kIds}, {"id", "string"}}), SymbolBreak, true};
 	t["symbol.edit"] = {"Edit a symbol's definition in place (isolation mode, like double-clicking an instance). Returns the editable art; "
 		"change it with any command, then symbol.finish.", Params({{"id", "string - an instance to edit in place"}, {"symbol", "string - the symbol's name, instead of id"}}), SymbolEdit, true};
-	t["symbol.finish"] = {"End a symbol edit: save=true (default) updates every instance, false discards the changes.",
+	t["symbol.finish"] = {"End a symbol edit: save=true (default) updates every instance, false discards the changes. If Illustrator won't end it "
+		"normally it leaves isolation mode (saving) or, failing that, discards the edit - 'how' says which.",
 		Params({{"save", "boolean (default true)"}, {"symbol", "string - which, when editing nested symbols"}}), SymbolFinish, true};
 	t["symbol.redefine"] = {"Replace a symbol's definition with art (default: the selection); every instance updates.",
 		Params({{"symbol", sym}, {"ids", kIds}, {"id", "string"}}), SymbolRedefine, true};
@@ -340,7 +375,8 @@ void AddSymbolCommands(CommandTable& t)
 	t["isolation.state"] = {"Whether the document is in isolation mode (or a symbol edit), and what's editable.", Params({}), IsolationState, false};
 	t["isolation.enter"] = {"Isolate a group (default: the selected one), like double-clicking it; everything else is dimmed (or hidden with hideOthers).",
 		Params({{"id", "string"}, {"hideOthers", "boolean"}}), IsolationEnter, true};
-	t["isolation.exit"] = {"Leave isolation mode.", Params({}), IsolationExit, true};
+	t["isolation.exit"] = {"Leave isolation mode; during a symbol edit this finishes it (save=true by default, false discards).",
+		Params({{"save", "boolean - symbol edits only (default true)"}}), IsolationExit, true};
 }
 
 } // namespace slippy

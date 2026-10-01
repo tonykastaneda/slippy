@@ -125,4 +125,18 @@ add_custom_target(SlippyCatalog DEPENDS "${CATALOG}")
 add_dependencies(Slippy SlippyCatalog)
 set_source_files_properties(Source/CmdCatalog.cpp PROPERTIES OBJECT_DEPENDS "${CATALOG}")
 
+# The agents' logos for the panel (Resources/agents/*.svg).
+file(GLOB AGENT_SVGS "${CMAKE_CURRENT_SOURCE_DIR}/Resources/agents/*.svg")
+set(LOGOS "${CMAKE_CURRENT_BINARY_DIR}/AgentLogos.inc")
+add_custom_command(
+	OUTPUT "${LOGOS}"
+	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/agent_logos.py" "${CMAKE_CURRENT_SOURCE_DIR}/Resources/agents" "${LOGOS}"
+	DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/agent_logos.py" ${AGENT_SVGS}
+	COMMENT "Generating the agent logos"
+	VERBATIM
+)
+add_custom_target(SlippyLogos DEPENDS "${LOGOS}")
+add_dependencies(Slippy SlippyLogos)
+set_source_files_properties(Source/SlippyPanelWin.cpp PROPERTIES OBJECT_DEPENDS "${LOGOS}")
+
 configure_file(Resources/Win/SlippyVersion.h.in "${CMAKE_CURRENT_BINARY_DIR}/SlippyVersion.h" @ONLY)

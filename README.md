@@ -79,8 +79,12 @@ from wherever Slippy is on screen, so one never cuts another off with a jump:
 hops, squash and stretch, and breathing each run on their own layer. Each call also sends a ripple (Slippy's own outline) out
 from Slippy (teal = read, amber = edit, red = error), kicks its command group's
 bar, and slides into the feed as a plain-English line ("Rotated “Slippy” 15°", "Couldn't find that object"), with the time of day. Hover a line for the technical command, how long it took and any full error. The panel also has
-**Pause agents**, which refuses calls, and **Copy connection**, which copies
-Slippy's URL (token included) to hand to an agent. With macOS Reduce Motion on (on
+**Copy connection**, which copies Slippy's URL (token included) to hand to an
+agent. Beside the call counts is the logo of the agent that sent the last call
+(Claude, Codex, Cursor, Gemini, Grok...; `Resources/agents`). **Pause agents**,
+which refuses calls, is in the panel's flyout menu. The strip along the bottom
+opens a drawer for the terminal that's coming. Every call is also logged to
+`calls.log` next to the token (read it with `app.log`). With macOS Reduce Motion on (on
 Windows: "Show animations in Windows" off), Slippy
 moves about a third as much, feed lines fade in without sliding, and the Z's
 light up in place one after another instead of drifting. Launch Illustrator

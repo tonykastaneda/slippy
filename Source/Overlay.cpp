@@ -23,7 +23,8 @@ const double kCursorHold = 6.0, kCursorFade = 1.0;
 
 const size_t kLabelChars = 48;
 
-const AIRGBColor kGreen = {0x0000, 0xABAB, 0x4545};   // SlippyGreen(), #00AB45
+const AIRGBColor kGreen = {0x9292, 0xF6F6, 0x0707};   // SlippyGreen(), #92F607
+const AIRGBColor kInk = {0x1A1A, 0x1A1A, 0x1A1A};     // text on the lime label (white wouldn't read)
 const AIRGBColor kRed = {0xE0E0, 0x4545, 0x4545};
 const AIRGBColor kWhite = {0xFFFF, 0xFFFF, 0xFFFF};
 
@@ -353,7 +354,7 @@ void Draw(AIAnnotatorMessage* m)
 			D.DrawRect(d, {pill.left + h / 2, pill.top, pill.right - h / 2, pill.bottom}, true);
 			D.DrawEllipse(d, {pill.left, pill.top, pill.left + h, pill.bottom}, true);
 			D.DrawEllipse(d, {pill.right - h, pill.top, pill.right, pill.bottom}, true);
-			D.SetColor(d, kWhite);
+			D.SetColor(d, gShow.ok ? kInk : kWhite);
 			D.DrawTextAligned(d, text, kAICenter, kAIMiddle, pill, false);
 		}
 	}

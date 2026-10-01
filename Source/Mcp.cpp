@@ -2,6 +2,8 @@
 #include "Commands.h"
 #include "SlippyID.h"
 
+#include <map>
+#include <mutex>
 #include <string>
 
 namespace slippy {
@@ -39,6 +41,18 @@ json::Value Result(const json::Value& id, json::Value result)
 	r["id"] = id;
 	r["result"] = std::move(result);
 	return r;
+}
+
+// Each client's MCP introduction (clientInfo name / version), by its
+// User-Agent: initialize comes once, tool calls come with only the header.
+std::mutex gClientsMutex;
+std::map<std::string, std::string> gClients;
+
+std::string Introduced(const std::string& userAgent)
+{
+	std::lock_guard<std::mutex> lock(gClientsMutex);
+	auto it = gClients.find(userAgent);
+	return it == gClients.end() ? "" : it->second;
 }
 
 std::string ToolName(std::string method)
@@ -206,7 +220,7 @@ json::Value ToolResult(const json::Value& response)
 	return out;
 }
 
-json::Value CallTool(const json::Value& params, const RunCall& run)
+json::Value CallTool(const json::Value& params, const RunCall& run, const std::string& agent)
 {
 	std::string name = params.str("name");
 	const json::Value& args = params.get("arguments");
@@ -227,6 +241,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 			req["id"] = i++;
 			req["method"] = c.get("method");
 			req["params"] = c.get("params").isObject() ? c.get("params") : json::Value::MakeObject();
+			req["agent"] = agent;
 			batch.push(req);
 		}
 		json::Value responses = run(batch);
@@ -250,6 +265,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 	json::Value req;
 	req["jsonrpc"] = "2.0";
 	req["id"] = 1;
+	req["agent"] = agent;
 	if (name == "slippy_call") {
 		if (!arguments.get("method").isString()) {
 			json::Value e;
@@ -279,7 +295,20 @@ json::Value CallTool(const json::Value& params, const RunCall& run)
 
 } // namespace
 
-json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTools)
+std::string AgentName(const std::string& clientInfo)
+{
+	std::string s = LowerCase(clientInfo);
+	static const std::pair<const char*, const char*> known[] = {
+		{"claude", "Claude"}, {"anthropic", "Claude"}, {"codex", "Codex"}, {"openai", "Codex"}, {"chatgpt", "ChatGPT"},
+		{"cursor", "Cursor"}, {"gemini", "Gemini"}, {"qwen", "Qwen"}, {"kimi", "Kimi"}, {"moonshot", "Kimi"},
+		{"grok", "Grok"}, {"xai", "Grok"}, {"copilot", "Copilot"}, {"visual studio code", "VS Code"}, {"vscode", "VS Code"},
+		{"windsurf", "Windsurf"}, {"codeium", "Windsurf"}, {"cline", "Cline"}, {"roo", "Roo Code"}, {"opencode", "OpenCode"},
+		{"zed", "Zed"}, {"goose", "Goose"}, {"mcp-remote", "mcp-remote"}, {"python", "Script"}, {"curl", "Script"}};
+	for (auto& k : known) if (s.find(k.first) != std::string::npos) return k.second;
+	return "";
+}
+
+json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTools, const std::string& userAgent)
 {
 	if (!message.isObject() || !message.get("method").isString()) {
 		// A response to something we asked (we never ask), or junk.
@@ -292,6 +321,12 @@ json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTo
 	const json::Value& params = message.get("params");
 
 	if (method == "initialize") {
+		const json::Value& info = params.get("clientInfo");
+		if (info.isObject()) {
+			std::string who = info.str("name", "") + " " + info.str("version", "");
+			std::lock_guard<std::mutex> lock(gClientsMutex);
+			gClients[userAgent] = who;
+		}
 		json::Value r;
 		std::string asked = params.str("protocolVersion", kProtocol);
 		// Answer in the client's version when it's one this server speaks.
@@ -311,7 +346,10 @@ json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTo
 	}
 	if (method == "tools/call") {
 		if (!params.isObject() || !params.get("name").isString()) return Error(id, kErrInvalidParams, "tools/call needs a tool 'name'");
-		return Result(id, CallTool(params, run));
+		std::string introduced = Introduced(userAgent);
+		std::string agent = AgentName(introduced + " " + userAgent);
+		if (agent.empty()) agent = introduced.empty() ? userAgent : introduced;
+		return Result(id, CallTool(params, run, agent));
 	}
 	return Error(id, kErrMethodNotFound, "unsupported MCP method '" + method + "'");
 }

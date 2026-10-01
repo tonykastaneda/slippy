@@ -13,16 +13,17 @@
 #include <string>
 
 struct PanelCallbacks {
-	std::function<void(bool paused)> setPaused;
 	std::function<std::string()> connectionInfo;   // what "Copy connection" copies
 };
 
 void PanelAttach(AIPanelRef panel, PanelCallbacks callbacks);
 void PanelDetach();
 void PanelSetStatus(const std::string& text, bool listening);
+void PanelSetPaused(bool paused);   // Pause agents, from the flyout menu
 // Hides a menu item by its title (Slippy's own internal command).
 void HideMenuItemTitled(const std::string& title);
 
-void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line);
+// agent: who sent the call ("Claude", "Codex"...; "" if unknown).
+void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line, const std::string& agent);
 
 #endif // __SLIPPY_PANEL_H__

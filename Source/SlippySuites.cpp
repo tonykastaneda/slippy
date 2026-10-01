@@ -21,6 +21,7 @@ extern "C" {
 	AIUUIDSuite*			sAIUUID = nullptr;
 	AIRuntimeSuite*			sAIRuntime = nullptr;
 	AIPanelSuite*			sAIPanel = nullptr;
+	AIPanelFlyoutMenuSuite*	sAIPanelFlyoutMenu = nullptr;
 	AIFileFormatSuite*		sAIFileFormat = nullptr;
 	AIAnnotatorSuite*		sAIAnnotator = nullptr;
 	AIAnnotatorDrawerSuite*	sAIAnnotatorDrawer = nullptr;
@@ -87,6 +88,7 @@ ImportSuite gImportSuites[] =
 	kAIUUIDSuite, kAIUUIDSuiteVersion, &sAIUUID,
 	kAIRuntimeSuite, kAIRuntimeSuiteVersion, &sAIRuntime,
 	kAIPanelSuite, kAIPanelSuiteVersion, &sAIPanel,			// the Slippy panel (checked before use)
+	kAIPanelFlyoutMenuSuite, kAIPanelFlyoutMenuSuiteVersion, &sAIPanelFlyoutMenu,
 	kAIFileFormatSuite, kAIFileFormatSuiteVersion, &sAIFileFormat,
 	kAIAnnotatorSuite, kAIAnnotatorSuiteVersion, &sAIAnnotator,		// the canvas overlay (Overlay.h)
 	kAIAnnotatorDrawerSuite, kAIAnnotatorDrawerSuiteVersion, &sAIAnnotatorDrawer,

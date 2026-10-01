@@ -28,8 +28,10 @@ json::Value Handle(const json::Value& request);   // main thread only
 json::Value Describe();                           // the command list with param docs
 
 // Told about every call after it runs (the panel animates from this).
-// line: what happened, in plain English (Narrate.h).
-using CallObserver = std::function<void(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line)>;
+// line: what happened, in plain English (Narrate.h). agent: who sent it
+// ("Claude", "Codex"... or what the client called itself; "" if unknown).
+using CallObserver = std::function<void(const std::string& method, bool ok, bool changesDocument, double milliseconds,
+	const std::string& line, const std::string& agent)>;
 void SetCallObserver(CallObserver observer);
 
 } // namespace slippy

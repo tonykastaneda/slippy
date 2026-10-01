@@ -1,8 +1,11 @@
 #include "IllustratorSDK.h"
 #include "SlippyPanel.h"
 #include "SlippySuites.h"
+#include "SlippyID.h"
 
 #import "SlippyPanelView.h"
+
+#include <algorithm>
 
 // Hosts SlippyPanelView (SlippyPanelView.mm) in Illustrator's docked panel.
 
@@ -14,6 +17,7 @@ SlippyPanelView* gView = nil;
 PanelCallbacks gCallbacks;
 NSString* gStatus = @"Starting…";
 BOOL gListening = NO;
+BOOL gPaused = NO;
 
 NSString* NS(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()] ?: @""; }
 
@@ -25,9 +29,19 @@ void Install()
 	if (gView && gView.superview == host) return;
 	if (!gView) {
 		gView = [[SlippyPanelView alloc] initWithFrame:host.bounds];
-		gView.onPause = ^(BOOL paused) { if (gCallbacks.setPaused) gCallbacks.setPaused(paused); };
 		gView.connectionInfo = ^NSString* { return gCallbacks.connectionInfo ? NS(gCallbacks.connectionInfo()) : @""; };
+		NSString* version = NS(kSlippyVersion);   // "0.1.0" -> "0.1"
+		if ([version hasSuffix:@".0"]) version = [version substringToIndex:version.length - 2];
+		gView.version = version;
+		// Opening the terminal drawer makes the panel taller (when Illustrator lets it).
+		gView.onDrawer = ^(BOOL open, CGFloat extra) {
+			AISize size;
+			if (!gPanel || sAIPanel->GetSize(gPanel, size)) return;
+			size.height = (AIReal) std::max(260.0, size.height + (open ? extra : -extra));
+			sAIPanel->SetSize(gPanel, size);
+		};
 		[gView setStatus:gStatus listening:gListening];
+		[gView setPaused:gPaused];
 	}
 	[gView removeFromSuperview];
 	gView.frame = host.bounds;
@@ -40,7 +54,7 @@ void PanelAttach(AIPanelRef panel, PanelCallbacks callbacks)
 	@autoreleasepool {
 		gPanel = panel;
 		gCallbacks = std::move(callbacks);
-		AISize minSize = {220, 260}, pref = {260, 380}, maxSize = {600, 2000};
+		AISize minSize = {240, 300}, pref = {290, 480}, maxSize = {700, 2400};
 		sAIPanel->SetSizes(gPanel, minSize, pref, pref, maxSize);
 		Install();
 	}
@@ -65,11 +79,21 @@ void PanelSetStatus(const std::string& text, bool listening)
 	}
 }
 
-void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line)
+void PanelSetPaused(bool paused)
+{
+	@autoreleasepool {
+		gPaused = paused;
+		Install();
+		[gView setPaused:paused];
+		if (!paused) [gView setStatus:gStatus listening:gListening];
+	}
+}
+
+void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line, const std::string& agent)
 {
 	@autoreleasepool {
 		Install();
-		[gView call:NS(method) line:NS(line) ok:ok edit:changesDocument ms:milliseconds];
+		[gView call:NS(method) line:NS(line) ok:ok edit:changesDocument ms:milliseconds agent:NS(agent)];
 	}
 }
 

@@ -17,6 +17,9 @@ void MakeDirs(const std::string& dir);
 // Writes through a temp file and renames it into place; only the user can read it.
 void WritePrivateFile(const std::string& path, const std::string& contents);
 bool ReadFirstWord(const std::string& path, std::string& word);
+// Appends a line; past maxBytes the file moves to <path>.1 and starts over.
+void AppendLine(const std::string& path, const std::string& line, size_t maxBytes);
+std::string ReadFile(const std::string& path);
 void RemoveFile(const std::string& path);
 bool Readable(const std::string& path);
 bool IsAbsolutePath(const std::string& path);
