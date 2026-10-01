@@ -34,6 +34,7 @@ add_library(Slippy SHARED
 	Source/Server.cpp
 	Source/Json.cpp
 	Source/Platform.cpp
+	Source/CrashLog.cpp
 	Source/Raster.cpp
 	Source/CmdCatalog.cpp
 	Source/CmdSymbols.cpp

@@ -1,4 +1,5 @@
 #include "IllustratorSDK.h"
+#include "CrashLog.h"
 #include "SlippyPlugin.h"
 #include "Commands.h"
 #include "SlippyPanel.h"
@@ -130,6 +131,7 @@ ASErr SlippyPlugin::StartupPlugin(SPInterfaceMessage* message)
 {
 	ASErr error = Plugin::StartupPlugin(message);
 	if (error) return error;
+	SlippyAcquireNewerSuites();
 	slippy::platform::MainThreadInit([] { if (gPlugin) gPlugin->Kick(); });
 	AIPlatformAddMenuItemDataUS menuData;
 	menuData.groupName = kSlippyMenuGroup;
@@ -191,6 +193,9 @@ ASErr SlippyPlugin::PostStartupPlugin()
 {
 	ASErr error = Plugin::PostStartupPlugin();
 	gPlugin = this;
+	// Last in line for crashes, so it sees them first; it passes them on.
+	slippy::platform::MakeDirs(slippy::platform::SupportDir());
+	slippy::crashlog::Install(slippy::platform::JoinPath(slippy::platform::SupportDir(), "crash.log"));
 	if (fRunItem && sAICommandManager && sAICommandManager->GetCommandIDFromName(kSlippyRunItemName, &fRunCommand)) fRunCommand = 0;
 	// The run command is Slippy's own plumbing: keep it out of the Window menu.
 	// (Again a little later, in case Illustrator builds the menu after startup.)
@@ -231,11 +236,13 @@ ASErr SlippyPlugin::ShutdownPlugin(SPInterfaceMessage* message)
 	fServer.Stop();
 	gPlugin = nullptr;
 	slippy::SetCallObserver(nullptr);
+	slippy::crashlog::Uninstall();
 	slippy::overlay::Shutdown();
 	PanelDetach();
 	if (fPanel && sAIPanel) { sAIPanel->Destroy(fPanel); fPanel = nullptr; }
 	if (gFlyout && sAIPanelFlyoutMenu) { sAIPanelFlyoutMenu->Destroy(gFlyout); gFlyout = nullptr; }
 	slippy::platform::MainThreadShutdown();
+	SlippyReleaseNewerSuites();
 	return Plugin::ShutdownPlugin(message);
 }
 

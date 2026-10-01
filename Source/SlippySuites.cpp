@@ -1,4 +1,5 @@
 #include "IllustratorSDK.h"
+#include <cstring>
 #include "SlippySuites.h"
 
 extern "C" {
@@ -132,6 +133,75 @@ ImportSuite gImportSuites[] =
 	nullptr, 0, nullptr
 };
 
+extern "C" SPBasicSuite* sSPBasic;
+
+namespace {
+struct Substitute { std::string name; int version; const void* suite; };
+std::vector<Substitute> gSubstitutes;
+}
+
+// Text engine suites missing at the SDK headers' version: Illustrator 30.2
+// has ParaFeatures, ParaInspector and DocumentTextResources only up to v102
+// (the headers ask v103), and calling through the null pointer crashed it.
+// A newer version only adds functions at the end, so it stands in; an older
+// one might not match the headers' layout, so only a documented one is used.
+void SlippyAcquireNewerSuites()
+{
+	bool optional = false;
+	for (const ImportSuite* s = gImportSuites; s->name || s->version; s++) {
+		if (!s->name) { optional = s->version == kStartOptionalSuites; continue; }
+		if (!optional || !s->suite || *(void**) s->suite || strncmp(s->name, "ATE ", 4)) continue;
+		std::vector<int> versions;
+		for (int v = s->version + 1; v <= s->version + 12; v++) versions.push_back(v);
+		// The one older version known to fit: DocumentTextResources v103 only
+		// appended two functions (ATE-5451; the header keeps v102's layout).
+		if (!strcmp(s->name, "ATE DocumentTextResources Suite")) versions.push_back(s->version - 1);
+		for (int v : versions) {
+			const void* suite = nullptr;
+			if (!sSPBasic->AcquireSuite(s->name, v, &suite) && suite) {
+				*(const void**) s->suite = suite;
+				gSubstitutes.push_back({s->name, v, suite});
+				break;
+			}
+		}
+	}
+}
+
+void SlippyReleaseNewerSuites()
+{
+	for (const Substitute& s : gSubstitutes) sSPBasic->ReleaseSuite(s.name.c_str(), s.version);
+	gSubstitutes.clear();
+}
+
+std::vector<std::string> SlippyNewerSuites()
+{
+	std::vector<std::string> list;
+	for (const Substitute& s : gSubstitutes) list.push_back(s.name + " v" + std::to_string(s.version));
+	return list;
+}
+
+// Every optional suite Illustrator didn't hand over ("name vN"); its pointer
+// stays null, and calling through one crashes.
+std::vector<std::string> SlippyMissingSuites()
+{
+	std::vector<std::string> missing;
+	bool optional = false;
+	for (const ImportSuite* s = gImportSuites; s->name || s->version; s++) {
+		if (!s->name) { optional = s->version == kStartOptionalSuites; continue; }
+		if (!optional || !s->suite || *(void**) s->suite) continue;
+		// Which versions this Illustrator does have (asked for, then handed back).
+		std::string has;
+		for (int v = 1; v <= 200; v++) {
+			const void* suite = nullptr;
+			if (sSPBasic->AcquireSuite(s->name, v, &suite) || !suite) continue;
+			sSPBasic->ReleaseSuite(s->name, v);
+			has += (has.empty() ? " (has v" : ", v") + std::to_string(v);
+		}
+		missing.push_back(std::string(s->name) + " v" + std::to_string(s->version) + (has.empty() ? "" : has + ")"));
+	}
+	return missing;
+}
+
 namespace {
 struct TimerSuiteV5 {
 	AIAPI AIErr (*AddTimer) (SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer);
@@ -140,8 +210,6 @@ struct TimerSuiteV5 {
 	AIAPI AIErr (*SetTimerActive) (AITimerHandle timer, AIBoolean active);
 };
 }
-
-extern "C" SPBasicSuite* sSPBasic;
 
 static int gTimerVersion = -1;
 static const void* gTimerSuite = nullptr;

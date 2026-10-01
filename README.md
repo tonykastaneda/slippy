@@ -250,6 +250,7 @@ What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs
 | `tools/sdk_catalog.py` | Build step: the menu commands, action events and tools the SDK names, for `menu.list` and friends |
 | `Source/Narrate.*` | Turns each call into the feed's plain-English line |
 | `Source/Overlay.*` | The canvas overlay: box, cursor and label for what each call touched |
+| `Source/CrashLog.*` | If Illustrator crashes, `crash.log` (next to `calls.log`) gets the Slippy call that was running and the stack, then the crash goes on to Adobe's reporter (macOS) |
 | `Source/Mcp.*` | MCP over HTTP: handshake, tool list built from the command table, tool calls |
 | `Source/SlippyPanelView.*` | The panel and Slippy (Cocoa + Core Animation, no SDK) |
 | `Source/SlippyPanel.*` | Puts the panel view into Illustrator's docked panel |

@@ -27,6 +27,7 @@ SOURCES := \
 	Source/SlippySuites.cpp \
 	Source/Commands.cpp \
 	Source/Overlay.cpp \
+	Source/CrashLog.cpp \
 	Source/Mcp.cpp \
 	Source/Narrate.cpp \
 	Source/Server.cpp \

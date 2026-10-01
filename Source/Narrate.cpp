@@ -244,6 +244,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 		return {"Changed the transparency of " + Target(p, json::Value()), "change transparency"};
 	}
 	if (m == "appearance.add") return {"Added a " + p.str("kind") + " to " + Target(p, json::Value()), "add a " + p.str("kind")};
+	if (m == "appearance.remove") return {std::string(p.boolean("empty", false) ? "Removed empty fills and strokes from " : "Removed a fill or stroke from ") + Target(p, json::Value()), "remove a fill or stroke"};
 	if (m == "appearance.clear") return {"Cleared effects from " + Target(p, json::Value()), "clear effects"};
 	if (m == "appearance.copy") return {"Copied an appearance to " + Target(p, json::Value()), "copy an appearance"};
 	if (m == "effect.list") return {"Looked at the effects", "list effects"};

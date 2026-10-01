@@ -5,9 +5,11 @@
 
 #include "Kit.h"
 #include "IText.h"
+#include "ATETextSuitesExtern.h"   // the text engine suites, to check before calling through them
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace slippy {
 
@@ -106,12 +108,36 @@ json::Value FontList(const json::Value& p)
 
 // ---- features
 
-ATE::IApplicationPaint Paint(const AIColor& c)
+// Text paint goes through Illustrator's own path style <-> character features
+// conversion (as the Swatches panel does), not one color at a time: a gradient
+// read back as a lone text paint has crashed Illustrator.
+void MarkColor(AIColorMap& map)
 {
+	map.kind = true;
+	std::memset(&map.c, 1, sizeof map.c);   // every field of the color is meant
+}
+
+void SetCharPaint(ATE::ICharFeatures& f, const json::Value& p)
+{
+	if (!p.has("fill") && !p.has("stroke")) return;
 	Need(sAIATEPaint, "The text paint suite");
-	ATE::ApplicationPaintRef ref = nullptr;
-	Check(sAIATEPaint->CreateATEApplicationPaint(&c, &ref), "CreateATEApplicationPaint");
-	return ATE::IApplicationPaint(ref);
+	AIPathStyle style;
+	sAIPathStyle->GetInitialPathStyle(&style);
+	AIPathStyleMap map;
+	map.Init();
+	if (p.has("fill")) {
+		AIColor c = ParseColor(p.get("fill"), "fill");
+		map.fillPaint = true;
+		style.fillPaint = c.kind != kNoneColor;
+		if (style.fillPaint) { style.fill.color = c; MarkColor(map.fill.color); }
+	}
+	if (p.has("stroke")) {
+		AIColor c = ParseColor(p.get("stroke"), "stroke");
+		map.strokePaint = true;
+		style.strokePaint = c.kind != kNoneColor;
+		if (style.strokePaint) { style.stroke.color = c; MarkColor(map.stroke.color); }
+	}
+	Check(sAIATEPaint->GetCharFeatures(&style, &map, f.GetRef()), "GetCharFeatures");
 }
 
 bool HasCharFeature(const json::Value& p)
@@ -151,22 +177,16 @@ ATE::ICharFeatures CharFeatures(const json::Value& p)
 	}
 	if (p.has("underline")) f.SetUnderlinePosition(p.boolean("underline", false) ? ATE::kUnderlineOn_RightInVertical : ATE::kUnderlineOff);
 	if (p.has("strikethrough")) f.SetStrikethroughPosition(p.boolean("strikethrough", false) ? ATE::kStrikethroughOn_XHeight : ATE::kStrikethroughOff);
-	if (p.has("fill")) {
-		AIColor c = ParseColor(p.get("fill"), "fill");
-		f.SetFill(c.kind != kNoneColor);
-		if (c.kind != kNoneColor) f.SetFillColor(Paint(c));
-	}
-	if (p.has("stroke")) {
-		AIColor c = ParseColor(p.get("stroke"), "stroke");
-		f.SetStroke(c.kind != kNoneColor);
-		if (c.kind != kNoneColor) f.SetStrokeColor(Paint(c));
-	}
+	SetCharPaint(f, p);
 	if (p.has("strokeWidth")) f.SetLineWidth((ATETextDOM::Real) ReqNum(p, "strokeWidth"));
 	return f;
 }
 
 ATE::IParaFeatures ParaFeatures(const json::Value& p)
 {
+	// Illustrator 30.2 has only an older ParaFeatures suite than the SDK's
+	// (see SlippyAcquireNewerSuites); without it every paragraph call crashes.
+	Need(ATE::sParaFeatures, "The paragraph features text suite (this Illustrator's is older than Slippy's SDK)");
 	ATE::IParaFeatures f;
 	if (p.has("align")) {
 		std::string a = ReqStr(p, "align");
@@ -185,11 +205,19 @@ ATE::IParaFeatures ParaFeatures(const json::Value& p)
 	return f;
 }
 
-json::Value PaintJson(ATE::IApplicationPaint paint)
+// Fill and stroke of the range, read the same way they're written (SetCharPaint).
+void CharPaintJson(ATE::ICharFeatures c, json::Value& v)
 {
-	AIColor c;
-	if (paint.IsNull() || !sAIATEPaint || sAIATEPaint->GetAIColor(paint.GetRef(), &c)) return json::Value();
-	return ColorJson(c);
+	AIPathStyle style;
+	AIPathStyleMap map;
+	map.Init();
+	if (!sAIATEPaint || sAIATEPaint->GetAIPathStyleAndMap(c.GetRef(), &style, &map)) return;
+	if (map.fillPaint) v["fill"] = !style.fillPaint ? json::Value("none") : map.fill.color.kind ? ColorJson(style.fill.color) : json::Value("mixed");
+	else v["fill"] = "mixed";
+	if (map.strokePaint && style.strokePaint) {
+		v["stroke"] = map.stroke.color.kind ? ColorJson(style.stroke.color) : json::Value("mixed");
+		if (map.stroke.width) v["strokeWidth"] = (double) style.stroke.width;
+	}
 }
 
 // What the range has in common; a feature that varies across it is "mixed".
@@ -197,7 +225,11 @@ json::Value FeaturesJson(ATE::ITextRange range)
 {
 	json::Value v;
 	bool set = false;
+	// Either set can come back null (seen for paragraph features on point text);
+	// asking a null one anything crashes Illustrator.
+	if (!ATE::sCharFeatures) return v;
 	ATE::ICharFeatures c = range.GetUniqueCharFeatures();
+	if (c.IsNull()) return v;
 	ATE::IFont font = c.GetFont(&set);
 	if (set && !font.IsNull() && sAIFont) {
 		AIFontKey key = nullptr;
@@ -213,15 +245,14 @@ json::Value FeaturesJson(ATE::ITextRange range)
 	if (set && tracking) v["tracking"] = tracking;
 	double shift = c.GetBaselineShift(&set);
 	if (set && shift != 0) v["baselineShift"] = shift;
-	bool fill = c.GetFill(&set);
-	if (set) v["fill"] = fill ? PaintJson(c.GetFillColor(&set)) : json::Value("none");
-	bool stroke = c.GetStroke(&set);
-	if (set && stroke) { v["stroke"] = PaintJson(c.GetStrokeColor(&set)); v["strokeWidth"] = (double) c.GetLineWidth(&set); }
+	CharPaintJson(c, v);
 	ATE::FontCapsOption caps = c.GetFontCapsOption(&set);
 	if (set && caps != ATE::kFontNormalCaps) v["caps"] = caps == ATE::kFontSmallCaps ? "smallCaps" : caps == ATE::kFontAllCaps ? "allCaps" : "allSmallCaps";
 	if (c.GetUnderlinePosition(&set) != ATE::kUnderlineOff && set) v["underline"] = true;
 	if (c.GetStrikethroughPosition(&set) != ATE::kStrikethroughOff && set) v["strikethrough"] = true;
+	if (!ATE::sParaFeatures) return v;
 	ATE::IParaFeatures para = range.GetUniqueParaFeatures();
+	if (para.IsNull()) return v;
 	ATE::ParagraphJustification j = para.GetJustification(&set);
 	if (set) {
 		const char* names[] = {"left", "right", "center", "justify", "justifyRight", "justifyCenter", "justifyAll"};
@@ -424,6 +455,7 @@ json::Value TextReplace(const json::Value& p)
 ATE::IDocumentTextResources Resources()
 {
 	ActiveDocument();
+	Need(ATE::sDocumentTextResources, "The document text resources suite");
 	DocumentTextResourcesRef ref = nullptr;
 	Check(sAIDocument->GetDocumentTextResources(&ref), "GetDocumentTextResources");
 	return ATE::IDocumentTextResources(ref);

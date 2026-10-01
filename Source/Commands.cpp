@@ -1,4 +1,5 @@
 #include "IllustratorSDK.h"
+#include "CrashLog.h"
 #include "Commands.h"
 #include "Kit.h"
 #include "Narrate.h"
@@ -643,7 +644,11 @@ json::Value AppInfo(const json::Value&)
 	if (!sAITransformArt) missing.push("transformArt");
 	if (!sAIUndo) missing.push("undo");
 	if (!sAIFileFormat) missing.push("fileFormat");
+	for (const std::string& s : SlippyMissingSuites()) missing.push(s);
 	v["missingSuites"] = missing;
+	json::Value newer = json::Value::MakeArray();
+	for (const std::string& s : SlippyNewerSuites()) newer.push(s);
+	if (newer.size()) v["newerSuites"] = newer;
 	v["timerSuiteVersion"] = SlippyTimerVersion();
 	if (sAIUndo && count) {
 		ai::int32 past = 0, future = 0;
@@ -1834,6 +1839,9 @@ json::Value RunOneUntimed(const json::Value& call)
 	if (it == table.end()) return error(kErrMethodNotFound, "unknown method '" + method + "' - see commands.list", kNoErr);
 	const json::Value& params = call.get("params");
 	if (!params.isNull() && !params.isObject()) return error(kErrInvalidParams, "'params' must be an object", kNoErr);
+	// What crash.log names if this call takes Illustrator down.
+	crashlog::SetCurrentCall(method, params.isNull() ? "{}" : params.dump());
+	struct Done { ~Done() { crashlog::ClearCurrentCall(); } } done;
 	try {
 		if (it->second.changesDocument && sAIUndo)
 			sAIUndo->SetUndoTextUS(U("Undo Slippy " + method), U("Redo Slippy " + method));

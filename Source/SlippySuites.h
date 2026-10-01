@@ -52,6 +52,9 @@
 #include "AIRepeat.h"
 #include "AIPathConstruction.h"
 #include "AIFont.h"
+#include <string>
+#include <vector>
+
 #include "AIATEPaint.h"
 #include "AIArtSet.h"
 #include "AIRasterize.h"
@@ -121,6 +124,11 @@ extern "C" AIPreferenceSuite*		sAIPreference;
 // Timer suite, whichever version this Illustrator has (0 = none).
 // Version 6 inserted functions, so older layouts need their own table.
 int SlippyTimerVersion();
+std::vector<std::string> SlippyMissingSuites();   // optional suites Illustrator didn't provide
+// Text engine suites taken in a newer version when the headers' one is missing.
+void SlippyAcquireNewerSuites();
+void SlippyReleaseNewerSuites();
+std::vector<std::string> SlippyNewerSuites();
 // undoable: run in an undo-tracked context (the calls timer); the overlay's
 // animation timer changes nothing, so it doesn't need one.
 AIErr SlippyAddTimer(SPPluginRef self, const char* name, ai::int32 period, AITimerHandle* timer, bool undoable = true);

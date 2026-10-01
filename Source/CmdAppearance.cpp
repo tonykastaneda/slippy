@@ -168,6 +168,15 @@ json::Value EffectJson(AIParserLiveEffect effect)
 	return v;
 }
 
+// Text and groups draw their own contents somewhere in the paint stack: the
+// Appearance panel's "Characters" / "Contents" row.
+bool HasContentsRow(AIArtHandle art)
+{
+	short type = kUnknownArt;
+	sAIArt->GetArtType(art, &type);
+	return type == kTextFrameArt || type == kGroupArt;
+}
+
 json::Value AppearanceOf(AIArtHandle art)
 {
 	json::Value v;
@@ -184,6 +193,7 @@ json::Value AppearanceOf(AIArtHandle art)
 		AIParserPaintField field = nullptr;
 		if (sAIArtStyleParser->GetNthPaintField(parser.p, i, &field) || !field) continue;
 		json::Value f;
+		f["index"] = i;
 		AIArtStylePaintData data;
 		if (sAIArtStyleParser->IsFill(field)) {
 			AIFillStyle fill;
@@ -208,6 +218,7 @@ json::Value AppearanceOf(AIArtHandle art)
 		paints.push(f);
 	}
 	v["paints"] = paints;
+	if (HasContentsRow(art)) v["contentsAt"] = sAIArtStyleParser->GetGroupContentsPosition(parser.p);
 	json::Value effects = json::Value::MakeArray();
 	for (int pass = 0; pass < 2; pass++) {
 		ai::int32 n = pass == 0 ? sAIArtStyleParser->CountPreEffects(parser.p) : sAIArtStyleParser->CountPostEffects(parser.p);
@@ -270,7 +281,17 @@ json::Value AppearanceGet(const json::Value& p)
 json::Value AppearanceSet(const json::Value& p)
 {
 	json::Value out = json::Value::MakeArray();
-	for (AIArtHandle a : ArtList(p, true)) { SetBlend(a, p); out.push(AppearanceOf(a)); }
+	for (AIArtHandle a : ArtList(p, true)) {
+		SetBlend(a, p);
+		if (p.get("contentsAt").isNumber()) {
+			if (!HasContentsRow(a)) Fail(kErrInvalidParams, "'contentsAt' is for text and groups (their Characters / Contents row)");
+			Restyle(a, [&](AIStyleParser parser) {
+				ai::int32 n = std::max(0, std::min(sAIArtStyleParser->CountPaintFields(parser), p.get("contentsAt").asInt()));
+				Check(sAIArtStyleParser->MoveGroupContentsPosition(parser, n), "MoveGroupContentsPosition");
+			});
+		}
+		out.push(AppearanceOf(a));
+	}
 	return out;
 }
 
@@ -282,35 +303,138 @@ json::Value AppearanceCopy(const json::Value& p)
 	return out;
 }
 
-// A new fill or stroke on top of (or under) the appearance: several fills and strokes, as in the Appearance panel.
+// Paints are numbered from the top of the Appearance panel down (index 0 is
+// drawn last, over everything). 'position': top, bottom, or an index.
+ai::int32 PaintSlot(AIStyleParser parser, const json::Value& p, ai::int32 fallback)
+{
+	ai::int32 count = sAIArtStyleParser->CountPaintFields(parser);
+	const json::Value& pos = p.get("position");
+	if (pos.isNull()) return fallback;
+	if (pos.isNumber()) return std::max(0, std::min(count, pos.asInt()));
+	if (pos.isString() && pos.asString() == "top") return 0;
+	if (pos.isString() && pos.asString() == "bottom") return count;
+	Fail(kErrInvalidParams, "'position' must be top, bottom or an index (0 = top, as appearance.get numbers them)");
+	return 0;
+}
+
+// A fill or stroke with no paint, no effects: the empty pair every object
+// carries (hidden in the panel on type until something is added).
+bool IsEmptyPaint(AIParserPaintField field)
+{
+	if (sAIArtStyleParser->CountEffectsOfPaintField(field)) return false;
+	AIArtStylePaintData data;
+	if (sAIArtStyleParser->IsFill(field)) {
+		AIFillStyle fill;
+		return !sAIArtStyleParser->GetFill(field, &fill, &data) && fill.color.kind == kNoneColor;
+	}
+	if (sAIArtStyleParser->IsStroke(field)) {
+		AIStrokeStyle stroke;
+		return !sAIArtStyleParser->GetStroke(field, &stroke, &data) && stroke.color.kind == kNoneColor;
+	}
+	return false;
+}
+
+// Moving a paint keeps the contents row ("Characters") where it was relative
+// to the other paints.
+void MovePaint(AIStyleParser parser, AIParserPaintField field, ai::int32 from, ai::int32 to, bool contents)
+{
+	ai::int32 at = contents ? sAIArtStyleParser->GetGroupContentsPosition(parser) : -1;
+	Check(sAIArtStyleParser->RemovePaintField(parser, field, false), "RemovePaintField");
+	if (to > from) to--;
+	Check(sAIArtStyleParser->InsertNthPaintField(parser, to, field), "InsertNthPaintField");
+	if (contents) {
+		if (from < at) at--;
+		if (to < at || (to == at && from >= at)) at++;
+		sAIArtStyleParser->MoveGroupContentsPosition(parser, at);
+	}
+}
+
+// A new fill or stroke, as the Appearance panel's Add New Fill / Stroke: the
+// empty one an object already has is used first, so no "none" rows are left.
 json::Value AppearanceAdd(const json::Value& p)
 {
 	std::string kind = ReqStr(p, "kind");
 	if (kind != "fill" && kind != "stroke") Fail(kErrInvalidParams, "'kind' must be fill or stroke");
+	bool fill = kind == "fill";
 	AIColor color = ParseColor(Required(p, "color"), "color");
 	json::Value out = json::Value::MakeArray();
 	for (AIArtHandle a : ArtList(p, true)) {
 		AIColor c = color;
 		FitPaintToArt(a, c, p.get("color"));
+		bool contents = HasContentsRow(a);
 		Restyle(a, [&](AIStyleParser parser) {
+			ai::int32 count = sAIArtStyleParser->CountPaintFields(parser);
+			AIParserPaintField empty = nullptr;
+			ai::int32 emptyAt = -1;
+			for (ai::int32 i = 0; i < count && !empty; i++) {
+				AIParserPaintField f = nullptr;
+				if (sAIArtStyleParser->GetNthPaintField(parser, i, &f) || !f) continue;
+				if ((fill ? sAIArtStyleParser->IsFill(f) : sAIArtStyleParser->IsStroke(f)) && IsEmptyPaint(f)) { empty = f; emptyAt = i; }
+			}
 			AIArtStylePaintData data;
+			if (empty && p.boolean("reuseEmpty", true)) {
+				if (fill) {
+					AIFillStyle style;
+					Check(sAIArtStyleParser->GetFill(empty, &style, &data), "GetFill");
+					style.color = c;
+					Check(sAIArtStyleParser->SetFill(empty, &style, &data), "SetFill");
+				}
+				else {
+					AIStrokeStyle style;
+					Check(sAIArtStyleParser->GetStroke(empty, &style, &data), "GetStroke");
+					style.color = c;
+					style.width = (AIReal) p.num("width", style.width > 0 ? style.width : 1);
+					Check(sAIArtStyleParser->SetStroke(empty, &style, &data), "SetStroke");
+				}
+				ai::int32 to = PaintSlot(parser, p, emptyAt);
+				if (to != emptyAt) MovePaint(parser, empty, emptyAt, to, contents);
+				return;
+			}
 			AIParserPaintField field = nullptr;
-			if (kind == "fill") {
-				AIFillStyle fill;
-				fill.color = c;
-				fill.overprint = false;
-				Check(sAIArtStyleParser->NewPaintFieldFill(&fill, false, &data, &field), "NewPaintFieldFill");
+			if (fill) {
+				AIFillStyle style;
+				style.color = c;
+				style.overprint = false;
+				Check(sAIArtStyleParser->NewPaintFieldFill(&style, false, &data, &field), "NewPaintFieldFill");
 			}
 			else {
 				AIPathStyle base;
 				sAIPathStyle->GetInitialPathStyle(&base);
-				AIStrokeStyle stroke = base.stroke;
-				stroke.color = c;
-				stroke.width = (AIReal) p.num("width", 1);
-				Check(sAIArtStyleParser->NewPaintFieldStroke(&stroke, &data, &field), "NewPaintFieldStroke");
+				AIStrokeStyle style = base.stroke;
+				style.color = c;
+				style.width = (AIReal) p.num("width", 1);
+				Check(sAIArtStyleParser->NewPaintFieldStroke(&style, &data, &field), "NewPaintFieldStroke");
 			}
-			ai::int32 n = sAIArtStyleParser->CountPaintFields(parser);
-			Check(sAIArtStyleParser->InsertNthPaintField(parser, p.str("position", "top") == "bottom" ? 0 : n, field), "InsertNthPaintField");
+			ai::int32 at = contents ? sAIArtStyleParser->GetGroupContentsPosition(parser) : -1;
+			ai::int32 to = PaintSlot(parser, p, 0);
+			Check(sAIArtStyleParser->InsertNthPaintField(parser, to, field), "InsertNthPaintField");
+			if (contents && to <= at) sAIArtStyleParser->MoveGroupContentsPosition(parser, at + 1);
+		});
+		out.push(AppearanceOf(a));
+	}
+	return out;
+}
+
+// Take fills / strokes off: one by index (as appearance.get numbers them), or every empty one.
+json::Value AppearanceRemove(const json::Value& p)
+{
+	bool empties = p.boolean("empty", false);
+	if (!empties && !p.get("index").isNumber()) Fail(kErrInvalidParams, "pass 'index' (from appearance.get) or empty=true");
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : ArtList(p, true)) {
+		bool contents = HasContentsRow(a);
+		Restyle(a, [&](AIStyleParser parser) {
+			ai::int32 count = sAIArtStyleParser->CountPaintFields(parser);
+			for (ai::int32 i = count - 1; i >= 0; i--) {
+				if (!empties && i != p.get("index").asInt()) continue;
+				AIParserPaintField f = nullptr;
+				if (sAIArtStyleParser->GetNthPaintField(parser, i, &f) || !f) continue;
+				if (empties && !IsEmptyPaint(f)) continue;
+				ai::int32 at = contents ? sAIArtStyleParser->GetGroupContentsPosition(parser) : -1;
+				Check(sAIArtStyleParser->RemovePaintField(parser, f, true), "RemovePaintField");
+				if (contents && i < at) sAIArtStyleParser->MoveGroupContentsPosition(parser, at - 1);
+			}
+			if (!empties && p.get("index").asInt() >= count) Fail(kErrNotFound, "no paint at index " + std::to_string(p.get("index").asInt()));
 		});
 		out.push(AppearanceOf(a));
 	}
@@ -388,6 +512,15 @@ json::Value EffectApply(const json::Value& p)
 			}
 			catch (...) { sAIDictionary->Release(params); throw; }
 			sAIDictionary->Release(params);   // the parser's effect holds its own reference
+			if (p.get("paint").isNumber()) {   // inside one fill / stroke, as in the Appearance panel
+				AIParserPaintField field = nullptr;
+				if (sAIArtStyleParser->GetNthPaintField(parser, p.get("paint").asInt(), &field) || !field) {
+					sAIArtStyleParser->DisposeParserLiveEffect(effect);
+					Fail(kErrNotFound, "no paint at index " + std::to_string(p.get("paint").asInt()) + " - see appearance.get");
+				}
+				Check(sAIArtStyleParser->InsertNthEffectOfPaintField(parser, field, -1, effect), "InsertNthEffectOfPaintField");
+				return;
+			}
 			bool pre = p.str("stage", "post") == "pre";
 			ai::int32 n = pre ? sAIArtStyleParser->CountPreEffects(parser) : sAIArtStyleParser->CountPostEffects(parser);
 			Check(pre ? sAIArtStyleParser->InsertNthPreEffect(parser, n, effect) : sAIArtStyleParser->InsertNthPostEffect(parser, n, effect), "InsertEffect");
@@ -471,14 +604,21 @@ json::Value StyleDelete(const json::Value& p)
 
 void AddAppearanceCommands(CommandTable& t)
 {
-	t["appearance.get"] = {"Art's appearance (default: the selection): its fills and strokes in stacking order, live effects with their settings, "
-		"transparency (opacity 0-100, blend mode), and graphic style.", Params({{"ids", kIds}, {"id", "string"}}), AppearanceGet, false};
-	t["appearance.set"] = {"Transparency: opacity (0-100), blendMode, knockout, isolate. (art.set takes opacity / blendMode too.)",
+	t["appearance.get"] = {"Art's appearance (default: the selection): its fills and strokes top to bottom as the Appearance panel lists them "
+		"('index' 0 = top; text and groups also give 'contentsAt', where their Characters / Contents row sits), live effects with their settings, "
+		"transparency (opacity 0-100, blend mode), and graphic style. A gradient's 'matrix' passed back as is copies it exactly.",
+		Params({{"ids", kIds}, {"id", "string"}}), AppearanceGet, false};
+	t["appearance.set"] = {"Transparency: opacity (0-100), blendMode, knockout, isolate; for text and groups, contentsAt moves the Characters / "
+		"Contents row (it sits above the paint at that index). (art.set takes opacity / blendMode too.)",
 		Params({{"ids", kIds}, {"id", "string"}, {"opacity", "number 0-100"}, {"blendMode", "normal | multiply | screen | overlay | softLight | hardLight | colorDodge | colorBurn | darken | lighten | difference | exclusion | hue | saturation | color | luminosity"},
-			{"knockout", "boolean"}, {"isolate", "boolean"}}), AppearanceSet, true};
-	t["appearance.add"] = {"Add another fill or stroke to art's appearance (default: the selection), on top unless position=bottom.",
-		Params({{"ids", kIds}, {"id", "string"}, {"kind", "fill | stroke"}, {"color", kPaint}, {"width", "number - stroke width"}, {"position", "top (default) | bottom"}}),
+			{"knockout", "boolean"}, {"isolate", "boolean"}, {"contentsAt", "number - text / groups"}}), AppearanceSet, true};
+	t["appearance.add"] = {"Add a fill or stroke to art's appearance (default: the selection), as the panel's Add New Fill / Stroke: an empty "
+		"one the art already has is used first (reuseEmpty=false always adds). New ones go on top unless 'position' says otherwise.",
+		Params({{"ids", kIds}, {"id", "string"}, {"kind", "fill | stroke"}, {"color", kPaint}, {"width", "number - stroke width"},
+			{"position", "top | bottom | index (0 = top, as appearance.get numbers them)"}, {"reuseEmpty", "boolean (default true)"}}),
 		AppearanceAdd, true};
+	t["appearance.remove"] = {"Take a fill or stroke off art's appearance: 'index' as appearance.get numbers them, or empty=true for every one "
+		"with no paint and no effects.", Params({{"ids", kIds}, {"id", "string"}, {"index", "number"}, {"empty", "boolean"}}), AppearanceRemove, true};
 	t["appearance.clear"] = {"Remove live effects (all, or one 'effect' by name); paints=true also reduces to a basic fill and stroke.",
 		Params({{"ids", kIds}, {"id", "string"}, {"effect", "string - only this effect"}, {"paints", "boolean"}}), AppearanceClear, true};
 	t["appearance.copy"] = {"Give art the whole appearance of another object (fills, strokes, effects, transparency) - the eyedropper.",
@@ -487,7 +627,8 @@ void AddAppearanceCommands(CommandTable& t)
 		Params({{"search", "string (optional)"}}), EffectList, false};
 	t["effect.apply"] = {"Add a live effect to art (default: the selection). 'settings' are the effect's own keys - read them off art that has "
 		"the effect with appearance.get, and pass the same shape.",
-		Params({{"ids", kIds}, {"id", "string"}, {"effect", "string - a name from effect.list"}, {"settings", "object (optional)"}, {"stage", "post (default) | pre"}}),
+		Params({{"ids", kIds}, {"id", "string"}, {"effect", "string - a name from effect.list"}, {"settings", "object (optional)"}, {"stage", "post (default) | pre"},
+			{"paint", "number - put it inside this fill / stroke instead (index from appearance.get)"}}),
 		EffectApply, true};
 	t["style.list"] = {"Graphic styles in the document.", Params({}), StyleList, false};
 	t["style.apply"] = {"Apply a graphic style to art (default: the selection).", Params({{"name", "string"}, {"ids", kIds}, {"id", "string"}}), StyleApply, true};

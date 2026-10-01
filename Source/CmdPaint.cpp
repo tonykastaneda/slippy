@@ -587,6 +587,12 @@ bool NamedPaintFromJson(const json::Value& v, AIColor& c)
 		c.c.b.matrix.Init();
 		if (v.has("origin")) c.c.b.gradientOrigin = Point(v.get("origin"), "origin");
 		if (v.has("length")) c.c.b.gradientLength = (AIReal) v.get("length").asNumber();
+		if (v.has("matrix")) {   // as appearance.get reports it: copies a gradient exactly
+			const json::Value& m = v.get("matrix");
+			if (!m.isArray() || m.size() != 6) Fail(kErrInvalidParams, "'matrix' must be [a, b, c, d, tx, ty]");
+			AIReal* f[] = {&c.c.b.matrix.a, &c.c.b.matrix.b, &c.c.b.matrix.c, &c.c.b.matrix.d, &c.c.b.matrix.tx, &c.c.b.matrix.ty};
+			for (int i = 0; i < 6; i++) *f[i] = (AIReal) m.asArray()[i].asNumber();
+		}
 		return true;
 	}
 	if (v.get("pattern").isString()) {
@@ -613,9 +619,25 @@ json::Value NamedPaintJson(const AIColor& c)
 		ai::int16 type = 0;
 		sAIGradient->GetGradientType(c.c.b.gradient, &type);
 		v["type"] = type == kRadialGradient ? "radial" : "linear";
-		v["angle"] = (double) c.c.b.gradientAngle;
-		v["origin"] = PointJson(c.c.b.gradientOrigin);
-		v["length"] = (double) c.c.b.gradientLength;
+		const AIGradientStyle& g = c.c.b;
+		v["angle"] = (double) g.gradientAngle;
+		v["origin"] = PointJson(g.gradientOrigin);
+		v["length"] = (double) g.gradientLength;
+		// Illustrator often keeps the real placement in the matrix (origin
+		// [0,0], length 1 is common): pass it back to copy the gradient, and
+		// 'from' / 'to' say where the ramp actually runs on the page.
+		AIRealMatrix identity;
+		identity.Init();
+		if (!(g.matrix == identity)) {
+			const AIRealMatrix& m = g.matrix;
+			v["matrix"] = json::Array{(double) m.a, (double) m.b, (double) m.c, (double) m.d, (double) m.tx, (double) m.ty};
+			double a = g.gradientAngle / kDegrees;
+			double x0 = g.gradientOrigin.h, y0 = g.gradientOrigin.v;
+			double x1 = x0 + std::cos(a) * g.gradientLength, y1 = y0 + std::sin(a) * g.gradientLength;
+			auto at = [&](double x, double y) { return json::Array{m.a * x + m.c * y + m.tx, m.b * x + m.d * y + m.ty}; };
+			v["from"] = at(x0, y0);
+			v["to"] = at(x1, y1);
+		}
 	}
 	else if (c.kind == kPattern && sAIPattern) {
 		v["pattern"] = PatternName(c.c.p.pattern);
@@ -630,7 +652,7 @@ json::Value NamedPaintJson(const AIColor& c)
 // gradient swatch on it: linear across the bounds at 'angle', radial from the center.
 void FitPaintToArt(AIArtHandle art, AIColor& c, const json::Value& spec)
 {
-	if (c.kind != kGradient || !spec.isObject() || (spec.has("origin") && spec.has("length"))) return;
+	if (c.kind != kGradient || !spec.isObject() || (spec.has("origin") && spec.has("length")) || spec.has("matrix")) return;
 	AIRealRect b;
 	if (sAIArt->GetArtBounds(art, &b)) return;
 	double w = b.right - b.left, h = b.top - b.bottom, cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
