@@ -24,7 +24,14 @@ enum ErrorCode {
 	kErrNotFound = -32004,      // art / layer / document id didn't resolve
 };
 
-json::Value Handle(const json::Value& request);   // main thread only
+// Runs a call or a batch (main thread only). Opening, closing, creating or
+// switching documents ends the run: Illustrator finishes that work only once
+// it has control again, and running on in the same event crashed it (closing
+// the last document, then opening another in one batch). A batch that reaches
+// one with calls to go returns what ran and puts the rest in 'rest', to run on
+// a later event; EndsRun says a lone call was one of them.
+json::Value Handle(const json::Value& request, json::Value* rest = nullptr);
+bool EndsRun(const json::Value& call);
 json::Value Describe();                           // the command list with param docs
 
 // Told about every call after it runs (the panel animates from this).

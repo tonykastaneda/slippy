@@ -54,6 +54,9 @@ json::Value RectJson(const AIRealRect& r);
 // ---- documents, art and layers
 
 AIDocumentHandle ActiveDocument();   // fails plainly when none is open
+// Each open document once, in Illustrator's order, with its window count:
+// the document list has a row per window (Window > New Window repeats one).
+std::vector<std::pair<AIDocumentHandle, int>> OpenDocuments();
 std::string DocName(AIDocumentHandle doc);
 
 std::string ArtId(AIArtHandle art);

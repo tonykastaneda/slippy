@@ -28,6 +28,7 @@ namespace {
 struct Job {
 	json::Value request;
 	std::promise<json::Value> promise;
+	json::Value done;   // a batch split at a document open / close: results so far
 };
 
 std::mutex gQueueMutex;
@@ -91,6 +92,21 @@ std::shared_ptr<Job> PopJob()
 	gQueue.pop_front();
 	return job;
 }
+
+void PushFront(std::shared_ptr<Job> job)
+{
+	std::lock_guard<std::mutex> lock(gQueueMutex);
+	gQueue.push_front(std::move(job));
+}
+
+// When a run stopped at a document open / close with calls to go, nothing
+// runs again before this (steady-clock seconds): not a kick from a new
+// request, not the fallback timer. A scheduled kick resumes just after.
+const double kResumeDelay = 0.05;
+std::atomic<double> gResumeAt{0};
+
+double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+bool Waiting() { return Now() < gResumeAt.load(); }
 
 bool QueueEmpty()
 {
@@ -250,7 +266,7 @@ ASErr SlippyPlugin::GoMenuItem(AIMenuMessage* message)
 {
 	if (message->menuItem == fRunItem) {
 		gLastRunVia = "menu";
-		if (!fRunning) RunPending();
+		if (!fRunning && !Waiting()) RunPending();
 		return kNoErr;
 	}
 	if (message->menuItem != fPanelItem) return kNoErr;
@@ -264,14 +280,14 @@ ASErr SlippyPlugin::GoMenuItem(AIMenuMessage* message)
 
 void SlippyPlugin::Kick()
 {
-	if (QueueEmpty()) return;
+	if (QueueEmpty() || Waiting()) return;   // waiting: the scheduled kick comes
 	AppContext context(fPluginRef);
 	// Preferred: run the calls as our own menu command - Illustrator gives
 	// those a standard undo context, so agents' edits land on Edit > Undo.
 	// (Timer messages are silent, and 30.2's timer suite can't change that.)
 	if (fRunCommand && !fRunning) {
 		sAIMenu->InvokeMenuAction(fRunCommand);
-		if (QueueEmpty()) return;
+		if (QueueEmpty() || Waiting()) return;   // done, or the rest waits for a fresh event
 	}
 	// Added on first use: adding a timer during startup makes Illustrator
 	// refuse the plug-in (found building RAGE).
@@ -295,6 +311,7 @@ ASErr SlippyPlugin::GoTimer(AITimerMessage* message)
 	if (fTimer && message->timer == fTimer) {
 		if (fRunning) return kNoErr;   // nested event loop; the outer run drains the queue
 		SlippySetTimerActive(fTimer, false);
+		if (Waiting()) return kNoErr;   // the scheduled kick resumes
 		gLastRunVia = "timer";
 		RunPending();
 	}
@@ -317,16 +334,37 @@ void SlippyPlugin::RunPending()
 		interaction = sASUserInteraction->GetInteractionAllowed();
 		sASUserInteraction->SetInteractionAllowed(kASInteractWithNone);
 	}
+	bool resume = false;
 	while (auto job = PopJob()) {
-		json::Value response;
+		json::Value response, rest;
 		try {
-			response = slippy::Handle(job->request);
+			response = slippy::Handle(job->request, &rest);
 		}
 		catch (...) {
 			response = Failure(json::Value(), slippy::kErrInternal, "internal error");
 		}
+		if (job->done.isArray()) {   // a split batch: earlier results first
+			if (response.isArray()) for (const json::Value& r : response.asArray()) job->done.push(r);
+			else job->done.push(response);
+			response = job->done;
+		}
+		if (rest.isArray() && rest.size()) {
+			// The batch reached a document open / close: the rest runs on a
+			// later event, after Illustrator has finished with it.
+			job->done = response;
+			job->request = rest;
+			PushFront(job);
+			resume = true;
+			break;
+		}
 		job->promise.set_value(std::move(response));
+		if (slippy::EndsRun(job->request) && !QueueEmpty()) { resume = true; break; }
 	}
 	if (sASUserInteraction) sASUserInteraction->SetInteractionAllowed(interaction);
 	fRunning = false;
+	if (resume) {
+		// A little after this event (and Illustrator's own work after it) ends.
+		gResumeAt = Now() + kResumeDelay;
+		slippy::platform::MainThreadAfter(kResumeDelay + 0.01, [] { slippy::platform::MainThreadKick(); });
+	}
 }

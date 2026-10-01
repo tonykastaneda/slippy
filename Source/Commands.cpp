@@ -114,6 +114,21 @@ AIDocumentHandle ActiveDocument()
 	return doc;
 }
 
+std::vector<std::pair<AIDocumentHandle, int>> OpenDocuments()
+{
+	std::vector<std::pair<AIDocumentHandle, int>> docs;
+	ai::int32 count = 0;
+	sAIDocumentList->Count(&count);
+	for (ai::int32 i = 0; i < count; i++) {
+		AIDocumentHandle doc = nullptr;
+		if (sAIDocumentList->GetNthDocument(&doc, i) || !doc) continue;
+		auto seen = std::find_if(docs.begin(), docs.end(), [&](const std::pair<AIDocumentHandle, int>& d) { return d.first == doc; });
+		if (seen != docs.end()) seen->second++;
+		else docs.push_back({doc, 1});
+	}
+	return docs;
+}
+
 std::string DocName(AIDocumentHandle doc)
 {
 	ai::UnicodeString name;
@@ -631,8 +646,7 @@ json::Value AppInfo(const json::Value&)
 		v["appVersion"] = std::to_string(sAIRuntime->GetAppMajorVersion()) + "." + std::to_string(sAIRuntime->GetAppMinorVersion()) +
 			"." + std::to_string(sAIRuntime->GetAppRevisionVersion());
 	}
-	ai::int32 count = 0;
-	sAIDocumentList->Count(&count);
+	ai::int32 count = (ai::int32) OpenDocuments().size();
 	v["documentCount"] = count;
 	json::Value missing = json::Value::MakeArray();
 	if (!sAIPath) missing.push("path");
@@ -659,19 +673,17 @@ json::Value AppInfo(const json::Value&)
 
 json::Value DocumentList(const json::Value&)
 {
-	ai::int32 count = 0;
-	sAIDocumentList->Count(&count);
+	auto docs = OpenDocuments();
 	AIDocumentHandle active = nullptr;
-	if (count) sAIDocument->GetDocument(&active);
+	if (!docs.empty()) sAIDocument->GetDocument(&active);
 	json::Value list = json::Value::MakeArray();
-	for (ai::int32 i = 0; i < count; i++) {
-		AIDocumentHandle doc = nullptr;
-		if (sAIDocumentList->GetNthDocument(&doc, i)) continue;
+	for (size_t i = 0; i < docs.size(); i++) {
 		json::Value d;
-		d["index"] = i;
-		d["name"] = DocName(doc);
-		d["path"] = DocPath(doc);
-		d["active"] = doc == active;
+		d["index"] = (int) i;
+		d["name"] = DocName(docs[i].first);
+		d["path"] = DocPath(docs[i].first);
+		d["active"] = docs[i].first == active;
+		if (docs[i].second > 1) d["windows"] = docs[i].second;
 		list.push(d);
 	}
 	return list;
@@ -765,10 +777,10 @@ json::Value DocumentOpen(const json::Value& p)
 AIDocumentHandle DocumentByIndex(const json::Value& p)
 {
 	if (!p.has("index")) return ActiveDocument();
-	AIDocumentHandle doc = nullptr;
 	int index = (int) ReqNum(p, "index");
-	if (sAIDocumentList->GetNthDocument(&doc, index) || !doc) Fail(kErrNotFound, "no document at index " + std::to_string(index));
-	return doc;
+	auto docs = OpenDocuments();   // numbered as document.list numbers them
+	if (index < 0 || index >= (int) docs.size()) Fail(kErrNotFound, "no document at index " + std::to_string(index));
+	return docs[index].first;
 }
 
 json::Value DocumentActivate(const json::Value& p)
@@ -1023,7 +1035,15 @@ json::Value DocumentClose(const json::Value& p)
 	AIDocumentHandle doc = DocumentByIndex(p);
 	std::string name = DocName(doc);
 	if (p.boolean("save", false)) Check(sAIDocumentList->Save(doc), "Save document");
-	Check(sAIDocumentList->Close(doc), "Close document");
+	// Close takes one window at a time; the document is gone with its last.
+	auto open = [&] {
+		for (auto& d : OpenDocuments()) if (d.first == doc) return d.second;
+		return 0;
+	};
+	for (int windows = open(); windows > 0; windows--) {
+		Check(sAIDocumentList->Close(doc), "Close document");
+		if (!open()) break;
+	}
 	json::Value v;
 	v["closed"] = name;
 	return v;
@@ -1583,8 +1603,7 @@ struct DocState {
 DocState CurrentState()
 {
 	DocState s;
-	ai::int32 n = 0;
-	sAIDocumentList->Count(&n);
+	ai::int32 n = (ai::int32) OpenDocuments().size();
 	s.documents = n;
 	if (n == 0 || sAIDocument->GetDocument(&s.active) || !s.active) return s;
 	sAIDocument->GetDocumentModified(&s.modified);
@@ -1724,7 +1743,7 @@ std::map<std::string, Command>& Table()
 	CommandTable t = {
 		{"app.info", {"Illustrator + Slippy versions, open document count, missing suites.", Params({}), AppInfo, false}},
 		{"commands.list", {"Every command with its parameters.", Params({}), [](const json::Value&) { return Describe(); }, false}},
-		{"document.list", {"Open documents (index, name, path, active).", Params({}), DocumentList, false}},
+		{"document.list", {"Open documents (index, name, path, active), each once - 'windows' when it has more than one (Window > New Window); 'index' is what document.activate / close take.", Params({}), DocumentList, false}},
 		{"document.info", {"The active document: name, path, color model, artboards (with bounds), layer count.", Params({}), DocumentInfo, false}},
 		{"document.new", {"New document without a dialog.", Params({{"preset", "string - new-document preset name (optional)"}, {"width", "number - points"},
 			{"height", "number - points"}, {"colorMode", "\"rgb\" | \"cmyk\""}, {"title", "string"}, {"artboards", "number"}}), DocumentNew, true}},
@@ -1938,14 +1957,24 @@ json::Value Describe()
 	return list;
 }
 
-json::Value Handle(const json::Value& request)
+bool EndsRun(const json::Value& call)
+{
+	if (!call.isObject() || !call.get("method").isString()) return false;
+	const std::string& m = call.get("method").asString();
+	return m == "document.open" || m == "document.close" || m == "document.new" || m == "document.activate";
+}
+
+json::Value Handle(const json::Value& request, json::Value* rest)
 {
 	if (request.isArray()) {
-		// A batch: one timer message, so the calls land as one undo step.
+		// A batch: one run, so the calls land as one undo step - up to a call
+		// that opens / closes / switches documents (see Commands.h).
 		json::Value out = json::Value::MakeArray();
 		bool stopped = false;
 		overlay::BeginBatch();   // one highlight around everything the batch touched
-		for (const json::Value& call : request.asArray()) {
+		const json::Array& calls = request.asArray();
+		for (size_t i = 0; i < calls.size(); i++) {
+			const json::Value& call = calls[i];
 			if (stopped) {
 				json::Value skipped;
 				skipped["jsonrpc"] = "2.0";
@@ -1958,6 +1987,11 @@ json::Value Handle(const json::Value& request)
 			json::Value r = RunOne(call);
 			if (r.has("error") && call.boolean("stopOnError", true)) stopped = true;
 			out.push(r);
+			if (!stopped && rest && EndsRun(call) && i + 1 < calls.size()) {
+				*rest = json::Value::MakeArray();
+				for (size_t k = i + 1; k < calls.size(); k++) rest->push(calls[k]);
+				break;
+			}
 		}
 		overlay::EndBatch();
 		return out;
