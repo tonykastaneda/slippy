@@ -151,10 +151,19 @@ json::Value SymbolCreate(const json::Value& p)
 	Need(sAISymbol, "The symbol suite");
 	std::vector<AIArtHandle> arts = ArtList(p, true);
 	AIArtHandle top = arts.front();
-	SelectOnly(arts);
-	AIPatternHandle symbol = nullptr;
+	// From the art itself, not the selection: a selection made in the same
+	// run isn't settled yet, and the symbol came out empty.
+	AIArtHandle definition = top;
+	if (arts.size() > 1) {
+		Check(sAIArt->NewArt(kGroupArt, kPlaceAbove, top, &definition), "NewArt group");
+		for (auto a = arts.rbegin(); a != arts.rend(); ++a) Check(sAIArt->ReorderArt(*a, kPlaceInsideOnTop, definition), "ReorderArt");
+		arts = {definition};
+		top = definition;
+	}
 	AIRealRect bounds;
-	Check(sAISymbol->NewSymbolPatternFromSelGetBounds(&symbol, &bounds, Registration(p)), "NewSymbolPatternFromSel");
+	Check(sAIArt->GetArtBounds(definition, &bounds), "GetArtBounds");
+	AIPatternHandle symbol = nullptr;
+	Check(sAISymbol->NewSymbolPattern(&symbol, definition, Registration(p), true, false), "NewSymbolPattern");
 	if (p.get("name").isString()) {
 		ai::UnicodeString name = U(p.get("name").asString());
 		if (sAISymbol->SetSymbolPatternName(symbol, name)) sAISymbol->SetSymbolPatternBaseName(symbol, name);   // taken: made unique
