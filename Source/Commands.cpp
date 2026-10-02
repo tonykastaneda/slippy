@@ -946,9 +946,40 @@ AIRealRect ArtboardRect(const json::Value& p)
 	return rect;
 }
 
-// PNG / JPEG at any resolution. Illustrator writes a PDF copy (its own
-// renderer, untouched document), and the system draws the page at the asked
-// resolution (Raster.h) - cropped to the artboard, all the art, or one object.
+// Never cancels. Required: Illustrator calls it without checking for null.
+AIAPI AIBoolean KeepRasterizing(ai::int32, ai::int32) { return true; }
+
+// Illustrator's own rasterizer draws one layer's art inside 'crop' to a PNG,
+// on a clear background. (Exports went through a PDF copy, but once a
+// document has .ai save settings - saved, or opened from an .ai or PDF - the
+// PDF writer writes only the "saved without PDF content" page.)
+void RasterizeTo(const std::string& file, AIArtHandle art, const AIRealRect& crop, double dpi, size_t wide, size_t high)
+{
+	Need(sAIImageOpt, "The image optimization suite");
+	Need(sAIDataFilter, "The data filter suite");
+	AIImageOptPNGParams2 params;
+	params.versionOneSuiteParams.interlaced = false;
+	params.versionOneSuiteParams.numberOfColors = 0;
+	params.versionOneSuiteParams.transparentIndex = 0;
+	params.versionOneSuiteParams.resolution = (AIFloat) dpi;
+	params.versionOneSuiteParams.outAlpha = true;
+	params.versionOneSuiteParams.outWidth = (ai::int32) wide;
+	params.versionOneSuiteParams.outHeight = (ai::int32) high;
+	params.antialias = 2;   // art and text both smoothed
+	params.cropBox = crop;
+	params.backgroundIsTransparent = true;
+	AIDataFilter* filter = nullptr;
+	Check(sAIDataFilter->NewFileDataFilter(ai::FilePath(U(file)), "write", 'prw ', 'PNGf', &filter), "NewFileDataFilter");
+	AIErr e = sAIDataFilter->LinkDataFilter(nullptr, filter);
+	if (!e) e = sAIImageOpt->MakePNG24(art, filter, params, KeepRasterizing);
+	AIDataFilter* prev = nullptr;
+	AIErr closed = sAIDataFilter->UnlinkDataFilter(filter, &prev);
+	Check(e, "MakePNG24");
+	Check(closed, "writing the render");
+}
+
+// PNG / JPEG at any resolution, cropped to the artboard, all the art, or one
+// object: Illustrator rasterizes, the system writes the file (Raster.h).
 json::Value ExportRaster(const json::Value& p, const std::string& path, const std::string& kind)
 {
 	ActiveDocument();
@@ -958,7 +989,7 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 	std::string area = object ? "object" : p.str("area", "artboard");
 	if (area != "artboard" && area != "art" && area != "object") Fail(kErrInvalidParams, "'area' must be \"artboard\" or \"art\"");
 
-	// The artboard (a PDF page) and the part of it to render, in artwork points.
+	// The artboard and the part of it to render, in artwork points.
 	json::Value which = p;
 	ai::ArtboardID index = 0;
 	{
@@ -987,30 +1018,43 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 		}
 	}
 	if (!any) Fail(kErrInvalidParams, "there's nothing to export there");
-	// Only what's on the artboard makes it into the PDF page.
+	// Exports stay inside the artboard.
 	crop.left = std::max(crop.left, board.left); crop.right = std::min(crop.right, board.right);
 	crop.top = std::min(crop.top, board.top); crop.bottom = std::max(crop.bottom, board.bottom);
 	if (crop.right <= crop.left || crop.top <= crop.bottom) Fail(kErrInvalidParams, "that's outside artboard " + std::to_string(index));
 
 	double k = dpi / 72.0;
 	RasterJob job;
-	job.page = (int) index;
-	job.left = crop.left - board.left;
-	job.bottom = crop.bottom - board.bottom;
-	job.width = crop.right - crop.left;
-	job.height = crop.top - crop.bottom;
-	job.pixelsWide = (size_t) std::max(1.0, std::ceil(job.width * k));
-	job.pixelsHigh = (size_t) std::max(1.0, std::ceil(job.height * k));
+	job.pixelsWide = (size_t) std::max(1.0, std::ceil((crop.right - crop.left) * k));
+	job.pixelsHigh = (size_t) std::max(1.0, std::ceil((crop.top - crop.bottom) * k));
 	if ((double) job.pixelsWide * job.pixelsHigh > 400e6) Fail(kErrInvalidParams, "that's over 400 megapixels - lower 'scale' or 'dpi'");
 	job.dpi = dpi;
 	job.png = kind == "png";
 	job.transparent = p.boolean("transparent", true);
 	job.quality = (int) p.num("quality", 90);
 	job.out = path;
-	job.pdf = path + ".slippy.pdf";
-	WriteTo(job.pdf, "PDF File Format");
-	std::string error = RenderPdfPage(job);
-	platform::RemoveFile(job.pdf);
+	// Each layer renders on its own (the rasterizer takes one art tree), bottom
+	// first; Raster.cpp stacks them. Hidden and template layers stay out, as
+	// in Illustrator's own export.
+	auto cleanup = [&job] { for (const std::string& f : job.images) platform::RemoveFile(f); };
+	try {
+		ai::int32 layers = 0;
+		sAILayer->CountLayers(&layers);
+		for (ai::int32 i = layers - 1; i >= 0; i--) {
+			AILayerHandle layer = nullptr;
+			AIArtHandle group = nullptr;
+			AIBoolean visible = false, hidden = false;
+			if (sAILayer->GetNthLayer(i, &layer) || !layer) continue;
+			sAILayer->GetLayerVisible(layer, &visible);
+			sAILayer->GetLayerIsTemplate(layer, &hidden);
+			if (!visible || hidden || sAIArt->GetFirstArtOfLayer(layer, &group) || !group) continue;
+			job.images.push_back(path + ".slippy" + std::to_string(i) + ".png");
+			RasterizeTo(job.images.back(), group, crop, dpi, job.pixelsWide, job.pixelsHigh);
+		}
+	}
+	catch (...) { cleanup(); throw; }
+	std::string error = EncodeImage(job);
+	cleanup();
 	if (!error.empty()) Fail(kErrIllustrator, error);
 	size_t w = job.pixelsWide, h = job.pixelsHigh;
 	json::Value v;

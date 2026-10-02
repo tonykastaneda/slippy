@@ -197,9 +197,11 @@ What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs
   (or `format`: png, jpg, pdf, svg, tiff, psd, webp, eps...). PNG and JPEG
   render at any size (`scale` 2 = 144 dpi, or `dpi`), of the artboard, all the
   art (`area: "art"`), or one object (`id`); PNGs are transparent unless
-  `transparent: false`. They're drawn from a PDF copy Illustrator writes, so the
-  document is never touched.
-- **Saving:** with a `path`, a native `.ai` save is a Save As (the document moves to that path). Any other `format` (names come from `document.formats`, e.g. `"PDF File Format"`, `"svg file format"`) writes a copy. Slippy never shows a save dialog.
+  `transparent: false`. Illustrator's own rasterizer draws each visible layer
+  (hidden and template layers stay out) and Slippy stacks them, so the
+  document is never touched; a blend mode on a whole layer isn't applied
+  across layers.
+- **Saving:** with a `path`, a native `.ai` save is a Save As (the document moves to that path). Any other `format` (names come from `document.formats`, e.g. `"PDF File Format"`, `"svg file format"`) writes a copy. Slippy never shows a save dialog. A PDF copy of a document that has .ai save settings (saved, or opened from an .ai or PDF) comes out as Illustrator's "saved without PDF content" page; native `.ai` saves include PDF content.
 - **Structure without menus:** `art.move`, `art.clip`, `art.ungroup` and
   `art.place` work on ids, not the selection. For example, to swap art in for a
   placeholder inside a clipping group, send one batch:
@@ -243,7 +245,7 @@ What's covered and what's still to come, suite by suite: [docs/COVERAGE.md](docs
 | `Source/Server.*` | Loopback HTTP server on its own threads; never touches the SDK |
 | `Source/SlippyPlugin.*` | Plug-in entry. Queues each request, wakes the main thread, runs the queue in a one-tick timer message, a normal plug-in context |
 | `Source/Platform.*` | What differs between macOS and Windows outside the panel: files, randomness, waking the main thread (GCD / a message window) |
-| `Source/Raster.*` | `document.export` PNG / JPEG: draws the PDF copy's page (Core Graphics / Windows.Data.Pdf + WIC) |
+| `Source/Raster.*` | `document.export` PNG / JPEG: stacks Illustrator's per-layer renders and writes the file (Core Graphics + ImageIO / WIC) |
 | `Source/Commands.*` | The command table and the core commands: JSON in and out, undo labels |
 | `Source/Kit.h` | What every command file shares: errors, params, art ids, paint |
 | `Source/Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test), `CmdPaint` (swatches, spots, gradients, patterns, recolor), `CmdAppearance` (appearance, effects, graphic styles), `CmdShapes` (shapes, pathfinder, path operations, envelopes, repeats), `CmdText` (text, fonts, text styles), `CmdDocument` (artboards, settings, selection, clipboard, guides, images, data) |

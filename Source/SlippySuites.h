@@ -58,6 +58,8 @@
 #include "AIATEPaint.h"
 #include "AIArtSet.h"
 #include "AIRasterize.h"
+#include "AIImageOptimization.h"
+#include "AIDataFilter.h"
 #include "AIVectorize.h"
 #include "AIPreference.h"
 #include "SPInterf.h"
@@ -118,6 +120,8 @@ extern "C" AIFontSuite*				sAIFont;
 extern "C" AIATEPaintSuite*			sAIATEPaint;
 extern "C" AIArtSetSuite*			sAIArtSet;
 extern "C" AIRasterizeSuite*		sAIRasterize;
+extern "C" AIImageOptSuite*		sAIImageOpt;
+extern "C" AIDataFilterSuite*		sAIDataFilter;
 extern "C" AIVectorizeSuite*		sAIVectorize;
 extern "C" AIPreferenceSuite*		sAIPreference;
 

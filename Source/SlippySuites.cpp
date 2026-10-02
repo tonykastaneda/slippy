@@ -57,6 +57,8 @@ extern "C" {
 	AIATEPaintSuite*		sAIATEPaint = nullptr;
 	AIArtSetSuite*			sAIArtSet = nullptr;
 	AIRasterizeSuite*		sAIRasterize = nullptr;
+	AIImageOptSuite*		sAIImageOpt = nullptr;
+	AIDataFilterSuite*		sAIDataFilter = nullptr;
 	AIVectorizeSuite*		sAIVectorize = nullptr;
 	AIPreferenceSuite*		sAIPreference = nullptr;
 	EXTERN_TEXT_SUITES
@@ -124,6 +126,8 @@ ImportSuite gImportSuites[] =
 	kAIATEPaintSuite, kAIATEPaintSuiteVersion, &sAIATEPaint,
 	kAIArtSetSuite, kAIArtSetSuiteVersion, &sAIArtSet,
 	kAIRasterizeSuite, kAIRasterizeSuiteVersion, &sAIRasterize,
+	kAIImageOptSuite, kAIImageOptSuiteVersion, &sAIImageOpt,
+	kAIDataFilterSuite, kAIDataFilterSuiteVersion, &sAIDataFilter,
 	kAIVectorizeSuite, kAIVectorizeSuiteVersion, &sAIVectorize,
 	kAIPreferenceSuite, kAIPreferenceSuiteVersion, &sAIPreference,
 	IMPORT_TEXT_SUITES
