@@ -562,6 +562,19 @@ AIPathSegment Corner(double x, double y)
 	return s;
 }
 
+// [x, y] (a corner), or {"p", "in", "out", "smooth"} as PathJson writes it.
+AIPathSegment SegmentFrom(const json::Value& v)
+{
+	if (v.isArray()) { AIRealPoint pt = Point(v, "point"); return Corner(pt.h, pt.v); }
+	if (!v.isObject()) Fail(kErrInvalidParams, "each point is [x, y] or {\"p\":[x,y], \"in\":[x,y], \"out\":[x,y]}");
+	AIRealPoint pt = Point(v.get("p"), "p");
+	AIPathSegment s = Corner(pt.h, pt.v);
+	if (v.has("in")) s.in = Point(v.get("in"), "in");
+	if (v.has("out")) s.out = Point(v.get("out"), "out");
+	s.corner = !v.boolean("smooth", false);
+	return s;
+}
+
 json::Value PathJson(AIArtHandle art)
 {
 	json::Value v;
@@ -573,12 +586,15 @@ json::Value PathJson(AIArtHandle art)
 	std::vector<AIPathSegment> segs((size_t) count);
 	if (count) sAIPath->GetPathSegments(art, 0, count, segs.data());
 	json::Value list = json::Value::MakeArray();
-	for (const AIPathSegment& s : segs) {
+	for (ai::int16 i = 0; i < count; i++) {
+		const AIPathSegment& s = segs[(size_t) i];
 		json::Value seg;
 		seg["p"] = PointJson(s.p);
 		if (s.in.h != s.p.h || s.in.v != s.p.v) seg["in"] = PointJson(s.in);
 		if (s.out.h != s.p.h || s.out.v != s.p.v) seg["out"] = PointJson(s.out);
 		if (!s.corner) seg["smooth"] = true;
+		ai::int16 selected = kSegmentNotSelected;
+		if (!sAIPath->GetPathSegmentSelected(art, i, &selected) && selected == kSegmentPointSelected) seg["selected"] = true;
 		list.push(seg);
 	}
 	v["closed"] = (bool) closed;
@@ -843,6 +859,9 @@ void WriteTo(const std::string& pathText, const std::string& format)
 // Native .ai: the AI writer asks for its options (version, PDF compatibility)
 // even with kFileFormatSuppressUI, so play Save As the way a recorded action
 // does, dialog off. Unlike a copy, the document now lives at this path.
+// PDF compatibility is asked for: left out, the file has only the "saved
+// without PDF content" placeholder for anything but Illustrator, and the
+// document keeps that setting, so every later export renders the placeholder.
 void SaveAsNative(const std::string& path, const std::string& format)
 {
 	Need(sAIActionManager, "The action manager suite");
@@ -850,6 +869,8 @@ void SaveAsNative(const std::string& path, const std::string& format)
 	Check(sAIActionManager->AINewActionParamValue(&params), "AINewActionParamValue");
 	AIErr e = sAIActionManager->AIActionSetStringUS(params, 'name', U(path));
 	if (!e) e = sAIActionManager->AIActionSetString(params, 'frmt', format.c_str());
+	if (!e) e = sAIActionManager->AIActionSetBoolean(params, 'pdf ', true);
+	if (!e) e = sAIActionManager->AIActionSetBoolean(params, 'cmpr', true);
 	if (!e) e = sAIActionManager->PlayActionEvent("adobe_saveDocumentAs", kDialogOff, params);
 	sAIActionManager->AIDeleteActionParamValue(params);
 	Check(e, "Save As");
@@ -1256,10 +1277,12 @@ json::Value ArtArrange(const json::Value& p)
 }
 
 // Transforming a group with TransformArt moves it but records no undo step
-// (30.2), so a group is transformed through its contents.
+// (30.2), and a compound path doesn't move at all, so both are transformed
+// through their contents.
 void TransformDeep(AIArtHandle art, AIRealMatrix& m, AIReal lineScale, ai::int32 flags)
 {
-	if (ArtType(art) == kGroupArt) {
+	short type = ArtType(art);
+	if (type == kGroupArt || type == kCompoundPathArt) {
 		AIArtHandle child = nullptr;
 		sAIArt->GetArtFirstChild(art, &child);
 		for (; child; sAIArt->GetArtSibling(child, &child)) TransformDeep(child, m, lineScale, flags);
@@ -1558,16 +1581,7 @@ json::Value PathCreate(const json::Value& p)
 	const json::Value& pts = Required(p, "points");
 	if (!pts.isArray()) Fail(kErrInvalidParams, "'points' must be an array");
 	std::vector<AIPathSegment> segs;
-	for (const json::Value& v : pts.asArray()) {
-		if (v.isArray()) { AIRealPoint pt = Point(v, "points[]"); segs.push_back(Corner(pt.h, pt.v)); continue; }
-		if (!v.isObject()) Fail(kErrInvalidParams, "each point is [x, y] or {\"p\":[x,y], \"in\":[x,y], \"out\":[x,y]}");
-		AIRealPoint pt = Point(v.get("p"), "p");
-		AIPathSegment s = Corner(pt.h, pt.v);
-		if (v.has("in")) s.in = Point(v.get("in"), "in");
-		if (v.has("out")) s.out = Point(v.get("out"), "out");
-		s.corner = !v.boolean("smooth", false);
-		segs.push_back(s);
-	}
+	for (const json::Value& v : pts.asArray()) segs.push_back(SegmentFrom(v));
 	return Finish(NewPath(p, segs, p.boolean("closed", false)), p);
 }
 
@@ -1957,8 +1971,21 @@ json::Value Describe()
 	return list;
 }
 
+bool WritesFile(const json::Value& call)
+{
+	if (!call.isObject() || !call.get("method").isString()) return false;
+	const std::string& m = call.get("method").asString();
+	return m == "document.save" || m == "document.export" || (m == "document.close" && call.get("params").isObject() && call.get("params").boolean("save", false));
+}
+
+bool StartsRun(const json::Value& request)
+{
+	return WritesFile(request.isArray() && request.size() ? request.asArray()[0] : request);
+}
+
 bool EndsRun(const json::Value& call)
 {
+	if (WritesFile(call)) return true;
 	if (!call.isObject() || !call.get("method").isString()) return false;
 	const std::string& m = call.get("method").asString();
 	return m == "document.open" || m == "document.close" || m == "document.new" || m == "document.activate";
@@ -1968,7 +1995,8 @@ json::Value Handle(const json::Value& request, json::Value* rest)
 {
 	if (request.isArray()) {
 		// A batch: one run, so the calls land as one undo step - up to a call
-		// that opens / closes / switches documents (see Commands.h).
+		// that opens / closes / switches documents, or around one that writes
+		// a file (see Commands.h).
 		json::Value out = json::Value::MakeArray();
 		bool stopped = false;
 		overlay::BeginBatch();   // one highlight around everything the batch touched
@@ -1983,6 +2011,11 @@ json::Value Handle(const json::Value& request, json::Value* rest)
 				skipped["error"]["message"] = "skipped: an earlier call in the batch failed";
 				out.push(skipped);
 				continue;
+			}
+			if (rest && i > 0 && WritesFile(call)) {   // the write starts a run of its own
+				*rest = json::Value::MakeArray();
+				for (size_t k = i; k < calls.size(); k++) rest->push(calls[k]);
+				break;
 			}
 			json::Value r = RunOne(call);
 			if (r.has("error") && call.boolean("stopOnError", true)) stopped = true;

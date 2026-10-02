@@ -83,6 +83,7 @@ back in the same shape.
 | Blends | `blend.make`, `.release`, `.expand` | menu commands (no SDK call makes a blend) | 🔨 |
 | Live Paint | `livePaint.make`, `.expand`, `.release` | menu commands | 🔨 |
 | Join / anchors | `path.join`, `path.addAnchors`, `path.removeAnchors` | menu commands | 🔨 |
+| Anchor points | `path.setSegments` (rewrite in place), `path.editPoint` (move, handles, smooth / corner), `path.insertPoint`, `path.deletePoints`, `path.selectPoints` (Direct Selection); `art.get` marks selected points | AIPath | 🔨 |
 | Blend steps / spine | blend options | dialog only | ✗ |
 | Gradient mesh | `mesh.*` | AIMesh | ✗ |
 | Width profiles, brushes, arrowheads | | AIBeautifulStrokes | ✗ |

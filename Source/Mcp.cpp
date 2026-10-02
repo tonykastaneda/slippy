@@ -134,7 +134,8 @@ json::Value ToolList(bool allTools)
 		t["description"] = "Run several Slippy commands back to back as ONE undo step; stops at the first error. "
 			"Each call is {method, params} with the dotted method names (shape.rect, art.transform, ...). "
 			"Opening, closing, creating or switching documents splits the batch there: Illustrator finishes that "
-			"before the rest runs (results still come back together). Batch edits that belong together.";
+			"before the rest runs (results still come back together); saving or exporting runs on its own, after "
+			"the edits before it, so a save at the end of a batch is fine. Batch edits that belong together.";
 		json::Value call;
 		call["type"] = "object";
 		call["properties"]["method"]["type"] = "string";

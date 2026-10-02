@@ -272,6 +272,11 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	if (m == "path.join") return {"Joined paths", "join paths"};
 	if (m == "path.addAnchors") return {"Added anchor points", "add anchor points"};
 	if (m == "path.removeAnchors") return {"Removed anchor points", "remove anchor points"};
+	if (m == "path.setSegments") return {"Reshaped " + Target(p, json::Value()), "reshape a path"};
+	if (m == "path.editPoint") return {"Moved a point on " + Target(p, json::Value()), "edit a point"};
+	if (m == "path.insertPoint") return {"Added a point to " + Target(p, json::Value()), "add a point"};
+	if (m == "path.deletePoints") return {"Deleted points from " + Target(p, json::Value()), "delete points"};
+	if (m == "path.selectPoints") return {"Selected points on " + Target(p, json::Value()), "select points"};
 	if (m == "art.outline") return {"Outlined " + Target(p, json::Value()), "outline art"};
 	if (m == "art.toPaths") return {"Converted " + Target(p, json::Value()) + " to paths", "convert to paths"};
 	if (m == "art.expand") return {"Expanded " + Target(p, json::Value()), "expand"};

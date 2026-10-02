@@ -7,6 +7,7 @@
 // run the command, and return what it made.
 
 #include "Kit.h"
+#include "Overlay.h"
 #include "IAIAutoBuffer.h"
 
 #include <algorithm>
@@ -265,6 +266,149 @@ json::Value PathSimplify(const json::Value& p)
 		v["anchorsAfter"] = after;
 		out.push(v);
 	}
+	return out;
+}
+
+// ---- anchor points by index: 0-based in path order, negative counts from the end
+
+AIArtHandle OnePath(const json::Value& p)
+{
+	Need(sAIPath, "The path suite");
+	AIArtHandle a = ArtById(IdText(Required(p, "id")));
+	if (ArtType(a) != kPathArt) Fail(kErrInvalidParams, "art " + ArtId(a) + " isn't a path");
+	return a;
+}
+
+std::vector<AIPathSegment> ReadSegments(AIArtHandle a)
+{
+	ai::int16 count = 0;
+	sAIPath->GetPathSegmentCount(a, &count);
+	std::vector<AIPathSegment> segs((size_t) count);
+	if (count) Check(sAIPath->GetPathSegments(a, 0, count, segs.data()), "GetPathSegments");
+	return segs;
+}
+
+// Point selection is kept by position, so it would land on the wrong points after an
+// edit: a selected path comes back wholly selected, an unselected one with none.
+void WriteSegments(AIArtHandle a, const std::vector<AIPathSegment>& segs)
+{
+	if (segs.empty() || segs.size() > 32000) Fail(kErrInvalidParams, "a path needs 1 to 32000 points");
+	bool selected = Attr(a, kArtSelected);
+	Check(sAIPath->SetPathSegmentCount(a, (ai::int16) segs.size()), "SetPathSegmentCount");
+	Check(sAIPath->SetPathSegments(a, 0, (ai::int16) segs.size(), segs.data()), "SetPathSegments");
+	sAIArt->SetArtUserAttr(a, kArtSelected, selected ? kArtSelected : 0);
+}
+
+// 'slots' is the point count, or one more where inserting at the end is allowed.
+size_t Index(const json::Value& v, size_t slots, size_t count)
+{
+	if (!v.isNumber() || v.asNumber() != std::floor(v.asNumber())) Fail(kErrInvalidParams, "point indices are whole numbers");
+	double i = v.asNumber();
+	if (i < 0) i += (double) slots;
+	if (i < 0 || i >= (double) slots)
+		Fail(kErrInvalidParams, "point " + std::to_string((long long) v.asNumber()) + " is out of range: the path has " + std::to_string(count) + " points");
+	return (size_t) i;
+}
+
+// 'index' or 'indices', sorted and without repeats.
+std::vector<size_t> Indices(const json::Value& p, size_t count)
+{
+	std::vector<size_t> out;
+	if (p.has("indices")) {
+		const json::Value& list = p.get("indices");
+		if (!list.isArray()) Fail(kErrInvalidParams, "'indices' must be an array");
+		for (const json::Value& v : list.asArray()) out.push_back(Index(v, count, count));
+	} else out.push_back(Index(Required(p, "index"), count, count));
+	std::sort(out.begin(), out.end());
+	out.erase(std::unique(out.begin(), out.end()), out.end());
+	return out;
+}
+
+json::Value Edited(AIArtHandle a)
+{
+	overlay::Touch(a);
+	json::Value v = ArtSummary(a, 0);
+	json::Value path = PathJson(a);
+	v["closed"] = path.get("closed");
+	v["segments"] = path.get("segments");
+	return v;
+}
+
+json::Value PathSetSegments(const json::Value& p)
+{
+	AIArtHandle a = OnePath(p);
+	const json::Value& list = Required(p, "segments");
+	if (!list.isArray()) Fail(kErrInvalidParams, "'segments' must be an array");
+	std::vector<AIPathSegment> segs;
+	for (const json::Value& v : list.asArray()) segs.push_back(SegmentFrom(v));
+	WriteSegments(a, segs);
+	if (p.has("closed")) Check(sAIPath->SetPathClosed(a, p.boolean("closed", false)), "SetPathClosed");
+	return Edited(a);
+}
+
+// Moving an anchor ('p' or 'by') carries its handles along, as the Direct Selection tool does;
+// 'in' / 'out' then place the handles exactly.
+json::Value PathEditPoint(const json::Value& p)
+{
+	AIArtHandle a = OnePath(p);
+	std::vector<AIPathSegment> segs = ReadSegments(a);
+	AIPathSegment& s = segs[Index(Required(p, "index"), segs.size(), segs.size())];
+	double dx = 0, dy = 0;
+	if (p.has("p")) { AIRealPoint to = Point(p.get("p"), "p"); dx = to.h - s.p.h; dy = to.v - s.p.v; }
+	if (p.has("by")) { AIRealPoint by = Point(p.get("by"), "by"); dx += by.h; dy += by.v; }
+	for (AIRealPoint* pt : {&s.p, &s.in, &s.out}) { pt->h += (AIReal) dx; pt->v += (AIReal) dy; }
+	if (p.has("in")) s.in = Point(p.get("in"), "in");
+	if (p.has("out")) s.out = Point(p.get("out"), "out");
+	if (p.has("smooth")) s.corner = !p.boolean("smooth", false);
+	WriteSegments(a, segs);
+	return Edited(a);
+}
+
+json::Value PathInsertPoint(const json::Value& p)
+{
+	AIArtHandle a = OnePath(p);
+	std::vector<AIPathSegment> segs = ReadSegments(a);
+	size_t at = p.has("index") ? Index(p.get("index"), segs.size() + 1, segs.size()) : segs.size();
+	segs.insert(segs.begin() + (std::ptrdiff_t) at, SegmentFrom(Required(p, "point")));
+	WriteSegments(a, segs);
+	return Edited(a);
+}
+
+json::Value PathDeletePoints(const json::Value& p)
+{
+	AIArtHandle a = OnePath(p);
+	std::vector<AIPathSegment> segs = ReadSegments(a);
+	std::vector<size_t> gone = Indices(p, segs.size());
+	if (gone.size() >= segs.size()) Fail(kErrInvalidParams, "that would delete every point; use art.delete to remove the path");
+	for (auto i = gone.rbegin(); i != gone.rend(); ++i) segs.erase(segs.begin() + (std::ptrdiff_t) *i);
+	WriteSegments(a, segs);
+	return Edited(a);
+}
+
+// Selects just these anchors, as the Direct Selection tool would; everything else is deselected.
+json::Value PathSelectPoints(const json::Value& p)
+{
+	AIArtHandle a = OnePath(p);
+	ai::int16 count = 0;
+	sAIPath->GetPathSegmentCount(a, &count);
+	std::vector<size_t> chosen = Indices(p, (size_t) count);
+	Need(sAIMatchingArt, "The matching art suite")->DeselectAll();
+	for (size_t i : chosen) Check(sAIPath->SetPathSegmentSelected(a, (ai::int16) i, kSegmentPointSelected), "SetPathSegmentSelected");
+	if (sAIDocument) sAIDocument->RedrawDocument();
+	return Edited(a);
+}
+
+json::Value PathRemoveSelectedAnchors(const json::Value&)
+{
+	ActiveDocument();
+	if (SelectedArt().empty()) Fail(kErrInvalidParams, "no anchor points are selected; use path.selectPoints first");
+	AICommandID id = 0;
+	if (!sAICommandManager || sAICommandManager->GetCommandIDFromName("Remove Anchor Points menu", &id) || !id)
+		Fail(kErrUnavailable, "Illustrator has no 'Remove Anchor Points' command here");
+	Check(sAIMenu->InvokeMenuAction(id), "Remove Anchor Points");
+	if (sAIDocument) sAIDocument->SyncDocument();
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : SelectedArt()) out.push(ArtSummary(a, 0));
 	return out;
 }
 
@@ -541,7 +685,20 @@ void AddShapeCommands(CommandTable& t)
 		[](const json::Value& p) { return RunMenuOn(p, "OffsetPath v22", 1); }, true};
 	t["path.join"] = {"Object > Path > Join: connect open paths' end points.", Params({{"ids", ids}}), [](const json::Value& p) { return RunMenuOn(p, "join", 1); }, true};
 	t["path.addAnchors"] = {"Object > Path > Add Anchor Points: one between each pair.", Params({{"ids", ids}, {"id", "string"}}), [](const json::Value& p) { return RunMenuOn(p, "Add Anchor Points2", 1); }, true};
-	t["path.removeAnchors"] = {"Object > Path > Remove Anchor Points (the selected ones).", Params({{"ids", ids}, {"id", "string"}}), [](const json::Value& p) { return RunMenuOn(p, "Remove Anchor Points menu", 1); }, true};
+	t["path.removeAnchors"] = {"Object > Path > Remove Anchor Points: removes the anchors selected now (path.selectPoints, or the user's Direct Selection) "
+		"and closes the gap. To delete by index, use path.deletePoints.", Params({}), PathRemoveSelectedAnchors, true};
+	const char* point = "[x, y] | {p: [x, y], in: [x, y], out: [x, y], smooth: boolean}";
+	t["path.setSegments"] = {"Replace a path's points in place, keeping its id, style and stacking. 'segments' is the list art.get returns, edited.",
+		Params({{"id", "string"}, {"segments", "array of points"}, {"closed", "boolean (default: unchanged)"}}), PathSetSegments, true};
+	t["path.editPoint"] = {"Change one anchor point. 'p' or 'by' moves it with its handles; 'in' / 'out' set the handles; 'smooth' sets the point type. "
+		"'index' is 0-based in path order (negative counts from the end).",
+		Params({{"id", "string"}, {"index", "number"}, {"p", "[x, y] - move to"}, {"by", "[dx, dy] - move by"}, {"in", "[x, y]"}, {"out", "[x, y]"}, {"smooth", "boolean"}}), PathEditPoint, true};
+	t["path.insertPoint"] = {"Insert an anchor point before 'index' (default: after the last point).",
+		Params({{"id", "string"}, {"index", "number"}, {"point", point}}), PathInsertPoint, true};
+	t["path.deletePoints"] = {"Delete anchor points by index. The path's shape closes over the gap; at least one point must remain.",
+		Params({{"id", "string"}, {"index", "number"}, {"indices", "number[]"}}), PathDeletePoints, true};
+	t["path.selectPoints"] = {"Select individual anchor points (Direct Selection); all other art is deselected. art.get marks selected points.",
+		Params({{"id", "string"}, {"index", "number"}, {"indices", "number[] ([] deselects all)"}}), PathSelectPoints, false};
 	t["art.outline"] = {"Convert art to the single outline of everything visible (fill and stroke), in place.",
 		Params({{"ids", ids}, {"id", "string"}, {"strokes", "boolean - include strokes (default true)"}}), ArtOutline, true};
 	t["art.toPaths"] = {"Convert live shapes and other plug-in art to plain paths.", Params({{"ids", ids}, {"id", "string"}}), ArtToPaths, true};

@@ -30,8 +30,15 @@ enum ErrorCode {
 // the last document, then opening another in one batch). A batch that reaches
 // one with calls to go returns what ran and puts the rest in 'rest', to run on
 // a later event; EndsRun says a lone call was one of them.
+// Writing the document (save, export, close with save) in a run that also
+// edits makes Illustrator roll the run's edits back when it ends (30.2): the
+// calls all report success, then the changes are gone. So a write runs alone -
+// a batch splits before and after it, and StartsRun says a queued call or
+// batch must wait for an event of its own.
 json::Value Handle(const json::Value& request, json::Value* rest = nullptr);
 bool EndsRun(const json::Value& call);
+bool StartsRun(const json::Value& request);
+bool WritesFile(const json::Value& call);
 json::Value Describe();                           // the command list with param docs
 
 // Told about every call after it runs (the panel animates from this).

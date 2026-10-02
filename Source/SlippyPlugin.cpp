@@ -334,8 +334,14 @@ void SlippyPlugin::RunPending()
 		interaction = sASUserInteraction->GetInteractionAllowed();
 		sASUserInteraction->SetInteractionAllowed(kASInteractWithNone);
 	}
-	bool resume = false;
+	bool resume = false, ran = false;
 	while (auto job = PopJob()) {
+		if (ran && slippy::StartsRun(job->request)) {   // a file write gets an event of its own
+			PushFront(job);
+			resume = true;
+			break;
+		}
+		ran = true;
 		json::Value response, rest;
 		try {
 			response = slippy::Handle(job->request, &rest);

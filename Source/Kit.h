@@ -90,6 +90,13 @@ void ApplyStyle(AIArtHandle art, const json::Value& p);   // fill, stroke and st
 // Name, style and selection for new art; returns its summary.
 json::Value Finish(AIArtHandle art, const json::Value& p);
 
+// ---- paths (Commands.cpp)
+
+// A path's points: {"closed", "segments": [{"p", "in"?, "out"?, "smooth"?, "selected"?}]}.
+json::Value PathJson(AIArtHandle art);
+// One point as path.create takes it: [x, y], or {"p", "in", "out", "smooth"}.
+AIPathSegment SegmentFrom(const json::Value& v);
+
 // Named paint (CmdPaint.cpp): {"swatch"}, {"spot", "tint"}, {"gradient", "angle"...},
 // {"pattern", "scale"...} in and out, sized to the art it lands on.
 bool NamedPaintFromJson(const json::Value& v, AIColor& c);
