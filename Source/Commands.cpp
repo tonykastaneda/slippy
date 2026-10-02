@@ -202,10 +202,22 @@ std::vector<AIArtHandle> SelectedArt()
 }
 
 // Selects exactly these, as the SDK's "from selection" calls want.
+// Selecting a group or compound path selects everything in it, as clicking
+// it with the Selection tool does. Illustrator would settle the contents only
+// after the event ends, so a menu command run right after (Copy...) saw the
+// container half-selected and copied nothing that would paste.
+void SelectDeep(AIArtHandle art)
+{
+	Check(sAIArt->SetArtUserAttr(art, kArtSelected, kArtSelected), "select");
+	AIArtHandle child = nullptr;
+	sAIArt->GetArtFirstChild(art, &child);
+	for (; child; sAIArt->GetArtSibling(child, &child)) SelectDeep(child);
+}
+
 void SelectOnly(const std::vector<AIArtHandle>& arts)
 {
 	Need(sAIMatchingArt, "The matching art suite")->DeselectAll();
-	for (AIArtHandle a : arts) sAIArt->SetArtUserAttr(a, kArtSelected, kArtSelected);
+	for (AIArtHandle a : arts) SelectDeep(a);
 }
 
 // Ids are strings ("476"); agents often send them as numbers, so take both.
@@ -1196,16 +1208,6 @@ json::Value ArtSelection(const json::Value& p)
 	json::Value list = json::Value::MakeArray();
 	for (AIArtHandle a : SelectedArt()) list.push(ArtSummary(a, (int) p.num("depth", 0)));
 	return list;
-}
-
-// Selecting a group or compound path selects everything in it, as clicking
-// it with the Selection tool does.
-void SelectDeep(AIArtHandle art)
-{
-	Check(sAIArt->SetArtUserAttr(art, kArtSelected, kArtSelected), "select");
-	AIArtHandle child = nullptr;
-	sAIArt->GetArtFirstChild(art, &child);
-	for (; child; sAIArt->GetArtSibling(child, &child)) SelectDeep(child);
 }
 
 json::Value ArtSelect(const json::Value& p)

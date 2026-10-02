@@ -64,6 +64,7 @@ AIArtHandle ArtById(const std::string& idText);   // fails with kErrNotFound
 bool IsId(const json::Value& v);
 std::string IdText(const json::Value& v);
 std::vector<AIArtHandle> SelectedArt();
+void SelectDeep(AIArtHandle art);   // with everything inside, as a click selects a group
 void SelectOnly(const std::vector<AIArtHandle>& arts);
 // 'id' / 'ids' from p; or the selection when selectionIfMissing.
 std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing = false);
