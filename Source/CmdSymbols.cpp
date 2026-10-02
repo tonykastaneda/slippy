@@ -264,6 +264,8 @@ json::Value SymbolEdit(const json::Value& p)
 	Need(sAISymbol, "The symbol suite");
 	AIArtHandle instance = IsId(p.get("id")) ? ArtById(IdText(p.get("id"))) : nullptr;
 	AIPatternHandle symbol = instance ? SymbolOfInstance(instance) : SymbolByName(ReqStr(p, "symbol"));
+	if (sAISymbol->GetSymbolEditMode() || (sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()))
+		Fail(kErrInvalidParams, "already editing a symbol or isolated - symbol.finish (or isolation.exit) first");
 	Check(sAISymbol->SetEditingSymbolDefinition(symbol, instance), "SetEditingSymbolDefinition");
 	json::Value v;
 	v["editing"] = SymbolName(symbol);
@@ -289,11 +291,21 @@ json::Value SymbolFinish(const json::Value& p)
 		try { symbol = EditingSymbol(p); }
 		catch (const CommandError& e) { why = e.message; }
 	}
+	auto stillIn = [] { return sAISymbol->GetSymbolEditMode() || (sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()); };
 	if (symbol) {
 		v["symbol"] = SymbolName(symbol);
 		AIErr e = sAISymbol->EndEditingSymbolDefinition(symbol, save);
-		if (!e) { v["saved"] = save; v["how"] = "ended the edit"; return v; }
-		why = "EndEditingSymbolDefinition failed (" + ErrText(e) + ")";
+		if (!e) {
+			// Ending the edit can leave isolation mode on (30.2), and then nothing
+			// outside it can be touched. Leave it the way the edit went.
+			if (stillIn() && sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()) {
+				if (save) sAIIsolationMode->ExitIsolationMode(); else sAIIsolationMode->CancelIsolationMode();
+			}
+			if (sAISymbol->GetSymbolEditMode()) sAISymbol->ExitSymbolEditMode();
+			if (!stillIn()) { v["saved"] = save; v["how"] = "ended the edit"; return v; }
+			why = "the edit ended but Illustrator stayed in it";
+		}
+		else why = "EndEditingSymbolDefinition failed (" + ErrText(e) + ")";
 	}
 	if (save && sAIIsolationMode && sAIIsolationMode->IsInIsolationMode()) {
 		AIErr e = sAIIsolationMode->ExitIsolationMode();

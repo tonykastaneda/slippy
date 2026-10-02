@@ -1112,6 +1112,13 @@ json::Value DocumentClose(const json::Value& p)
 	AIDocumentHandle doc = DocumentByIndex(p);
 	std::string name = DocName(doc);
 	if (p.boolean("save", false)) Check(sAIDocumentList->Save(doc), "Save document");
+	else {
+		// Close asks "Save changes?" of a modified document, and with dialogs
+		// off (as while agents run) that answers Save. Marked unmodified, it
+		// just closes, discarding the changes as asked.
+		Check(sAIDocumentList->Activate(doc, false), "Activate");
+		Check(Need(sAIDocument, "The document suite")->SetDocumentModified(false), "SetDocumentModified");
+	}
 	// Close takes one window at a time; the document is gone with its last.
 	auto open = [&] {
 		for (auto& d : OpenDocuments()) if (d.first == doc) return d.second;

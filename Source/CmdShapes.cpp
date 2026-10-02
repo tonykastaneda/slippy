@@ -103,9 +103,31 @@ json::Value Pathfind(const json::Value& p, PathfinderOp AIPathfinderSuite::* op,
 	data.fSelectedArtCount = (ai::int32) arts.size();
 	AIFilterMessage message;
 	memset(&message, 0, sizeof message);   // "not used": all fields NULL
+	// The result replaces the inputs among their parent's children; fOutputArt
+	// is left empty (30.2), so find what's new there.
+	std::vector<AIArtHandle> parents, before;
+	for (AIArtHandle a : arts) {
+		AIArtHandle parent = nullptr;
+		if (!sAIArt->GetArtParent(a, &parent) && parent && std::find(parents.begin(), parents.end(), parent) == parents.end()) parents.push_back(parent);
+	}
+	auto children = [&] {
+		std::vector<AIArtHandle> out;
+		for (AIArtHandle parent : parents) {
+			AIArtHandle c = nullptr;
+			for (sAIArt->GetArtFirstChild(parent, &c); c; sAIArt->GetArtSibling(c, &c)) out.push_back(c);
+		}
+		return out;
+	};
+	before = children();
 	Check((sAIPathfinder->*op)(&data, &message), name);
 	json::Value v;
-	v["result"] = data.fOutputArt && sAIArt->ValidArt(data.fOutputArt, true) ? ArtSummary(data.fOutputArt, 1) : json::Value();
+	if (data.fOutputArt && sAIArt->ValidArt(data.fOutputArt, true)) { v["result"] = ArtSummary(data.fOutputArt, 1); return v; }
+	json::Value made = json::Value::MakeArray();
+	for (AIArtHandle c : children())
+		if (std::find(before.begin(), before.end(), c) == before.end()) made.push(ArtSummary(c, 1));
+	if (made.size() == 1) v["result"] = made.asArray()[0];
+	else if (made.size() > 1) v["result"] = made;
+	else v["result"] = json::Value();   // nothing left (e.g. no overlap to intersect)
 	return v;
 }
 
@@ -294,7 +316,10 @@ void WriteSegments(AIArtHandle a, const std::vector<AIPathSegment>& segs)
 {
 	if (segs.empty() || segs.size() > 32000) Fail(kErrInvalidParams, "a path needs 1 to 32000 points");
 	bool selected = Attr(a, kArtSelected);
-	Check(sAIPath->SetPathSegmentCount(a, (ai::int16) segs.size()), "SetPathSegmentCount");
+	AIErr e = sAIPath->SetPathSegmentCount(a, (ai::int16) segs.size());
+	if (e == kUntouchableLayerErr)
+		Fail(kErrInvalidParams, "art " + ArtId(a) + " can't be edited right now: the document is isolated on something else (a symbol edit?) - finish that first");
+	Check(e, "SetPathSegmentCount");
 	Check(sAIPath->SetPathSegments(a, 0, (ai::int16) segs.size(), segs.data()), "SetPathSegments");
 	sAIArt->SetArtUserAttr(a, kArtSelected, selected ? kArtSelected : 0);
 }
