@@ -1,7 +1,7 @@
 #ifndef __SLIPPY_COMMANDS_H__
 #define __SLIPPY_COMMANDS_H__
 
-// The command table: every method agents can call, run on Illustrator's main
+// The command table: every method agents can call, run on the app's main
 // thread. Requests and responses are JSON-RPC 2.0; an array request is a
 // batch that runs back to back in one timer message (one undo step).
 
@@ -18,7 +18,8 @@ enum ErrorCode {
 	kErrMethodNotFound = -32601,
 	kErrInvalidParams = -32602,
 	kErrInternal = -32603,
-	kErrIllustrator = -32000,   // an SDK call failed; data.aiError has its code
+	kErrHost = -32000,          // the app refused (data.aiError / data.psError has its code)
+	kErrIllustrator = kErrHost,
 	kErrTimeout = -32001,
 	kErrUnavailable = -32002,   // no document, missing suite, shutting down
 	kErrNotFound = -32004,      // art / layer / document id didn't resolve

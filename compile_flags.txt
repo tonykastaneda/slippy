@@ -1,6 +1,8 @@
 -xobjective-c++
 -std=c++17
--ISource
+-Iillustrator
+-Ishared
+-Ibuild
 -I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/samplecode/common/includes
 -I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/illustratorapi/illustrator
 -I/Users/tonycastaneda/Developer/AdobeIllustratorSDK/illustratorapi/illustrator/actions

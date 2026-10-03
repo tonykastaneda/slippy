@@ -15,9 +15,14 @@
 
 namespace {
 
-// Command groups, one bar each, in the order they're drawn.
-const char* kGroups[] = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
-const int kGroupCount = sizeof kGroups / sizeof kGroups[0];
+// Command groups, one bar each, in the order they're drawn; the last one
+// also takes anything unlisted. Each app sets its own (+setGroups:).
+const int kGroupCount = 10;
+std::vector<std::string>& Groups()
+{
+	static std::vector<std::string> groups = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
+	return groups;
+}
 const int kFeedRows = 8;
 const CGFloat kPad = 16;
 
@@ -39,7 +44,7 @@ double Random(double lo, double hi) { return lo + (hi - lo) * (arc4random_unifor
 int GroupOf(const std::string& method)
 {
 	std::string g = method.substr(0, method.find('.'));
-	for (int i = 0; i < kGroupCount; i++) if (g == kGroups[i]) return i;
+	for (int i = 0; i < kGroupCount; i++) if (g == Groups()[i]) return i;
 	return kGroupCount - 1;
 }
 
@@ -857,7 +862,8 @@ NSTimer* After(double seconds, void (^block)(NSTimer*))
 			[_bars addObject:bar];
 			NSTextField* l = Label(8, NSFontWeightMedium, NSColor.tertiaryLabelColor);
 			l.alignment = NSTextAlignmentCenter;
-			l.stringValue = [[NSString stringWithUTF8String:kGroups[i]] substringToIndex:3];
+			NSString* group = [NSString stringWithUTF8String:Groups()[i].c_str()];
+			l.stringValue = [group substringToIndex:MIN((NSUInteger) 3, group.length)];
 			l.lineBreakMode = NSLineBreakByClipping;
 			[self addSubview:l];
 			[_labels addObject:l];
@@ -1132,6 +1138,12 @@ using slippy::LogoGlow;
 	std::deque<double> _recent;   // call times, for how busy Slippy looks
 	long _calls, _errors;
 	BOOL _listening, _paused, _drawerOpen;
+}
+
++ (void)setGroups:(NSArray<NSString*>*)groups
+{
+	if (groups.count != (NSUInteger) kGroupCount) return;
+	for (int i = 0; i < kGroupCount; i++) Groups()[i] = groups[i].UTF8String;
 }
 
 - (BOOL)isFlipped { return YES; }

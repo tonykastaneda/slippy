@@ -1,6 +1,6 @@
 #include "Mcp.h"
 #include "Commands.h"
-#include "SlippyID.h"
+#include "Version.h"
 
 #include <map>
 #include <mutex>
@@ -12,17 +12,11 @@ namespace {
 
 const char* kProtocol = "2025-06-18";
 
-const char* kInstructions =
-	"Slippy drives Adobe Illustrator directly through a native plug-in (no JSX). It has about 190 commands - symbols, swatches, "
-	"gradients, appearance and effects, pathfinder, text and styles, artboards, layers, images and more. Only the everyday ones are "
-	"tools here: find the rest with slippy_find (search words like \"symbol\", \"gradient\", \"artboard\") and run them with slippy_call. "
-	"Coordinates are Illustrator artwork points with y growing upward; call document_info first for the artboard bounds. "
-	"Art ids are strings from art_tree / art_selection / creation results. Commands that take ids act on the selection when none are given. "
-	"Every call is one step on Edit > Undo; use slippy_batch to make several calls one step.";
-
-// The tools every agent gets directly; everything else is one slippy_find away.
-const char* const kEveryday[] = {"document.info", "art.tree", "art.get", "art.selection", "art.select", "art.set", "art.transform",
-	"art.delete", "shape.rect", "path.create", "text.create", "document.export", "history.undo"};
+McpHost& Host()
+{
+	static McpHost host;
+	return host;
+}
 
 json::Value Error(const json::Value& id, int code, const std::string& message)
 {
@@ -99,7 +93,7 @@ json::Value ToolList(bool allTools)
 	{
 		json::Value t;
 		t["name"] = "slippy_status";
-		t["description"] = "Check that Illustrator and Slippy are reachable: versions, open document count, undo steps.";
+		t["description"] = "Check that " + Host().app + " and Slippy are reachable: versions, open documents.";
 		t["inputSchema"]["type"] = "object";
 		t["inputSchema"]["properties"] = json::Value::MakeObject();
 		t["annotations"]["readOnlyHint"] = true;
@@ -108,7 +102,7 @@ json::Value ToolList(bool allTools)
 	{
 		json::Value t;
 		t["name"] = "slippy_find";
-		t["description"] = "Search Slippy's ~190 commands by words (\"symbol edit\", \"gradient\", \"artboard\", \"opacity\", \"font\"): "
+		t["description"] = "Search Slippy's " + Host().commandCount + " commands by words " + Host().findExamples + ": "
 			"returns each match's method, what it does and its parameters. Run one with slippy_call. No search: the command families.";
 		t["inputSchema"]["type"] = "object";
 		t["inputSchema"]["properties"]["search"]["type"] = "string";
@@ -119,7 +113,7 @@ json::Value ToolList(bool allTools)
 	{
 		json::Value t;
 		t["name"] = "slippy_call";
-		t["description"] = "Run any Slippy command by its method name from slippy_find (e.g. \"symbol.edit\", \"swatch.create\"), with its params.";
+		t["description"] = "Run any Slippy command by its method name from slippy_find " + Host().callExamples + ", with its params.";
 		t["inputSchema"]["type"] = "object";
 		t["inputSchema"]["properties"]["method"]["type"] = "string";
 		t["inputSchema"]["properties"]["method"]["description"] = "dotted method name, e.g. \"gradient.create\"";
@@ -132,8 +126,8 @@ json::Value ToolList(bool allTools)
 		json::Value t;
 		t["name"] = "slippy_batch";
 		t["description"] = "Run several Slippy commands back to back as ONE undo step; stops at the first error. "
-			"Each call is {method, params} with the dotted method names (shape.rect, art.transform, ...). "
-			"Opening, closing, creating or switching documents splits the batch there: Illustrator finishes that "
+			"Each call is {method, params} with the dotted method names " + Host().batchExamples + ". "
+			"Opening, closing, creating or switching documents splits the batch there: " + Host().app + " finishes that "
 			"before the rest runs (results still come back together); saving or exporting runs on its own, after "
 			"the edits before it, so a save at the end of a batch is fine. Batch edits that belong together.";
 		json::Value call;
@@ -152,7 +146,7 @@ json::Value ToolList(bool allTools)
 		const std::string& method = c.get("method").asString();
 		if (method == "commands.list") continue;   // tools/list already is that
 		bool everyday = false;
-		for (const char* e : kEveryday) if (method == e) everyday = true;
+		for (const std::string& e : Host().everyday) if (method == e) everyday = true;
 		if (allTools || everyday) tools.push(CommandTool(c));
 	}
 	return tools;
@@ -298,6 +292,8 @@ json::Value CallTool(const json::Value& params, const RunCall& run, const std::s
 
 } // namespace
 
+void SetMcpHost(McpHost host) { Host() = std::move(host); }
+
 std::string AgentName(const std::string& clientInfo)
 {
 	std::string s = LowerCase(clientInfo);
@@ -336,9 +332,9 @@ json::Value HandleMcp(const json::Value& message, const RunCall& run, bool allTo
 		r["protocolVersion"] = asked == "2025-06-18" || asked == "2025-03-26" ? asked : std::string(kProtocol);
 		r["capabilities"]["tools"]["listChanged"] = false;
 		r["serverInfo"]["name"] = "slippy";
-		r["serverInfo"]["title"] = "Slippy for Adobe Illustrator";
+		r["serverInfo"]["title"] = Host().title;
 		r["serverInfo"]["version"] = kSlippyVersion;
-		r["instructions"] = kInstructions;
+		r["instructions"] = Host().instructions;
 		return Result(id, r);
 	}
 	if (method == "ping") return Result(id, json::Value::MakeObject());

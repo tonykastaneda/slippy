@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>Slippy</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.slippy.photoshop</string>
+	<key>CFBundleName</key>
+	<string>Slippy</string>
+	<key>CFBundlePackageType</key>
+	<string>8LIZ</string>
+	<key>CFBundleSignature</key>
+	<string>8BIM</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Slippy for Photoshop</string>
+</dict>
+</plist>

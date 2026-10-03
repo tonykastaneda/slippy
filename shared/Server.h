@@ -43,6 +43,10 @@ public:
 	bool Start(Handler rpc, McpHandler mcp, int firstPort, const std::string& version, std::string& error);
 	void Stop();
 
+	// Told to an agent that calls without the token: where its person finds Slippy's URL.
+	std::string urlHint = "it's on the clipboard after they click Copy connection in Illustrator's Slippy panel "
+		"(Window > Utilities > Slippy), and it has the token in it.";
+
 	int Port() const { return fPort; }
 	const std::string& Token() const { return fToken; }
 	static std::string SessionFilePath();

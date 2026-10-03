@@ -1,15 +1,12 @@
 // The Slippy panel on Windows: the same panel and the same Slippy as
-// SlippyPanelView.mm, drawn with GDI+ into a child window of Illustrator's
-// docked panel. Core Animation isn't there to lean on, so a small engine
-// below plays the same keyframes, curves and springs (Track), and one frame
-// timer drives everything. Geometry, timings and curves match the Mac file
-// line for line; read that one for the why of each move. Main thread only.
+// SlippyPanelView.mm, drawn with GDI+ into a child window of whatever hosts
+// it (Illustrator's docked panel, Photoshop's floating one). Core Animation
+// isn't there to lean on, so a small engine below plays the same keyframes,
+// curves and springs (Track), and one frame timer drives everything.
+// Geometry, timings and curves match the Mac file line for line; read that
+// one for the why of each move. No Adobe SDK here. Main thread only.
 
-#include "IllustratorSDK.h"
-#include "SlippyPanel.h"
-#include "SlippySuites.h"
-#include "SlippyID.h"
-#include "AIUITheme.h"
+#include "SlippyPanelWin.h"
 #include "Platform.h"
 #include "FrogShape.h"
 #include "AgentLogo.h"
@@ -28,8 +25,6 @@ namespace Gdiplus { using std::min; using std::max; }   // gdiplus.h wants them;
 #include <memory>
 #include <string>
 #include <vector>
-
-extern "C" SPBasicSuite* sSPBasic;
 
 namespace {
 
@@ -216,8 +211,13 @@ using slippy::AgentLogo;
 using slippy::LogoGlow;
 #include "AgentLogos.inc"
 
-const char* kGroups[] = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
-const int kGroupCount = sizeof kGroups / sizeof kGroups[0];
+// Command groups, one bar each; the last also takes anything unlisted (SetGroups).
+const int kGroupCount = 10;
+std::vector<std::string>& Groups()
+{
+	static std::vector<std::string> groups = {"document", "layer", "art", "shape", "path", "text", "menu", "action", "history", "app"};
+	return groups;
+}
 const int kFeedRows = 8;
 const double kPad = 16;
 const double kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
@@ -267,27 +267,16 @@ std::wstring W(const std::string& s)
 	return w;
 }
 
-// Illustrator's panel background, and whether its theme is dark.
-AIUIThemeSuite* Theme()
-{
-	static AIUIThemeSuite* suite = nullptr;
-	static bool tried = false;
-	if (!tried) {
-		tried = true;
-		const void* s = nullptr;
-		if (sSPBasic && !sSPBasic->AcquireSuite(kAIUIThemeSuite, kAIUIThemeSuiteVersion, &s)) suite = (AIUIThemeSuite*) s;
-	}
-	return suite;
-}
+// The host's panel background, and whether its theme is dark.
+std::function<bool(double rgb[3], bool& dark)> gTheme;
 
 RGBA Background()
 {
-	if (AIUIThemeSuite* t = Theme()) {
-		AIUIThemeColor c;
-		if (!t->GetUIThemeColor(kAIUIThemeSelectorPanel, kAIUIComponentColorBackground, c)) {
-			gDark = t->IsUIThemeDark();
-			return {c.red, c.green, c.blue, 1};
-		}
+	double rgb[3];
+	bool dark = true;
+	if (gTheme && gTheme(rgb, dark)) {
+		gDark = dark;
+		return {rgb[0], rgb[1], rgb[2], 1};
 	}
 	gDark = true;
 	return Rgb(0x323232);
@@ -1020,7 +1009,7 @@ private:
 	int GroupOf(const std::string& method)
 	{
 		std::string g = method.substr(0, method.find('.'));
-		for (int i = 0; i < kGroupCount; i++) if (g == kGroups[i]) return i;
+		for (int i = 0; i < kGroupCount; i++) if (g == Groups()[i]) return i;
 		return kGroupCount - 1;
 	}
 
@@ -1180,7 +1169,7 @@ private:
 			RoundRect(p, RectF((REAL) (fBarsRect.X + slot * (i + 0.5) - bw / 2), (REAL) (bottom - 12 - h), (REAL) bw, (REAL) h), 2);
 			SolidBrush b(C(color));
 			g.FillPath(&b, &p);
-			std::wstring label = W(std::string(kGroups[i]).substr(0, 3));
+			std::wstring label = W(Groups()[i].substr(0, 3));
 			Text(g, label, RectF((REAL) (fBarsRect.X + slot * i - 6), (REAL) (bottom - 11), (REAL) (slot + 12), 11), 8, FontStyleRegular, TertiaryLabel(), AlignCenter);
 		}
 	}
@@ -1300,17 +1289,13 @@ private:
 	}
 };
 
-// ------------------------------------------------------------------ window + SDK glue
+// ------------------------------------------------------------------ the window
 
 const wchar_t* kClass = L"SlippyPanelView";
 const UINT_PTR kFrameTimer = 1;
 
-AIPanelRef gPanel = nullptr;
-PanelCallbacks gCallbacks;
 std::unique_ptr<Panel> gView;
-std::wstring gStatus = L"Starting…";
-bool gListening = false;
-bool gPaused = false;
+HWND gParent = nullptr;
 ULONG_PTR gGdiplus = 0;
 bool gClassRegistered = false;
 
@@ -1372,29 +1357,18 @@ LRESULT CALLBACK ViewProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 	return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-// Fills the host with the view.
-void Fit()
-{
-	if (!gView || !gView->hwnd || !gPanel || !sAIPanel) return;
-	AIPanelPlatformWindow host = nullptr;
-	if (sAIPanel->GetPlatformWindow(gPanel, host) || !host) return;
-	if (GetParent(gView->hwnd) != host) SetParent(gView->hwnd, host);
-	RECT r;
-	GetClientRect(host, &r);
-	SetWindowPos(gView->hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
-}
+} // namespace
 
-void SizeChanged(AIPanelRef) { Fit(); }
+namespace slippy {
+namespace winpanel {
 
-void Install()
+bool Create(HWND parent, Options options)
 {
-	if (!gPanel || !sAIPanel) return;
-	if (gView && gView->hwnd) { Fit(); return; }
-	AIPanelPlatformWindow host = nullptr;
-	if (sAIPanel->GetPlatformWindow(gPanel, host) || !host) return;
+	if (gView && gView->hwnd) { Fit(parent); return true; }
+	if (!parent) return false;
 	if (!gGdiplus) {
 		GdiplusStartupInput input;
-		if (GdiplusStartup(&gGdiplus, &input, nullptr) != Ok) { gGdiplus = 0; return; }
+		if (GdiplusStartup(&gGdiplus, &input, nullptr) != Ok) { gGdiplus = 0; return false; }
 	}
 	if (!gClassRegistered) {
 		INITCOMMONCONTROLSEX icc = {sizeof icc, ICC_WIN95_CLASSES};
@@ -1407,45 +1381,40 @@ void Install()
 		wc.lpszClassName = kClass;
 		gClassRegistered = RegisterClassExW(&wc) != 0;
 	}
+	gTheme = options.theme;
 	gView.reset(new Panel);
-	gView->onDrawer = [](bool open, double extra) {   // opening the terminal makes the panel taller
-		AISize size;
-		if (!gPanel || sAIPanel->GetSize(gPanel, size)) return;
-		size.height = (AIReal) std::max(260.0, size.height + (open ? extra : -extra));
-		sAIPanel->SetSize(gPanel, size);
-		Fit();
-	};
+	gView->onDrawer = options.onDrawer;
 	{
-		std::wstring v = W(kSlippyVersion);   // "0.1.0" -> "0.1"
+		std::wstring v = W(options.version);   // "0.1.0" -> "0.1"
 		if (v.size() > 2 && v.compare(v.size() - 2, 2, L".0") == 0) v.resize(v.size() - 2);
 		gView->version = v;
 	}
-	gView->connectionInfo = [] { return gCallbacks.connectionInfo ? gCallbacks.connectionInfo() : std::string(); };
+	gView->connectionInfo = options.connectionInfo;
 	RECT r;
-	GetClientRect(host, &r);
+	GetClientRect(parent, &r);
 	gView->hwnd = CreateWindowExW(0, kClass, L"Slippy", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, r.right - r.left, r.bottom - r.top,
-		host, nullptr, ThisModule(), nullptr);
-	if (!gView->hwnd) { gView.reset(); return; }
+		parent, nullptr, ThisModule(), nullptr);
+	if (!gView->hwnd) { gView.reset(); return false; }
+	gParent = parent;
 	gView->MakeTooltip();
-	gView->SetStatus(gStatus, gListening);
-	gView->SetPaused(gPaused);
 	gView->Start();
 	SetTimer(gView->hwnd, kFrameTimer, 16, nullptr);
-	sAIPanel->SetSizeChangedNotifyProc(gPanel, SizeChanged);
+	return true;
 }
 
-} // namespace
+bool Exists() { return gView && gView->hwnd; }
 
-void PanelAttach(AIPanelRef panel, PanelCallbacks callbacks)
+void Fit(HWND parent)
 {
-	gPanel = panel;
-	gCallbacks = std::move(callbacks);
-	AISize minSize = {240, 300}, pref = {290, 480}, maxSize = {700, 2400};
-	sAIPanel->SetSizes(gPanel, minSize, pref, pref, maxSize);
-	Install();
+	if (!gView || !gView->hwnd || !parent) return;
+	if (GetParent(gView->hwnd) != parent) SetParent(gView->hwnd, parent);
+	gParent = parent;
+	RECT r;
+	GetClientRect(parent, &r);
+	SetWindowPos(gView->hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
-void PanelDetach()
+void Destroy()
 {
 	if (gView) {
 		gView->Stop();
@@ -1456,32 +1425,22 @@ void PanelDetach()
 	ClearFonts();
 	if (gClassRegistered) { UnregisterClassW(kClass, ThisModule()); gClassRegistered = false; }
 	if (gGdiplus) { GdiplusShutdown(gGdiplus); gGdiplus = 0; }
-	gPanel = nullptr;
+	gParent = nullptr;
+	gTheme = nullptr;
 }
 
-void PanelSetStatus(const std::string& text, bool listening)
+void SetGroups(const std::vector<std::string>& groups)
 {
-	gStatus = W(text);
-	gListening = listening;
-	Install();
-	if (gView) gView->SetStatus(gStatus, gListening);
+	if (groups.size() == (size_t) kGroupCount) Groups() = groups;
 }
 
-void PanelSetPaused(bool paused)
-{
-	gPaused = paused;
-	Install();
-	if (gView) gView->SetPaused(paused);
-}
+void SetStatus(const std::string& text, bool listening) { if (gView) gView->SetStatus(W(text), listening); }
+void SetPaused(bool paused) { if (gView) gView->SetPaused(paused); }
 
-void PanelCall(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line, const std::string& agent)
+void Call(const std::string& method, bool ok, bool changesDocument, double milliseconds, const std::string& line, const std::string& agent)
 {
-	Install();
 	if (gView) gView->Call(method, line, ok, changesDocument, milliseconds, agent);
 }
 
-// Windows keeps Slippy's internal "Run Agent Calls" command in the menu:
-// Illustrator's Windows menus can't hide one item, and removing it from the
-// menu bar under Illustrator's feet isn't worth the risk. Choosing it just
-// runs any queued calls, which is harmless.
-void HideMenuItemTitled(const std::string&) {}
+} // namespace winpanel
+} // namespace slippy

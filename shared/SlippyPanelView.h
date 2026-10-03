@@ -21,6 +21,9 @@
 // The terminal drawer opened (or closed): make the panel taller by extraHeight (or shorter).
 @property (nonatomic, copy) void (^onDrawer)(BOOL open, CGFloat extraHeight);
 @property (nonatomic, copy) NSString* version;   // shown as "v.0.1"
+// The ten command groups the activity bars stand for, before the first panel
+// is made (a method's group is its first word: "layer.set" -> "layer").
++ (void)setGroups:(NSArray<NSString*>*)groups;
 - (void)setStatus:(NSString*)text listening:(BOOL)listening;
 - (void)setPaused:(BOOL)paused;   // from the panel's flyout menu
 - (void)toggleDrawer;            // the terminal drawer (also the handle at the bottom)

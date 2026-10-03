@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8 -8 416 343.2" width="200" height="165" role="img" aria-label="Slippy the frog">
+  <title>Slippy</title>
+  <g fill="#92F607">
+    <ellipse cx="200.0" cy="205.2" rx="200.0" ry="122.0"/>
+    <circle cx="116.8" cy="83.2" r="83.1"/>
+    <circle cx="283.2" cy="83.2" r="83.1"/>
+  </g>
+  <g fill="#000">
+    <ellipse cx="116.8" cy="83.2" rx="34.8" ry="38.0"/>
+    <ellipse cx="283.2" cy="83.2" rx="34.8" ry="38.0"/>
+  </g>
+</svg>

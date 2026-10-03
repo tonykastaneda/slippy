@@ -1,8 +1,9 @@
 #ifndef __SLIPPY_ID_H__
 #define __SLIPPY_ID_H__
 
+#include "Version.h"
+
 #define kSlippyPluginName		"Slippy"
-#define kSlippyVersion		"0.1.0"
 #define kSlippyMenuGroup		"Window Utilities"	// Window > Utilities
 #define kSlippyMenuItemName	"Slippy Panel"
 #define kSlippyMenuItemText	"Slippy"

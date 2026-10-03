@@ -285,9 +285,7 @@ void Server::Serve(intptr_t fd)
 	if (method != "POST") { Respond(fd, 405, ErrorBody("use POST " + path)); return; }
 	if (!SameToken(token, fToken) && !SameToken(pathToken, fToken)) {
 		// Agents are told to ask, not to go reading the credential file.
-		Respond(fd, 401, ErrorBody("missing or wrong token. Ask the person at this computer for Slippy's URL: "
-			"it's on the clipboard after they click Copy connection in Illustrator's Slippy panel "
-			"(Window > Utilities > Slippy), and it has the token in it."));
+		Respond(fd, 401, ErrorBody("missing or wrong token. Ask the person at this computer for Slippy's URL: " + urlHint));
 		return;
 	}
 

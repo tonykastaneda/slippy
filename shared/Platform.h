@@ -10,8 +10,10 @@
 namespace slippy {
 namespace platform {
 
-// ~/Library/Application Support/Slippy, or %APPDATA%\Slippy.
+// ~/Library/Application Support/Slippy, or %APPDATA%\Slippy - plus the
+// subfolder, when set (Slippy for Photoshop keeps its token apart in "Photoshop").
 std::string SupportDir();
+void SetSupportSubdir(const std::string& name);
 std::string JoinPath(const std::string& dir, const std::string& name);
 void MakeDirs(const std::string& dir);
 // Writes through a temp file and renames it into place; only the user can read it.

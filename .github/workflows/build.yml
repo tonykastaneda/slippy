@@ -1,10 +1,11 @@
-# Builds Slippy.aip for macOS (signed with Developer ID and notarized when the
-# secrets are set, ad hoc otherwise) and Windows (x64 and ARM64), and Slippy
-# for Photoshop's .ccx (after the bridge's tests). A v* tag also publishes
-# them all as a GitHub release.
+# Builds all of Slippy's plug-ins:
+#   Slippy for Illustrator  - macOS Slippy.aip, Windows Slippy.aip (x64, ARM64)
+#   Slippy for Photoshop    - macOS Slippy.plugin, Windows Slippy.8li (x64, ARM64)
+# The macOS ones are signed with Developer ID and notarized when the secrets
+# are set (ad hoc otherwise). A v* tag also publishes them all as a release.
 #
-# The Adobe Illustrator SDK is not in the repository: it is downloaded from
-# this private repo's "sdk-illustrator-2026" release.
+# The Adobe SDKs are not in the repository: they're downloaded from this
+# private repo's "sdk-illustrator-2026" and "sdk-photoshop-2026" releases.
 #
 # macOS signing / notarization, all optional:
 #   secrets.MACOS_CERT_P12       base64 of the Developer ID Application .p12
@@ -29,18 +30,21 @@ jobs:
     runs-on: macos-15
     env:
       SDK: ${{ github.workspace }}/../sdk/AdobeIllustratorSDK
+      PS_SDK: ${{ github.workspace }}/../sdk/AdobePhotoshopSDK/pluginsdk/photoshopapi
       HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' }}
       HAS_NOTARY: ${{ secrets.MACOS_CERT_P12 != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_PASSWORD != '' && vars.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download Illustrator SDK
+      - name: Download the SDKs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download sdk-illustrator-2026 --repo "$GITHUB_REPOSITORY" --pattern AdobeIllustratorSDK.zip --dir "$RUNNER_TEMP"
+          gh release download sdk-photoshop-2026 --repo "$GITHUB_REPOSITORY" --pattern AdobePhotoshopSDK.zip --dir "$RUNNER_TEMP"
           mkdir -p "$SDK/.."
           unzip -q "$RUNNER_TEMP/AdobeIllustratorSDK.zip" -d "$SDK/.."
+          unzip -q "$RUNNER_TEMP/AdobePhotoshopSDK.zip" -d "$SDK/.."
 
       - name: Import the signing certificate
         if: env.HAS_CERT == 'true'
@@ -63,12 +67,15 @@ jobs:
       - name: Build
         run: |
           if [ "$HAS_CERT" = "true" ]; then
-            make SDK="$SDK" SIGN_ID="Developer ID Application" SIGN_FLAGS="--timestamp --options runtime"
+            SIGN=(SIGN_ID="Developer ID Application" SIGN_FLAGS="--timestamp --options runtime")
           else
             echo "::notice::No signing certificate in the secrets - signing ad hoc."
-            make SDK="$SDK"
+            SIGN=()
           fi
+          make SDK="$SDK" "${SIGN[@]}"
+          make photoshop PS_SDK="$PS_SDK" "${SIGN[@]}"
           codesign -dv --verbose=2 build/Slippy.aip
+          codesign -dv --verbose=2 build/ps/Slippy.plugin
 
       - name: Notarize
         if: env.HAS_NOTARY == 'true'
@@ -77,29 +84,40 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
-          ditto -c -k --keepParent build/Slippy.aip "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json" || true
-          cat "$RUNNER_TEMP/notary.json"
-          STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/notary.json" || true)
-          if [ "$STATUS" != "Accepted" ]; then
-            ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/notary.json" || true)
-            [ -n "$ID" ] && xcrun notarytool log "$ID" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" || true
-            echo "::error::Notarization failed (status: ${STATUS:-none})"
-            exit 1
-          fi
-          # Stapling lets Gatekeeper check the plug-in offline; a plug-in bundle
-          # may not take a ticket, and it still passes online without one.
-          xcrun stapler staple build/Slippy.aip || echo "::warning::Couldn't staple the ticket; Gatekeeper will check online."
+          for bundle in build/Slippy.aip build/ps/Slippy.plugin; do
+            ditto -c -k --keepParent "$bundle" "$RUNNER_TEMP/notarize.zip"
+            xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json" || true
+            cat "$RUNNER_TEMP/notary.json"
+            STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/notary.json" || true)
+            if [ "$STATUS" != "Accepted" ]; then
+              ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/notary.json" || true)
+              [ -n "$ID" ] && xcrun notarytool log "$ID" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" || true
+              echo "::error::Notarization of $bundle failed (status: ${STATUS:-none})"
+              exit 1
+            fi
+            # Stapling lets Gatekeeper check offline; a plug-in bundle may not
+            # take a ticket, and it still passes online without one.
+            xcrun stapler staple "$bundle" || echo "::warning::Couldn't staple $bundle; Gatekeeper will check online."
+          done
 
       - name: Package
-        run: ditto -c -k --keepParent build/Slippy.aip Slippy-macos.zip
+        run: |
+          ditto -c -k --keepParent build/Slippy.aip Slippy-Illustrator-macos.zip
+          ditto -c -k --keepParent build/ps/Slippy.plugin Slippy-Photoshop-macos.zip
 
-      - name: Upload plug-in
+      - name: Upload Illustrator plug-in
         uses: actions/upload-artifact@v5
         with:
-          name: Slippy-macos
-          path: Slippy-macos.zip
+          name: Slippy-Illustrator-macos
+          path: Slippy-Illustrator-macos.zip
+          if-no-files-found: error
+
+      - name: Upload Photoshop plug-in
+        uses: actions/upload-artifact@v5
+        with:
+          name: Slippy-Photoshop-macos
+          path: Slippy-Photoshop-macos.zip
           if-no-files-found: error
 
   windows:
@@ -111,57 +129,41 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download Illustrator SDK
+      - name: Download the SDKs
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download sdk-illustrator-2026 --repo "${{ github.repository }}" --pattern AdobeIllustratorSDK.zip --dir "$env:RUNNER_TEMP"
+          gh release download sdk-photoshop-2026 --repo "${{ github.repository }}" --pattern AdobePhotoshopSDK.zip --dir "$env:RUNNER_TEMP"
           Expand-Archive "$env:RUNNER_TEMP\AdobeIllustratorSDK.zip" -DestinationPath "$env:RUNNER_TEMP\sdk"
+          Expand-Archive "$env:RUNNER_TEMP\AdobePhotoshopSDK.zip" -DestinationPath "$env:RUNNER_TEMP\sdk"
 
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build-win -A ${{ matrix.arch }} -DAI_SDK="$env:RUNNER_TEMP\sdk\AdobeIllustratorSDK"
+        run: cmake -S . -B build-win -A ${{ matrix.arch }} -DAI_SDK="$env:RUNNER_TEMP\sdk\AdobeIllustratorSDK" -DPS_SDK="$env:RUNNER_TEMP\sdk\AdobePhotoshopSDK"
 
       - name: Build
         shell: pwsh
         run: cmake --build build-win --config Release
 
-      - name: Upload plug-in
+      - name: Upload Illustrator plug-in
         uses: actions/upload-artifact@v5
         with:
-          name: Slippy-windows-${{ matrix.arch }}
-          path: build-win/Release/Slippy.aip
+          name: Slippy-Illustrator-windows-${{ matrix.arch }}
+          path: build-win/illustrator/Release/Slippy.aip
           if-no-files-found: error
 
-  photoshop:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: photoshop/bridge/package-lock.json
-
-      - name: Test the bridge
-        working-directory: photoshop/bridge
-        run: npm ci && npm test
-
-      - name: Package the panel
-        run: photoshop/scripts/package.sh
-
-      - name: Upload plug-in
+      - name: Upload Photoshop plug-in
         uses: actions/upload-artifact@v5
         with:
-          name: Slippy-photoshop
-          path: photoshop/dist/*.ccx
+          name: Slippy-Photoshop-windows-${{ matrix.arch }}
+          path: build-win/photoshop/Release/Slippy.8li
           if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos, windows, photoshop]
+    needs: [macos, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -175,6 +177,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist
-          for arch in x64 ARM64; do (cd "Slippy-windows-$arch" && zip -q "../Slippy-windows-$arch.zip" Slippy.aip); done
+          for arch in x64 ARM64; do
+            (cd "Slippy-Illustrator-windows-$arch" && zip -q "../Slippy-Illustrator-windows-$arch.zip" Slippy.aip)
+            (cd "Slippy-Photoshop-windows-$arch" && zip -q "../Slippy-Photoshop-windows-$arch.zip" Slippy.8li)
+          done
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Slippy $GITHUB_REF_NAME" --generate-notes \
-            Slippy-macos/Slippy-macos.zip Slippy-windows-x64.zip Slippy-windows-ARM64.zip Slippy-photoshop/*.ccx
+            Slippy-Illustrator-macos/Slippy-Illustrator-macos.zip Slippy-Photoshop-macos/Slippy-Photoshop-macos.zip \
+            Slippy-Illustrator-windows-x64.zip Slippy-Illustrator-windows-ARM64.zip \
+            Slippy-Photoshop-windows-x64.zip Slippy-Photoshop-windows-ARM64.zip

@@ -29,6 +29,7 @@ bool gInstalled = false;
 
 // Everything the handler needs is ready beforehand: it only writes.
 char gPath[1024];
+const char* gApp = "Illustrator";   // a literal: read from the signal handler
 char gCall[1024];
 char gImage[1024];
 uintptr_t gBase = 0;
@@ -84,7 +85,9 @@ void Handler(int sig, siginfo_t* info, void* context)
 		gWriting = 1;
 		int fd = open(gPath, O_WRONLY | O_CREAT | O_APPEND, 0600);
 		if (fd >= 0) {
-			Put(fd, "\n=== Illustrator crashed ===\ntime: ");
+			Put(fd, "\n=== ");
+			Put(fd, gApp);
+			Put(fd, " crashed ===\ntime: ");
 			PutDec(fd, (long) time(nullptr));
 			Put(fd, " (unix seconds)\nsignal: ");
 			Put(fd, SignalName(sig));
@@ -132,8 +135,9 @@ void Handler(int sig, siginfo_t* info, void* context)
 
 } // namespace
 
-void Install(const std::string& path)
+void Install(const std::string& path, const char* app)
 {
+	gApp = app;
 	if (gInstalled) return;
 	snprintf(gPath, sizeof gPath, "%s", path.c_str());
 	Dl_info dl;
@@ -181,7 +185,7 @@ void ClearCurrentCall() { gCall[0] = 0; }
 
 #else
 
-void Install(const std::string&) {}
+void Install(const std::string&, const char*) {}
 void Uninstall() {}
 void SetCurrentCall(const std::string&, const std::string&) {}
 void ClearCurrentCall() {}

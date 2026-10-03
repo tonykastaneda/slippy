@@ -1,0 +1,7 @@
+-I/Users/tonycastaneda/Developer/AdobePhotoshopSDK/pluginsdk/photoshopapi/photoshop
+-I/Users/tonycastaneda/Developer/AdobePhotoshopSDK/pluginsdk/photoshopapi/pica_sp
+-xobjective-c++
+-std=c++17
+-Wno-multichar
+-I../shared
+-I../build

@@ -6,6 +6,10 @@
 #include <fstream>
 #include <iterator>
 
+namespace {
+std::string gSubdir;   // SetSupportSubdir
+}
+
 #ifdef _WIN32
 
 #include <windows.h>
@@ -87,8 +91,11 @@ std::string SupportDir()
 		const char* env = getenv("APPDATA");
 		dir = env ? env : "C:\\";
 	}
-	return JoinPath(dir, "Slippy");
+	dir = JoinPath(dir, "Slippy");
+	return gSubdir.empty() ? dir : JoinPath(dir, gSubdir);
 }
+
+void SetSupportSubdir(const std::string& name) { gSubdir = name; }
 
 std::string JoinPath(const std::string& dir, const std::string& name) { return dir + "\\" + name; }
 
@@ -210,8 +217,11 @@ namespace platform {
 std::string SupportDir()
 {
 	const char* home = getenv("HOME");
-	return std::string(home ? home : "/tmp") + "/Library/Application Support/Slippy";
+	std::string dir = std::string(home ? home : "/tmp") + "/Library/Application Support/Slippy";
+	return gSubdir.empty() ? dir : dir + "/" + gSubdir;
 }
+
+void SetSupportSubdir(const std::string& name) { gSubdir = name; }
 
 std::string JoinPath(const std::string& dir, const std::string& name) { return dir + "/" + name; }
 
