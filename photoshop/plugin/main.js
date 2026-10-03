@@ -69,11 +69,15 @@
 
 	let socket = null;
 	function connect() {
-		panel.setStatus("Looking for the Slippy bridge…", false);
-		try { socket = new WebSocket(BRIDGE); } catch (e) { setTimeout(connect, RETRY_MS); return; }
+		if (!socket) panel.setStatus("Looking for the Slippy bridge…", false);
+		try { socket = new WebSocket(BRIDGE); } catch (e) {
+			panel.setStatus("Can't reach the bridge: " + ((e && e.message) || e), false);
+			console.error("[slippy] WebSocket failed", e);
+			setTimeout(connect, RETRY_MS); return;
+		}
 		socket.onopen = () => {
 			panel.setStatus("Connected to the bridge · 127.0.0.1:47710", true);
-			socket.send(JSON.stringify({ type: "hello", version: PLUGIN_VERSION, photoshop: app.version }));
+			socket.send(JSON.stringify({ type: "hello", version: PLUGIN_VERSION, photoshop: app.version || (require("uxp").host && require("uxp").host.version) }));
 		};
 		socket.onmessage = async (event) => {
 			let msg;
@@ -81,12 +85,13 @@
 			const reply = await handle(msg);
 			if (socket && socket.readyState === 1) socket.send(JSON.stringify({ type: "result", id: msg.id, ...reply }));
 		};
-		socket.onclose = () => {
+		socket.onclose = (event) => {
 			socket = null;
-			panel.setStatus("Bridge not running · cd bridge && npm start", false);
+			const why = event && event.code && event.code !== 1000 ? ` (closed ${event.code}${event.reason ? ": " + event.reason : ""})` : "";
+			panel.setStatus("Bridge not running · cd bridge && npm start" + why, false);
 			setTimeout(connect, RETRY_MS);
 		};
-		socket.onerror = () => {};   // onclose follows and retries
+		socket.onerror = (e) => console.error("[slippy] WebSocket error", (e && e.message) || e);   // onclose follows and retries
 	}
 	connect();
 

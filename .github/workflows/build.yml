@@ -1,6 +1,7 @@
 # Builds Slippy.aip for macOS (signed with Developer ID and notarized when the
-# secrets are set, ad hoc otherwise) and Windows (x64 and ARM64). A v* tag
-# also publishes both as a GitHub release.
+# secrets are set, ad hoc otherwise) and Windows (x64 and ARM64), and Slippy
+# for Photoshop's .ccx (after the bridge's tests). A v* tag also publishes
+# them all as a GitHub release.
 #
 # The Adobe Illustrator SDK is not in the repository: it is downloaded from
 # this private repo's "sdk-illustrator-2026" release.
@@ -133,9 +134,34 @@ jobs:
           path: build-win/Release/Slippy.aip
           if-no-files-found: error
 
+  photoshop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: photoshop/bridge/package-lock.json
+
+      - name: Test the bridge
+        working-directory: photoshop/bridge
+        run: npm ci && npm test
+
+      - name: Package the panel
+        run: photoshop/scripts/package.sh
+
+      - name: Upload plug-in
+        uses: actions/upload-artifact@v5
+        with:
+          name: Slippy-photoshop
+          path: photoshop/dist/*.ccx
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [macos, windows]
+    needs: [macos, windows, photoshop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -151,4 +177,4 @@ jobs:
           cd dist
           for arch in x64 ARM64; do (cd "Slippy-windows-$arch" && zip -q "../Slippy-windows-$arch.zip" Slippy.aip); done
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Slippy $GITHUB_REF_NAME" --generate-notes \
-            Slippy-macos/Slippy-macos.zip Slippy-windows-x64.zip Slippy-windows-ARM64.zip
+            Slippy-macos/Slippy-macos.zip Slippy-windows-x64.zip Slippy-windows-ARM64.zip Slippy-photoshop/*.ccx

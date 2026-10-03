@@ -14,6 +14,12 @@ curl / any HTTP ──────▶ 127.0.0.1:7331/rpc ─┘   (token)     (m
 MCP is built into the plug-in, so an agent connects straight to Illustrator with
 no bridge process and no Python.
 
+**Slippy for Photoshop** lives in [`photoshop/`](photoshop/README.md). It's a
+separate install: a UXP panel plus a small Node bridge that agents connect to
+at `127.0.0.1:47710/mcp`. Build it with `make photoshop` (a `.ccx`), install it
+with `make install-photoshop`, and test the bridge with `make test-photoshop`.
+Everything else on this page is about the Illustrator plug-in.
+
 ## Build and install (macOS)
 
 It needs only the Xcode **Command Line Tools** (no Xcode, no Visual Studio) and

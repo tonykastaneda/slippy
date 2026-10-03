@@ -7,6 +7,11 @@
 #   make preview    the panel + Slippy in a plain window with made-up calls
 #   make clean
 # Windows builds with CMakeLists.txt (see there).
+#
+# Slippy for Photoshop lives in photoshop/ (a UXP panel and a Node bridge):
+#   make photoshop          package photoshop/dist/Slippy-<version>.ccx
+#   make install-photoshop  install it with Adobe's plug-in installer (restart Photoshop)
+#   make test-photoshop     the bridge's tests
 
 SDK        ?= $(HOME)/Developer/AdobeIllustratorSDK
 AI_APP     ?= /Applications/Adobe Illustrator 2026
@@ -74,7 +79,7 @@ CXXFLAGS := $(ARCH) -std=c++17 -stdlib=libc++ -x objective-c++ -O2 -g \
 	$(INCLUDES) -MMD -MP
 LDFLAGS  := $(ARCH) -bundle -stdlib=libc++ -framework Cocoa -framework QuartzCore -framework CoreFoundation -framework ImageIO -framework WebKit
 
-.PHONY: all clean install preview
+.PHONY: all clean install preview photoshop install-photoshop test-photoshop
 all: $(BUILD)/.signed
 
 $(OBJDIR)/%.o: %.cpp | $(OBJDIR)
@@ -141,7 +146,16 @@ $(BUILD)/SlippyPreview: $(BUILD)/AgentLogos.inc Source/Preview.mm Source/SlippyP
 preview: $(BUILD)/SlippyPreview
 	./$(BUILD)/SlippyPreview
 
+photoshop:
+	photoshop/scripts/package.sh
+
+install-photoshop:
+	photoshop/scripts/install.sh
+
+test-photoshop:
+	cd photoshop/bridge && npm ci && npm test
+
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) photoshop/dist
 
 -include $(OBJECTS:.o=.d)

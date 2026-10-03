@@ -23,7 +23,7 @@
 		{ "width": 48, "height": 48, "path": "icons/plugin.png", "scale": [1, 2], "theme": ["all"], "species": ["pluginList"] }
 	],
 	"requiredPermissions": {
-		"network": { "domains": ["ws://127.0.0.1:47710", "ws://localhost:47710"] },
+		"network": { "domains": "all" },
 		"clipboard": "readAndWrite",
 		"localFileSystem": "fullAccess"
 	}
