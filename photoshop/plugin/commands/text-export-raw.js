@@ -51,8 +51,8 @@ define("ps.batchplay", {
 	params: { descriptors: "object[] - batchPlay descriptors" },
 	run: async (p) => {
 		if (!Array.isArray(p.descriptors) || !p.descriptors.length) throw fail("invalid_params", "descriptors must be a non-empty array");
-		const descs = p.descriptors.map((d) => ({ ...d, _options: { ...(d._options || {}), dialogOptions: "dontDisplay" } }));
-		const out = await action.batchPlay(descs, { dialogOptions: "dontDisplay" });
+		const descs = p.descriptors.map((d) => ({ ...d, _options: { ...(d._options || {}), dialogOptions: "silent" } }));
+		const out = await action.batchPlay(descs, { dialogOptions: "silent" });
 		const bad = out.find((r) => r && r._obj === "error");
 		if (bad) throw fail("photoshop_error", bad.message || "batchPlay failed", "Check the descriptor; recording the step as an action and copying it as JavaScript shows the exact shape.");
 		return out;

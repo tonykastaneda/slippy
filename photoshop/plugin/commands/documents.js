@@ -70,8 +70,10 @@ define("document.new", {
 	run: async (p) => {
 		const fill = { white: constants.DocumentFill.WHITE, transparent: constants.DocumentFill.TRANSPARENT,
 			background: constants.DocumentFill.BACKGROUNDCOLOR }[p.fill || "white"];
-		const d = await app.documents.add({ width: p.width || 1000, height: p.height || 1000, resolution: p.resolution || 72,
-			name: p.name, fill });
+		// Photoshop rejects a key that's present but undefined, so name only goes in when given.
+		const opts = { width: p.width || 1000, height: p.height || 1000, resolution: p.resolution || 72, fill };
+		if (p.name) opts.name = String(p.name);
+		const d = await app.documents.add(opts);
 		return docSummary(d);
 	},
 });
@@ -120,7 +122,7 @@ define("history.undo", {
 		const steps = Math.max(1, Math.min(50, Number(p.steps) || 1));
 		for (let i = 0; i < steps; i++)
 			await action.batchPlay([{ _obj: "select", _target: [{ _ref: "historyState", _enum: "ordinal", _value: "previous" }] }],
-				{ dialogOptions: "dontDisplay" });
+				{ dialogOptions: "silent" });
 		return { undone: steps };
 	},
 });
