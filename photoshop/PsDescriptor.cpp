@@ -73,16 +73,17 @@ std::string PathOf(CFDataRef bookmark)
 }
 #else
 // Windows: as aliases, made from the UTF-16 path (the caller disposes it).
-Handle Alias(const std::string& path)
+// ::Handle - inside slippy, Handle is the request dispatcher (Commands.h).
+::Handle Alias(const std::string& path)
 {
 	NeedFile(path);
 	std::u16string w = FsPath(path).u16string();
 	AliasHandle alias = nullptr;
 	if (sAlias->UnicodePathToAlias((const uint16*) w.c_str(), &alias) || !alias) Fail(kErrInvalidParams, "can't refer to " + path);
-	return (Handle) alias;
+	return (::Handle) alias;
 }
 
-std::string PathOf(Handle alias)
+std::string PathOf(::Handle alias)
 {
 	if (!alias) return "";
 	uint16 buf[2048] = {0};
@@ -157,7 +158,7 @@ void Put(PIActionDescriptor d, PIActionList list, DescriptorKeyID key, const jso
 		put([&] { sDesc->PutBookmark(d, key, b); }, [&] { sList->PutBookmark(list, b); });
 		CFRelease(b);
 #else
-		Handle a = Alias(Str(v, "_path"));
+		::Handle a = Alias(Str(v, "_path"));
 		put([&] { sDesc->PutAlias(d, key, a); }, [&] { sList->PutAlias(list, a); });
 		sHandle->Dispose(a);
 #endif
@@ -276,7 +277,7 @@ json::Value ValueAt(PIActionDescriptor d, PIActionList l, DescriptorKeyID key, u
 		o["_path"] = PathOf(b);
 		if (b) CFRelease(b);
 #else
-		Handle a = nullptr;
+		::Handle a = nullptr;
 		d ? sDesc->GetAlias(d, key, &a) : sList->GetAlias(l, index, &a);
 		o["_path"] = PathOf(a);
 		if (a) sHandle->Dispose(a);

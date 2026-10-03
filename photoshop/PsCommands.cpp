@@ -267,7 +267,7 @@ std::string BlendMode(const std::string& name)
 	Fail(kErrInvalidParams, "unknown blend mode '" + name + "' - e.g. normal, multiply, screen, overlay, softLight, darken, lighten, difference");
 }
 
-Value RGB(const Value& v)
+Value RgbColor(const Value& v)
 {
 	std::string hex = v.isString() ? v.asString() : "#000000";
 	if (!hex.empty() && hex[0] == '#') hex = hex.substr(1);
@@ -833,7 +833,7 @@ Value TextCreate(const Value& p)
 	style["_obj"] = "textStyle";
 	style["fontPostScriptName"] = p.str("font", "ArialMT");
 	style["size"] = Unit("pointsUnit", size * 72.0 / res);
-	style["color"] = RGB(p.get("color").isString() ? p.get("color") : Value("#000000"));
+	style["color"] = RgbColor(p.get("color").isString() ? p.get("color") : Value("#000000"));
 	Value range;
 	range["_obj"] = "textStyleRange";
 	range["from"] = 0;
@@ -906,7 +906,7 @@ Value EditFill(const Value& p)
 	std::string with = p.str("with", p.has("color") ? "color" : "foregroundColor");
 	if (with == "color") {
 		d["using"] = Enum("fillContents", "color");
-		d["color"] = RGB(p.get("color"));
+		d["color"] = RgbColor(p.get("color"));
 	}
 	else d["using"] = Enum("fillContents", with.c_str());   // black, white, gray, foregroundColor, backgroundColor, contentAware
 	d["opacity"] = Unit("percentUnit", p.num("opacity", 100));
