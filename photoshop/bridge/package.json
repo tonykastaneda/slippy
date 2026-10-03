@@ -1,0 +1,19 @@
+{
+  "name": "slippy-photoshop-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server for Slippy for Photoshop: agents connect here; the Photoshop panel connects in and runs the calls.",
+  "type": "module",
+  "main": "src/server.js",
+  "bin": { "slippy-photoshop": "src/server.js" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "ws": "^8.22.0",
+    "zod": "^3.25.0"
+  }
+}

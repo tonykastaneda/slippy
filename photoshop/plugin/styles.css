@@ -1,0 +1,67 @@
+/* Slippy's panel - the same layout as Slippy's Illustrator panel: Slippy and
+   the name over the agent + counts, activity bars, the connection row, the feed. */
+
+:root {
+	--bg: var(--uxp-host-background-color, #2b2b2b);
+	--text: var(--uxp-host-text-color, #e6e6e6);
+	--text2: var(--uxp-host-text-color-secondary, #a0a0a0);
+	--border: var(--uxp-host-border-color, #444);
+	--slippy: #92f607;
+	--read: #30b0c7;    /* teal */
+	--edit: #ff9500;    /* orange */
+	--error: #ff3b30;   /* red */
+	--bar-rest: rgba(160, 160, 160, 0.3);
+}
+
+body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; overflow: hidden; }
+.panel { padding: 0 12px 10px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+
+/* ---- header */
+.header { display: flex; align-items: center; justify-content: center; height: 112px; flex: none; }
+.mascot { position: relative; width: 110px; height: 110px; flex: none; }
+.titles { margin-left: 2px; }
+.title-row { display: flex; align-items: center; }
+.title { font-size: 20.5px; font-weight: bold; letter-spacing: -0.2px; }
+.badge { margin-left: 5px; padding: 1px 6px; border-radius: 9px; border: 1px solid var(--border);
+	font-size: 10.5px; color: var(--text2); }
+.counts-row { display: flex; align-items: center; margin-top: 4px; font-size: 11.25px; }
+.agent { width: 15px; height: 15px; border-radius: 8px; margin-right: 6px; display: none;
+	font-size: 9px; font-weight: bold; color: #fff; text-align: center; line-height: 15px; }
+
+/* ---- Slippy */
+.frog { position: absolute; left: 23px; bottom: 22px; width: 64px; height: 52px; }
+.frog .head { position: absolute; left: 0; bottom: 0; width: 64px; height: 39px; border-radius: 32px / 19.5px; background: var(--slippy); }
+.frog .bump { position: absolute; width: 27px; height: 27px; border-radius: 13.5px; background: var(--slippy); bottom: 25px; }
+.frog .bump.l { left: 5.4px; }
+.frog .bump.r { left: 31.6px; }
+.frog .eye { position: absolute; left: 50%; top: 50%; }
+.eye .awake { position: absolute; width: 11px; height: 12px; margin: -6px 0 0 -5.5px; border-radius: 6px; background: #111; }
+.eye .sleep { position: absolute; width: 12px; height: 6px; margin: -2px 0 0 -6px; border: 0 solid #111;
+	border-bottom-width: 2.6px; border-radius: 0 0 7px 7px; }
+.eye .happy { position: absolute; width: 7px; height: 7px; margin: -2px 0 0 -4.5px; border: 0 solid #111;
+	border-top-width: 3px; border-left-width: 3px; transform: rotate(45deg); }
+.eye .ouch { position: absolute; margin: -9px 0 0 -4px; font-size: 15px; font-weight: bold; color: #111; line-height: 17px; }
+.z { position: absolute; font-weight: bold; color: var(--text2); opacity: 0; }
+.ripple { position: absolute; left: 23px; bottom: 22px; width: 64px; height: 52px; border: 2px solid var(--read);
+	border-radius: 32px; box-sizing: border-box; pointer-events: none; }
+
+/* ---- activity bars */
+.bars { display: flex; align-items: flex-end; height: 46px; margin-top: 4px; flex: none; }
+.bar { flex: 1; margin: 0 1px; min-height: 2px; border-radius: 1px; background: var(--bar-rest); }
+
+/* ---- connection row */
+.status-row { display: flex; align-items: center; margin-top: 12px; flex: none; }
+.status { flex: 1; font-size: 10px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status .dot { display: inline-block; width: 6px; height: 6px; border-radius: 3px; margin-right: 5px; background: var(--text2); }
+.status.on .dot { background: var(--slippy); }
+.copy { font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text); }
+
+/* ---- feed */
+.feed { flex: 1; margin-top: 12px; overflow-y: auto; }
+.row { display: flex; align-items: center; height: 18px; margin-bottom: 4px; font-size: 11px; }
+.row .dot { width: 6px; height: 6px; border-radius: 3px; margin-right: 7px; flex: none; }
+.row .line { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.error .line { color: var(--error); }
+.row .time { margin-left: 8px; font-size: 10px; color: var(--text2); flex: none; }
+.empty { font-size: 11px; color: var(--text2); text-align: center; margin-top: 18px; }

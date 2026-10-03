@@ -1,0 +1,12 @@
+Slippy for Photoshop
+
+Design references (no code copied):
+- adb-mcp by Mike Chambers (MIT) - https://github.com/mikechambers/adb-mcp
+  The split into a local MCP bridge plus a UXP plug-in that dials out to it,
+  and batchPlay as the escape hatch.
+- PS-MCP-IMT (CC BY-NC 4.0) - ideas only; no code from it is used here.
+  Reporting "Photoshop is busy" instead of hanging when Photoshop is modal.
+
+The rules this plug-in follows (one call = one undo, writes run alone, never
+save by surprise, no dialogs, one error shape) come from building Slippy for
+Adobe Illustrator.
