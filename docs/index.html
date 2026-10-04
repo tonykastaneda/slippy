@@ -31,12 +31,16 @@
 		background: #16181c; font-size: 14px; }
 	.app a:hover { background: #1f2227; }
 	.app a span { color: var(--dim); float: right; }
+	/* The nav: the logo, small, centered at the top. */
+	nav { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: center; padding: 20px 16px; }
+	nav img { height: 26px; display: block; }
 	footer { margin-top: 36px; font-size: 13px; color: var(--dim); }
 	footer a { color: var(--dim); }
 	@media (max-width: 560px) { #frog, #zs { font-size: 7px; } }
 </style>
 </head>
 <body>
+<nav><a href="./" aria-label="Slippy"><img src="navlogo.svg" alt="Slippy"></a></nav>
 <div class="stage"><pre id="zs" aria-hidden="true"></pre><pre id="frog" aria-label="Slippy the frog"></pre></div>
 <h1>Slippy <span class="version">v0.1</span></h1>
 <p>An MCP for Illustrator and Photoshop</p>
