@@ -28,7 +28,7 @@ TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title} - Slippy docs</title>
 <meta name="description" content="{lede_attr}">
-<link rel="icon" href="../slippy.svg">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="docs.css">
 </head>
 <body>

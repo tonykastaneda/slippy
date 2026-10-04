@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Slippy</title>
 <meta name="description" content="Slippy lets AI agents hop into Adobe Illustrator and Photoshop.">
-<link rel="icon" href="slippy.svg">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
 	:root { --bg: #0b0c0e; --text: #e6e6e6; --dim: #7c7f87; --green: #92f607; }
 	* { box-sizing: border-box; }
@@ -28,36 +28,30 @@
 	.version { margin: 28px 0 10px; font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--dim); border: 1.5px solid #3a3d44;
 		border-radius: 5px; padding: 1px 7px; }
 	p { margin: 0; color: var(--dim); text-align: center; }
-	/* Side by side, each sharing the row (stacked on phones, below). */
-	.downloads { display: flex; gap: 16px; margin-top: 32px; justify-content: center; width: 100%; max-width: 800px; }
-	/* Each app: one button; open, its downloads. */
-	.app { border: 1px solid var(--green); border-radius: 10px; flex: 1 1 0; min-width: 0; align-self: flex-start; }
-	.app summary { list-style: none; cursor: pointer; padding: 14px 18px; font-size: 15px; font-weight: 600;
+	/* Side by side, sized to their text, centered - as on ghostty.org. */
+	.downloads { display: flex; gap: 12px; margin-top: 32px; justify-content: center; }
+	/* Each button as ghostty.org's: 16px regular, 10px 34px, 6px corners, a
+	   background fade on hover. Illustrator and Photoshop open a small menu of
+	   their downloads below, without moving anything. */
+	.app { position: relative; border: 1px solid var(--green); border-radius: 6px; transition: background-color 0.15s; }
+	.app summary { list-style: none; cursor: pointer; padding: 10px 34px; font-size: 16px; font-weight: 400; color: #f0f0f4;
 		text-align: center; user-select: none; }
 	.app summary::-webkit-details-marker { display: none; }
-	.app summary:hover { color: #fff; }
-	/* The docs: a plain button, gray outline. */
-	.app.docs-button { border-color: #4a4d55; color: var(--text); text-decoration: none; text-align: center; padding: 14px 0;
-		font-size: 15px; font-weight: 600; }
-	.app.docs-button:hover { border-color: #6b6f78; color: #fff; }
-	.app[open] { padding-bottom: 12px; }
-	.app[open] summary { padding-bottom: 8px; }
-	.app a { margin-left: 14px; margin-right: 14px; }
-	.app a { display: block; margin-top: 6px; padding: 8px 12px; border-radius: 6px; color: var(--text); text-decoration: none;
-		background: #16181c; font-size: 14px; }
-	.app a:hover { background: #1f2227; }
-	.app a span { color: var(--dim); float: right; }
-	/* The logo's burst: rainbow rings in his outline across the whole window. */
-	#burst { position: fixed; inset: 0; margin: 0; z-index: 10; pointer-events: none; overflow: hidden;
-		font: 700 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre; }
-	/* The nav: the logo, small, centered at the top. */
-	nav { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: center; padding: 20px 16px; }
-	nav button { padding: 0; border: 0; background: none; cursor: pointer; }
-	nav img { height: 26px; display: block; }
-	/* Phones: stacked, each the full width. */
+	.app:hover, .app[open] { background-color: rgba(146, 246, 7, 0.08); }
+	.app .menu { position: absolute; z-index: 5; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 260px;
+		padding: 6px; border: 1px solid #242428; border-radius: 8px; background: #16161a; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+	.app .menu a { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 5px;
+		color: var(--text); text-decoration: none; font-size: 14px; }
+	.app .menu a:hover { background: #242428; }
+	.app .menu a span { color: var(--dim); }
+	/* The docs: the same button, gray outline. */
+	.app.docs-button { border-color: #4c4c50; color: #f0f0f4; text-decoration: none; padding: 10px 34px; font-size: 16px; font-weight: 400; }
+	.app.docs-button:hover { background-color: #16161a; }
+	/* Phones: stacked, full width; the menu opens below in the flow. */
 	@media (max-width: 560px) {
-		.downloads { flex-direction: column; gap: 12px; max-width: 360px; }
-		.app { flex: none; width: 100%; align-self: stretch; }
+		.downloads { flex-direction: column; width: 100%; max-width: 360px; }
+		.app { width: 100%; text-align: center; }
+		.app .menu { position: static; transform: none; width: auto; margin: 0 8px 8px; box-shadow: none; }
 	}
 	footer { margin-top: 36px; font-size: 13px; color: var(--dim); }
 	footer a { color: var(--dim); }
@@ -74,15 +68,19 @@
 <div class="downloads" id="downloads">
 	<details class="app">
 		<summary>Illustrator</summary>
-		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-macos.zip">macOS <span>.aip</span></a>
-		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-x64.zip">Windows x64 <span>.aip</span></a>
-		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-ARM64.zip">Windows ARM64 <span>.aip</span></a>
+		<div class="menu">
+			<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-macos.zip">macOS <span>.aip</span></a>
+			<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-x64.zip">Windows x64 <span>.aip</span></a>
+			<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-ARM64.zip">Windows ARM64 <span>.aip</span></a>
+		</div>
 	</details>
 	<details class="app">
 		<summary>Photoshop</summary>
-		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-macos.zip">macOS <span>.plugin + .ccx</span></a>
-		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-x64.zip">Windows x64 <span>.8li + .ccx</span></a>
-		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-ARM64.zip">Windows ARM64 <span>.8li + .ccx</span></a>
+		<div class="menu">
+			<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-macos.zip">macOS <span>.plugin + .ccx</span></a>
+			<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-x64.zip">Windows x64 <span>.8li + .ccx</span></a>
+			<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-ARM64.zip">Windows ARM64 <span>.8li + .ccx</span></a>
+		</div>
 	</details>
 	<a class="app docs-button" href="docs/">Documentation</a>
 </div>
@@ -404,6 +402,10 @@
 	// A download click: Slippy wakes, hops for joy, and rings in his outline
 	// radiate out from him - the panels' ripple.
 	document.querySelectorAll(".app a").forEach((a) => a.addEventListener("click", () => addEffect(false)));
+	// Download menus: one open at a time; a click anywhere else closes it.
+	const menus = document.querySelectorAll("details.app");
+	menus.forEach((d) => d.addEventListener("toggle", () => { if (d.open) menus.forEach((o) => { if (o !== d) o.open = false; }); }));
+	document.addEventListener("click", (e) => { menus.forEach((d) => { if (d.open && !d.contains(e.target)) d.open = false; }); });
 	// Slippy himself: a click on him (not the space around him) wakes him with
 	// the download ripple. The pointer turns to a hand over him.
 	function onSlippy(ev) {
