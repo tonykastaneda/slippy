@@ -15,7 +15,7 @@
 	<key>CFBundleSignature</key>
 	<string>8BIM</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.0.0</string><!-- set from VERSION at build time -->
 	<key>NSHumanReadableCopyright</key>
 	<string>Slippy for Photoshop</string>
 </dict>

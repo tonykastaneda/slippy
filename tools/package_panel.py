@@ -6,6 +6,7 @@ tools/agent_logos.py, as the native panel draws them), the rest in gray.
 
     python3 tools/package_panel.py <output .ccx>
 """
+import json
 import os
 import sys
 import zipfile
@@ -16,6 +17,8 @@ from agent_logos import COLORS   # noqa: E402  brand colors, as the native panel
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PANEL = os.path.join(ROOT, "photoshop", "panel")
 AGENTS = os.path.join(ROOT, "shared", "resources", "agents")
+with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
+    VERSION = f.read().strip()
 
 
 def main():
@@ -29,7 +32,14 @@ def main():
                 if name.startswith("."):
                     continue
                 path = os.path.join(folder, name)
-                z.write(path, os.path.relpath(path, PANEL).replace(os.sep, "/"))
+                rel = os.path.relpath(path, PANEL).replace(os.sep, "/")
+                if rel == "manifest.json":   # the version comes from VERSION
+                    with open(path, encoding="utf-8") as f:
+                        manifest = json.load(f)
+                    manifest["version"] = VERSION
+                    z.writestr(rel, json.dumps(manifest, indent="\t") + "\n")
+                    continue
+                z.write(path, rel)
         for name in sorted(os.listdir(AGENTS)):
             if name.endswith(".svg"):
                 agent = name[:-4].replace("_", " ")

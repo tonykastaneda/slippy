@@ -9,7 +9,10 @@
 # Studio 2022 (C++ workload, Windows 10 SDK) and Python 3 on PATH.
 
 cmake_minimum_required(VERSION 3.21)
-project(Slippy VERSION 0.1.0 LANGUAGES CXX RC)
+# The version lives in one place, VERSION at the repo's root.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" SLIPPY_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+project(Slippy VERSION ${SLIPPY_VERSION} LANGUAGES CXX RC)
 
 if(NOT WIN32)
 	message(FATAL_ERROR "CMakeLists.txt is the Windows build. On macOS run `make` (Illustrator) or `make photoshop`.")

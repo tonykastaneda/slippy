@@ -103,16 +103,24 @@ json::Value Pathfind(const json::Value& p, PathfinderOp AIPathfinderSuite::* op,
 	data.fSelectedArtCount = (ai::int32) arts.size();
 	AIFilterMessage message;
 	memset(&message, 0, sizeof message);   // "not used": all fields NULL
-	// The result replaces the inputs among their parent's children; fOutputArt
-	// is left empty (30.2), so find what's new there.
+	// fOutputArt is left empty (30.2), so find the result as what's new among
+	// the inputs' parents' children. When the inputs were all of a group,
+	// Illustrator replaces the whole group with the result, one level up - so
+	// watch every container up to the layer, and skip any that's gone.
 	std::vector<AIArtHandle> parents, before;
 	for (AIArtHandle a : arts) {
 		AIArtHandle parent = nullptr;
-		if (!sAIArt->GetArtParent(a, &parent) && parent && std::find(parents.begin(), parents.end(), parent) == parents.end()) parents.push_back(parent);
+		for (sAIArt->GetArtParent(a, &parent); parent; ) {
+			if (std::find(parents.begin(), parents.end(), parent) == parents.end()) parents.push_back(parent);
+			AIArtHandle up = nullptr;
+			if (sAIArt->GetArtParent(parent, &up)) break;
+			parent = up;
+		}
 	}
 	auto children = [&] {
 		std::vector<AIArtHandle> out;
 		for (AIArtHandle parent : parents) {
+			if (!sAIArt->ValidArt(parent, true)) continue;   // the group the result replaced
 			AIArtHandle c = nullptr;
 			for (sAIArt->GetArtFirstChild(parent, &c); c; sAIArt->GetArtSibling(c, &c)) out.push_back(c);
 		}

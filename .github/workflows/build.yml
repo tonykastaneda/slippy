@@ -192,6 +192,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the tag matches VERSION
+        run: |
+          want="v$(tr -d '[:space:]' < VERSION)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match VERSION ($want). Set VERSION, commit, then tag."
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v5
         with:
           path: dist

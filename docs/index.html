@@ -68,7 +68,7 @@
 <nav><button type="button" id="logo" aria-label="Slippy - play the burst"><img src="navlogo.svg" alt=""></button></nav>
 <div class="stage"><pre id="zs" aria-hidden="true"></pre><pre id="frog" aria-label="Slippy the frog"></pre></div>
 <h1 class="visually-hidden">Slippy</h1>
-<span class="version">v0.1</span>
+<span class="version" id="version">v0.1.1</span>
 <p>Let agents hop in</p>
 
 <div class="downloads" id="downloads">
@@ -394,6 +394,12 @@
 		if (bParam !== null) { celebrateAt = +still - +bParam; effects.push({ at: celebrateAt, burst: true }); }
 		draw(+still); drawBurst(+still); return;
 	}
+	// The version badge: the latest release on GitHub, so publishing a release
+	// updates it (the text in the page is only a fallback).
+	fetch("https://api.github.com/repos/tonykastaneda/slippy/releases/latest")
+		.then((r) => (r.ok ? r.json() : null))
+		.then((rel) => { if (rel && /^v\d/.test(rel.tag_name || "")) document.getElementById("version").textContent = rel.tag_name; })
+		.catch(() => {});
 	let start = performance.now();
 	// A download click: Slippy wakes, hops for joy, and rings in his outline
 	// radiate out from him - the panels' ripple.

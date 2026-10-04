@@ -17,11 +17,11 @@
 	<key>CFBundlePacslippyType</key>
 	<string>ARPI</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.0.0</string><!-- set from VERSION at build time -->
 	<key>CFBundleSignature</key>
 	<string>ART5</string>
 	<key>CFBundleVersion</key>
-	<string>0.1.0</string>
+	<string>0.0.0</string><!-- set from VERSION at build time -->
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
