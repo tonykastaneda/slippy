@@ -71,6 +71,7 @@
 	const pre = document.getElementById("frog");
 	const zpre = document.getElementById("zs");
 	const Z_TOP = -10, Z_BOTTOM = 10;
+	let celebrateAt = -1e9;   // when a download was clicked (ms into the animation)
 	const still = new URLSearchParams(location.search).get("t");   // ?t=<ms>: one moment, still
 	// Reduce Motion: smaller moves (a third, as in the plug-ins' panels), not none.
 	const MOTION = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.35 : 1;
@@ -164,6 +165,19 @@
 
 	function draw(ms) {
 		const p = pose(ms);
+		const since = ms - celebrateAt;
+		if (since >= 0 && since < 1800) {
+			p.asleep = false; p.happy = true; p.eyes = 1;
+			const h = clamp(since / 650, 0, 1);
+			p.hop = Math.sin(Math.PI * h) * 0.1;
+			p.sq = h < 0.12 ? 1 - 0.1 * Math.sin(Math.PI * h / 0.12) : h > 0.88 ? 1 - 0.12 * Math.sin(Math.PI * (h - 0.88) / 0.12) : 1.04;
+		}
+		// Ripples: two rings, a beat apart, each growing to 1.6x his size and fading.
+		const rings = [];
+		for (const delay of [0, 260]) {
+			const t = (since - delay) / 1000;
+			if (t > 0 && t < 1) rings.push({ k: 1 + 0.6 * (1 - Math.pow(1 - t, 3)), a: 0.9 * (1 - t) });
+		}
 		p.hop *= MOTION; p.sq = 1 - (1 - p.sq) * MOTION; p.breath *= MOTION;
 		const W = 0.62;                      // his width, as a share of the grid's width
 		const sx = 1 + (1 - p.sq) * 0.6, sy = p.sq * (1 + p.breath);
@@ -192,6 +206,14 @@
 				const y = ((base - lift - (r + 0.5)) * cellH) / sy;
 				const z = height(x, y);
 				let ch = " ", kind = "";
+				if (z < 0 && rings.length) {
+					let a = 0;
+					for (const g of rings) {
+						const at = (px, py) => height(0.5 + (px - 0.5) / g.k, 0.41 + (py - 0.41) / g.k) >= 0;
+						if (at(x, y) && (!at(x + cellW, y) || !at(x - cellW, y) || !at(x, y + cellH) || !at(x, y - cellH))) a = Math.max(a, g.a);
+					}
+					if (a > 0.02) { line += `<b style="color: rgba(146, 246, 7, ${a.toFixed(2)})">@</b>`; continue; }
+				}
 				if (z >= 0) {
 					// The outline: a band about three characters thick - how far in
 					// from his edge this cell is, in character widths (1, 2, 3; 0 = deeper).
@@ -260,8 +282,12 @@
 	}
 
 	zpre.style.bottom = `${ROWS - Z_BOTTOM - 1}em`;   // the layer's last row sits on grid row Z_BOTTOM
-	if (still !== null) { draw(+still); return; }
+	const cParam = new URLSearchParams(location.search).get("c");
+	if (still !== null) { if (cParam !== null) celebrateAt = +still - +cParam; draw(+still); return; }
 	let start = performance.now();
+	// A download click: Slippy wakes, hops for joy, and rings in his outline
+	// radiate out from him - the panels' ripple.
+	document.querySelectorAll(".app a").forEach((a) => a.addEventListener("click", () => { celebrateAt = performance.now() - start; }));
 	function frame(now) { draw(now - start); requestAnimationFrame(frame); }
 	requestAnimationFrame(frame);
 })();
