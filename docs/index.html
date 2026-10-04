@@ -92,19 +92,26 @@
 	const zpre = document.getElementById("zs");
 	const Z_TOP = -10, Z_BOTTOM = 10;
 	let celebrateAt = -1e9;   // when a download was clicked (ms into the animation)
-	let burstAt = -1e9;       // when the logo was clicked: the full-window rainbow burst
+	// Every ripple and burst still playing, each {at, burst}: a new click adds
+	// one, on top of the others, and each plays out on its own.
+	const effects = [];
+	const RIPPLE_MS = 1300;
+	function addEffect(burst) {
+		celebrateAt = performance.now() - start;   // he hops for the latest
+		effects.push({ at: celebrateAt, burst });
+	}
 	const burstPre = document.getElementById("burst");
 	const BURST_MS = 2400, BURST_RINGS = 6, BURST_GAP = 170;
 
 	// The burst: rings in his outline growing from him past the window's
 	// edges, a beat apart, each a moving rainbow, fading at the end.
 	function drawBurst(ms) {
-		// The logo's burst, or else the small green ripple (a download, a click on him).
-		const sinceBurst = ms - burstAt, sinceRipple = ms - celebrateAt;
-		const burst = sinceBurst >= 0 && sinceBurst < BURST_MS + BURST_RINGS * BURST_GAP;
-		const ripple = !burst && sinceRipple >= 0 && sinceRipple < 1300;
-		if (!burst && !ripple) { if (burstPre.innerHTML) burstPre.innerHTML = ""; return; }
-		const since = burst ? sinceBurst : sinceRipple;
+		// Drop the finished ones; nothing left, nothing to draw.
+		for (let i = effects.length - 1; i >= 0; i--) {
+			const life = effects[i].burst ? BURST_MS + BURST_RINGS * BURST_GAP : RIPPLE_MS;
+			if (ms - effects[i].at > life) effects.splice(i, 1);
+		}
+		if (!effects.length) { if (burstPre.innerHTML) burstPre.innerHTML = ""; return; }
 		// Character cell size, and where his middle is on screen.
 		const probe = drawBurst.cell || (drawBurst.cell = (() => {
 			const sp = document.createElement("span"); sp.textContent = "M".repeat(10);
@@ -121,17 +128,20 @@
 		const cols = Math.ceil(innerWidth / probe.w), rows = Math.ceil(innerHeight / probe.h);
 		const reach = Math.hypot(innerWidth, innerHeight) * unitX * 1.3;   // how big the last ring must get
 		const rings = [];
-		if (ripple) for (const delay of [0, 260]) {   // two rings, a beat apart, to 1.6x his size, fading
+		for (const fx of effects) {
+		const since = ms - fx.at;
+		if (!fx.burst) for (const delay of [0, 260]) {   // two rings, a beat apart, to 1.6x his size, fading
 			const t = (since - delay) / 1000;
 			if (t > 0 && t < 1) rings.push({ k: 1 + 0.6 * (1 - Math.pow(1 - t, 3)), a: 0.9 * (1 - t), green: true, band: 1 });
 		}
-		if (burst) for (let i = 0; i < BURST_RINGS; i++) {
+		if (fx.burst) for (let i = 0; i < BURST_RINGS; i++) {
 			const t = (since - i * BURST_GAP) / BURST_MS;
 			if (t <= 0 || t >= 1) continue;
 			// Slow by him, faster as it goes: it lingers thick around him, then
 			// races out thinning to a single character at the window's edges.
 			const k = 1 + reach * Math.pow(t, 1.45);
 			rings.push({ k, a: 0.85 * (t < 0.8 ? 1 : (1 - t) / 0.2), hue: (i * 50 + since * 0.25) % 360, band: 1 + 2 * Math.pow(1 - t, 1.3) });
+		}
 		}
 		let out = "";
 		for (let r = 0; r < rows; r++) {
@@ -369,14 +379,14 @@
 	const cParam = new URLSearchParams(location.search).get("c");
 	const bParam = new URLSearchParams(location.search).get("b");
 	if (still !== null) {
-		if (cParam !== null) celebrateAt = +still - +cParam;
-		if (bParam !== null) { celebrateAt = burstAt = +still - +bParam; }
+		if (cParam !== null) { celebrateAt = +still - +cParam; effects.push({ at: celebrateAt, burst: false }); }
+		if (bParam !== null) { celebrateAt = +still - +bParam; effects.push({ at: celebrateAt, burst: true }); }
 		draw(+still); drawBurst(+still); return;
 	}
 	let start = performance.now();
 	// A download click: Slippy wakes, hops for joy, and rings in his outline
 	// radiate out from him - the panels' ripple.
-	document.querySelectorAll(".app a").forEach((a) => a.addEventListener("click", () => { celebrateAt = performance.now() - start; burstAt = -1e9; }));
+	document.querySelectorAll(".app a").forEach((a) => a.addEventListener("click", () => addEffect(false)));
 	// Slippy himself: a click on him (not the space around him) wakes him with
 	// the download ripple. The pointer turns to a hand over him.
 	function onSlippy(ev) {
@@ -387,12 +397,9 @@
 		return bodyHeight(x, y) >= 0;
 	}
 	pre.addEventListener("mousemove", (ev) => { pre.style.cursor = onSlippy(ev) ? "pointer" : ""; });
-	pre.addEventListener("click", (ev) => { if (onSlippy(ev)) { celebrateAt = performance.now() - start; burstAt = -1e9; } });
+	pre.addEventListener("click", (ev) => { if (onSlippy(ev)) addEffect(false); });
 	// The logo: the full-window rainbow burst.
-	document.getElementById("logo").addEventListener("click", () => {
-		celebrateAt = performance.now() - start;
-		burstAt = celebrateAt;
-	});
+	document.getElementById("logo").addEventListener("click", () => addEffect(true));
 	function frame(now) { draw(now - start); drawBurst(now - start); requestAnimationFrame(frame); }
 	requestAnimationFrame(frame);
 })();
