@@ -45,6 +45,8 @@
 		}
 
 		setAgent(name) {
+			if (name === this.agent) return;   // redraw only when the agent changes (no flicker per call)
+			this.agent = name;
 			if (!name) { this.agentEl.style.display = "none"; return; }
 			this.agentEl.style.display = "inline-block";
 			this.agentEl.title = `Last call from ${name}`;

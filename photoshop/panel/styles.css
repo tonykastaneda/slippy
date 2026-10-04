@@ -42,14 +42,13 @@ body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-fa
 .frog .bump { position: absolute; width: 29.1px; height: 29.1px; border-radius: 14.55px; background: var(--slippy); bottom: 28.15px; }
 .frog .bump.l { left: 5.9px; }
 .frog .bump.r { left: 35px; }
-.frog .eye { position: absolute; left: 50%; top: 50%; }
-.eye .awake { position: absolute; width: 12.2px; height: 13.3px; margin: -6.65px 0 0 -6.1px; border-radius: 6.65px; background: #000; }
-.eye .sleep { position: absolute; width: 13px; height: 6px; margin: -2px 0 0 -6.5px; border: 0 solid #000;
-	border-bottom-width: 2.8px; border-radius: 0 0 7px 7px; }
-.eye .happy { position: absolute; width: 7.5px; height: 7.5px; margin: -2px 0 0 -4.8px; border: 0 solid #000;
-	border-top-width: 3px; border-left-width: 3px; transform: rotate(45deg); }
-.eye .ouch { position: absolute; margin: -9px 0 0 -4px; font-size: 16px; font-weight: bold; color: #000; line-height: 17px; }
-.z { position: absolute; font-weight: 800; color: var(--text); opacity: 0; }
+/* Each eye: a 16 x 16 SVG (mascot.js draws the face) centered in its bump;
+   glances and blinks transform it about its middle. */
+.frog .eye { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; }
+.frog .eye svg { display: block; }
+/* Z's rise from just past his left eye; mascot.js fades them by color. */
+.z { position: absolute; left: 46px; bottom: 58px; font-weight: 800; color: transparent; line-height: 1; pointer-events: none; }
+.mascot { cursor: pointer; }
 .ripple { position: absolute; left: 33.4px; bottom: 5.5px; width: 70px; height: 57.3px; transform-origin: 50% 60%; pointer-events: none; }
 
 /* ---- the ten group bars: 3 tall at rest, labels under them */
