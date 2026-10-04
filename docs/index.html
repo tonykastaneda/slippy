@@ -32,11 +32,8 @@
 	/* Each app: one button; open, its downloads. */
 	.app { border: 1px solid var(--green); border-radius: 10px; min-width: 250px; align-self: flex-start; }
 	.app summary { list-style: none; cursor: pointer; padding: 14px 18px; font-size: 15px; font-weight: 600;
-		display: flex; justify-content: space-between; align-items: center; user-select: none; }
+		text-align: center; user-select: none; }
 	.app summary::-webkit-details-marker { display: none; }
-	.app summary::after { content: ""; width: 7px; height: 7px; border: solid var(--dim); border-width: 0 1.5px 1.5px 0;
-		transform: rotate(45deg) translateY(-2px); transition: transform 0.15s; }
-	.app[open] summary::after { transform: rotate(225deg) translate(-1px, -1px); }
 	.app summary:hover { color: #fff; }
 	.app[open] { padding-bottom: 12px; }
 	.app[open] summary { padding-bottom: 8px; }
