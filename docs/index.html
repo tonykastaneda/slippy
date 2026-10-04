@@ -15,6 +15,10 @@
 	#frog { margin: 0; font: 600 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #3b4a36;
 		white-space: pre; user-select: none; letter-spacing: 0; }
 	#frog b { color: var(--green); font-weight: 600; }
+	/* The Z's float above the art in their own layer, so they take no room. */
+	.stage { position: relative; }
+	#zs { position: absolute; left: 0; margin: 0; font: 600 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+		white-space: pre; pointer-events: none; color: var(--green); }
 	h1 { margin: 28px 0 4px; font-size: 32px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px; }
 	/* The version, boxed as in Slippy's panels. */
 	.version { font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--dim); border: 1.5px solid #3a3d44;
@@ -29,11 +33,11 @@
 	.app a span { color: var(--dim); float: right; }
 	footer { margin-top: 36px; font-size: 13px; color: var(--dim); }
 	footer a { color: var(--dim); }
-	@media (max-width: 560px) { #frog { font-size: 7px; } }
+	@media (max-width: 560px) { #frog, #zs { font-size: 7px; } }
 </style>
 </head>
 <body>
-<pre id="frog" aria-label="Slippy the frog"></pre>
+<div class="stage"><pre id="zs" aria-hidden="true"></pre><pre id="frog" aria-label="Slippy the frog"></pre></div>
 <h1>Slippy <span class="version">v0.1</span></h1>
 <p>An MCP for Illustrator and Photoshop</p>
 
@@ -65,6 +69,8 @@
 	const RAMP = " ·:~=+ox*%$@";        // dark -> bright
 	const LOOP = 14000;                  // ms for the whole story
 	const pre = document.getElementById("frog");
+	const zpre = document.getElementById("zs");
+	const Z_TOP = -10, Z_BOTTOM = 10;
 	const still = new URLSearchParams(location.search).get("t");   // ?t=<ms>: one moment, still
 	// Reduce Motion: smaller moves (a third, as in the plug-ins' panels), not none.
 	const MOTION = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.35 : 1;
@@ -126,16 +132,22 @@
 		return Math.abs(dx) < t / 2;
 	}
 
-	// The Z's this frame: small, medium, large rising up and left from his left
-	// eye, each fading in after the one before, all fading out, again.
+	// The Z's this frame: small, medium, large along a diagonal from just above
+	// his left eye up and to the left, each fading in after the one before,
+	// all drifting along it, then fading out, again. In grid cells (rows can
+	// be negative: above the art).
+	const Z_FROM = [32.5, 9.6], Z_TO = [8.5, -6];
 	function zs(ms, asleep) {
 		if (!asleep) return [];
 		const cycle = (ms % 4200) / 4200;
-		const sizes = [[28, 4, 4], [16, 1, 5], [1, 2, 6]];   // [left col, top row, rows tall]: off to his upper left
 		const out = [];
-		sizes.forEach(([c, r, h], k) => {
+		[[0.1, 4], [0.47, 5], [0.84, 6]].forEach(([along, h], k) => {
 			const on = clamp((cycle - k * 0.2) / 0.12, 0, 1) * clamp((0.94 - cycle) / 0.12, 0, 1);
-			if (on > 0.02) out.push({ c, r: r - cycle * 0.8, h, w: h * ASPECT * 0.95, on });
+			if (on <= 0.02) return;
+			const a = along + cycle * 0.06;
+			const cx = Z_FROM[0] + (Z_TO[0] - Z_FROM[0]) * a, cy = Z_FROM[1] + (Z_TO[1] - Z_FROM[1]) * a;
+			const w = h * ASPECT * 0.95;
+			out.push({ c: cx - w / 2, r: cy - h / 2, h, w, on });
 		});
 		return out;
 	}
@@ -177,10 +189,6 @@
 				const y = ((base - lift - (r + 0.5)) * cellH) / sy;
 				const z = height(x, y);
 				let ch = " ", kind = "";
-				if (z < 0 && zList.length) {
-					const a = zCell(zList, r, c);
-					if (a) { line += `<b style="color: rgba(146, 246, 7, ${a.toFixed(2)})">@</b>`; continue; }
-				}
 				if (z >= 0) {
 					// The outline: a band about three characters thick - how far in
 					// from his edge this cell is, in character widths (1, 2, 3; 0 = deeper).
@@ -220,6 +228,20 @@
 			out += line + "\n";
 		}
 		pre.innerHTML = out;
+		// The Z layer: rows Z_TOP..Z_BOTTOM of the grid (above the art), its
+		// bottom lined up with grid row Z_BOTTOM.
+		let zo = "";
+		if (zList.length) {
+			for (let r = Z_TOP; r <= Z_BOTTOM; r++) {
+				let line = "";
+				for (let c = 0; c < COLS; c++) {
+					const a = zCell(zList, r, c);
+					line += a ? `<span style="opacity: ${a.toFixed(2)}">@</span>` : " ";
+				}
+				zo += line.replace(/\s+$/, "") + "\n";
+			}
+		}
+		zpre.innerHTML = zo;
 	}
 
 	// Puts a green character at visible column c of a line that may hold tags.
@@ -234,6 +256,7 @@
 		return line;
 	}
 
+	zpre.style.bottom = `${ROWS - Z_BOTTOM - 1}em`;   // the layer's last row sits on grid row Z_BOTTOM
 	if (still !== null) { draw(+still); return; }
 	let start = performance.now();
 	function frame(now) { draw(now - start); requestAnimationFrame(frame); }
