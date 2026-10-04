@@ -95,8 +95,10 @@
 		// Character cell size, and where his middle is on screen.
 		const probe = drawBurst.cell || (drawBurst.cell = (() => {
 			const sp = document.createElement("span"); sp.textContent = "M".repeat(10);
-			sp.style.font = getComputedStyle(burstPre).font; sp.style.position = "absolute"; sp.style.visibility = "hidden";
-			document.body.appendChild(sp); const r = sp.getBoundingClientRect(); sp.remove();
+			// Measured inside the burst layer itself, so it has its exact font (Firefox
+			// reports no "font" shorthand to copy).
+			sp.style.position = "absolute"; sp.style.visibility = "hidden";
+			burstPre.appendChild(sp); const r = sp.getBoundingClientRect(); sp.remove();
 			return { w: r.width / 10, h: parseFloat(getComputedStyle(burstPre).fontSize) };
 		})());
 		const fr = pre.getBoundingClientRect();
