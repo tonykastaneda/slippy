@@ -29,13 +29,17 @@
 		border-radius: 5px; padding: 1px 7px; }
 	p { margin: 0; color: var(--dim); text-align: center; }
 	/* Side by side, each sharing the row (stacked on phones, below). */
-	.downloads { display: flex; gap: 16px; margin-top: 32px; justify-content: center; width: 100%; max-width: 532px; }
+	.downloads { display: flex; gap: 16px; margin-top: 32px; justify-content: center; width: 100%; max-width: 800px; }
 	/* Each app: one button; open, its downloads. */
 	.app { border: 1px solid var(--green); border-radius: 10px; flex: 1 1 0; min-width: 0; align-self: flex-start; }
 	.app summary { list-style: none; cursor: pointer; padding: 14px 18px; font-size: 15px; font-weight: 600;
 		text-align: center; user-select: none; }
 	.app summary::-webkit-details-marker { display: none; }
 	.app summary:hover { color: #fff; }
+	/* The docs: a plain button, gray outline. */
+	.app.docs-button { border-color: #4a4d55; color: var(--text); text-decoration: none; text-align: center; padding: 14px 0;
+		font-size: 15px; font-weight: 600; }
+	.app.docs-button:hover { border-color: #6b6f78; color: #fff; }
 	.app[open] { padding-bottom: 12px; }
 	.app[open] summary { padding-bottom: 8px; }
 	.app a { margin-left: 14px; margin-right: 14px; }
@@ -80,6 +84,7 @@
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-x64.zip">Windows x64 <span>.8li + .ccx</span></a>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-ARM64.zip">Windows ARM64 <span>.8li + .ccx</span></a>
 	</details>
+	<a class="app docs-button" href="docs/">Documentation</a>
 </div>
 
 <footer><a href="docs/">Docs</a> · <a href="https://github.com/tonykastaneda/slippy">GitHub</a></footer>
