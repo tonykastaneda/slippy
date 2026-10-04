@@ -1,0 +1,77 @@
+/* Slippy's docked panel, laid out to match the native panel (shared/
+   SlippyPanelView.mm): the same points, fonts and grays. Pad 16; Slippy in a
+   110 box at the top; the name (Helvetica Bold 20.5) over the agent's logo and
+   the counts (Helvetica 11.25); ten group bars at 130-176; the connection row
+   at 190; the feed from 228 (rows 18 + 4). */
+
+:root {
+	--bg: var(--uxp-host-background-color, #323232);
+	--text: var(--uxp-host-text-color, #e8e8e8);
+	--slippy: #92f607;
+	--read: #40c8e0;
+	--edit: #ff9f0a;
+	--error: #ff453a;
+	--system: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+}
+
+body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--system); overflow: hidden; }
+.panel { padding: 0 16px 8px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+
+/* Secondary and tertiary text, as macOS draws them: the label color, fainter. */
+.secondary { opacity: 0.55; }
+.tertiary { opacity: 0.3; }
+
+/* ---- header: Slippy, then the name and version over the agent and counts,
+   centered as a group from his left edge (34 into his box) to the badge */
+.header { display: flex; justify-content: center; height: 118px; flex: none; }
+.mascot { position: relative; width: 110px; height: 110px; margin-top: 4px; margin-left: -34px; flex: none; }
+.titles { margin-left: 10px; padding-top: 55px; }
+.title-row { display: flex; align-items: center; height: 24px; }
+.title { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 20.5px; font-weight: bold; line-height: 24px; }
+.badge { margin-left: 7px; height: 19px; padding: 0 6px 0 7.7px; border: 1.25px solid currentColor; border-radius: 3.5px;
+	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 13.75px; line-height: 19px; opacity: 0.35; }
+.counts-row { display: flex; align-items: center; height: 18px; margin-top: 5px;
+	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 11.25px; }
+.agent { width: 17.5px; height: 17.5px; margin: 0 5.6px 0 0.5px; display: none; flex: none; }
+.agent img { width: 17.5px; height: 17.5px; }
+.agent.letter { border-radius: 9px; background: #8e8e93; color: #fff; font-size: 9px; font-weight: bold; text-align: center; line-height: 17.5px; }
+
+/* ---- Slippy: 70 wide (0.64 of his box), low and right in it */
+.frog { position: absolute; left: 33.4px; bottom: 5.5px; width: 70px; height: 57.3px; transform-origin: 50% 100%; }
+.frog .head { position: absolute; left: 0; bottom: 0; width: 70px; height: 42.7px; border-radius: 35px / 21.35px; background: var(--slippy); }
+.frog .bump { position: absolute; width: 29.1px; height: 29.1px; border-radius: 14.55px; background: var(--slippy); bottom: 28.15px; }
+.frog .bump.l { left: 5.9px; }
+.frog .bump.r { left: 35px; }
+.frog .eye { position: absolute; left: 50%; top: 50%; }
+.eye .awake { position: absolute; width: 12.2px; height: 13.3px; margin: -6.65px 0 0 -6.1px; border-radius: 6.65px; background: #000; }
+.eye .sleep { position: absolute; width: 13px; height: 6px; margin: -2px 0 0 -6.5px; border: 0 solid #000;
+	border-bottom-width: 2.8px; border-radius: 0 0 7px 7px; }
+.eye .happy { position: absolute; width: 7.5px; height: 7.5px; margin: -2px 0 0 -4.8px; border: 0 solid #000;
+	border-top-width: 3px; border-left-width: 3px; transform: rotate(45deg); }
+.eye .ouch { position: absolute; margin: -9px 0 0 -4px; font-size: 16px; font-weight: bold; color: #000; line-height: 17px; }
+.z { position: absolute; font-weight: 800; color: var(--text); opacity: 0; }
+.ripple { position: absolute; left: 33.4px; bottom: 5.5px; width: 70px; height: 57.3px; transform-origin: 50% 60%; pointer-events: none; }
+
+/* ---- the ten group bars: 3 tall at rest, labels under them */
+.bars { display: flex; height: 46px; margin-top: 12px; flex: none; }
+.slot { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.bar { width: 55%; height: 3px; border-radius: 1.5px; background: var(--text); opacity: 0.3; }
+.bar-label { height: 11px; margin-top: 2px; font-size: 8px; font-weight: 500; line-height: 11px; opacity: 0.3; white-space: nowrap; }
+
+/* ---- the connection row: the status, and a small rounded button */
+.status-row { display: flex; align-items: center; height: 22px; margin-top: 14px; flex: none; }
+.status { flex: 1; min-width: 0; margin-right: 8px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.55; }
+.status .dot { display: none; }
+/* A div, not a <button>: UXP restyles buttons (bigger, bold). This is macOS's small rounded button. */
+.copy { flex: none; height: 20px; padding: 0 8px; border-radius: 5px; font-family: var(--system); font-size: 11px; font-weight: normal;
+	line-height: 20px; color: var(--text); background: rgba(128, 128, 128, 0.28); cursor: default; }
+.copy:active { background: rgba(128, 128, 128, 0.45); }
+
+/* ---- the feed */
+.feed { flex: 1; margin-top: 16px; overflow-y: auto; }
+.row { position: relative; height: 18px; margin-bottom: 4px; font-size: 11px; }
+.row .dot { position: absolute; left: 0; top: 6px; width: 6px; height: 6px; border-radius: 3px; }
+.row .line { position: absolute; left: 12px; right: 56px; top: 1px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.error .line { color: var(--error); }
+.row .time { position: absolute; right: 0; top: 1px; width: 52px; text-align: right; font-size: 10px; line-height: 16px; opacity: 0.3; }
+.empty { font-size: 11px; text-align: center; margin-top: 18px; opacity: 0.55; }

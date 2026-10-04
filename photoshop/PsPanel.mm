@@ -138,8 +138,10 @@ void PanelInit(PanelCallbacks callbacks)
 		gController = [SlippyPsPanelController new];
 		[NSUserDefaults.standardUserDefaults registerDefaults:@{kOpenKey: @YES}];
 		WatchMenu();
-		// Open it if it was open when Photoshop last quit (and on the very first launch).
-		if ([NSUserDefaults.standardUserDefaults boolForKey:kOpenKey]) slippy::platform::MainThreadAfter(2, [] { PanelShow(); });
+		// Open it if it was open when Photoshop last quit (and on the very first
+		// launch) - unless the docked panel turns up first.
+		if ([NSUserDefaults.standardUserDefaults boolForKey:kOpenKey])
+			slippy::platform::MainThreadAfter(6, [] { if (!gCallbacks.docked || !gCallbacks.docked()) PanelShow(); });
 	}
 }
 
@@ -148,6 +150,13 @@ void PanelShow()
 	@autoreleasepool {
 		Build();
 		[gWindow orderFront:nil];
+	}
+}
+
+void PanelHide()
+{
+	@autoreleasepool {
+		[gWindow orderOut:nil];   // its "open" setting stays, for when the docked panel isn't there
 	}
 }
 

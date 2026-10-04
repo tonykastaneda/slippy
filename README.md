@@ -17,9 +17,11 @@ each call as it happens in plain English.
 | | macOS | Windows (x64, ARM64) | Port | Docs |
 |---|---|---|---|---|
 | **Slippy for Illustrator** | `Slippy.aip` | `Slippy.aip` | 7331 | [illustrator/](illustrator/README.md) |
-| **Slippy for Photoshop** | `Slippy.plugin` | `Slippy.8li` | 7332 | [photoshop/](photoshop/README.md) |
+| **Slippy for Photoshop** | `Slippy.plugin` + `Slippy.ccx` | `Slippy.8li` + `Slippy.ccx` | 7332 | [photoshop/](photoshop/README.md) |
 
 They're separate installs, each with its own token, and they run side by side.
+Slippy for Photoshop's back end is C++ like Illustrator's; its docked panel
+(`Slippy.ccx`) is a small UXP plug-in, since Photoshop's C++ SDK can't dock one.
 The Windows builds compile in CI but haven't been run in the apps yet.
 
 ## Build
@@ -30,7 +32,7 @@ The Windows builds compile in CI but haven't been run in the apps yet.
 ```sh
 make                       # Illustrator: build/Slippy.aip
 make install               # into Illustrator's Plug-ins (the first time: sudo make install)
-make photoshop             # Photoshop: build/ps/Slippy.plugin
+make photoshop             # Photoshop: build/ps/Slippy.plugin and its docked panel, build/ps/Slippy.ccx
 make install-photoshop     # into Photoshop's Plug-ins/Slippy (make that folder yours once - see photoshop/)
 make preview               # the panel and Slippy in a plain window, no Adobe app needed
 ```
@@ -73,10 +75,11 @@ shared/         what both plug-ins use, free of Adobe's SDKs: the HTTP server, M
                 platform glue, crash log, and the frog panel (Cocoa on macOS, GDI+ on Windows)
   resources/    the panel's terminal (xterm.js) and the agents' logos
 illustrator/    Slippy for Illustrator: its commands, SDK glue, docked panel, resources
-photoshop/      Slippy for Photoshop: its commands, action descriptors, floating panel
+photoshop/      Slippy for Photoshop: its commands, action descriptors, panels
+  panel/        the docked panel (UXP), the front end
   uxp/          the earlier UXP + Node version, kept for reference
 client/         slippy CLI and Python client (plain JSON-RPC)
-tools/          build-time generators (agent logos)
+tools/          build-time generators (agent logos, the panel's .ccx)
 docs/           this page's logo
 Makefile        macOS builds        CMakeLists.txt   Windows builds
 ```

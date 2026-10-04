@@ -9,9 +9,18 @@ as Slippy for Illustrator: the server, MCP, JSON and the frog panel come from
 ```
 agent ──MCP──▶ 127.0.0.1:7332/mcp/<token> ─▶ Slippy.plugin (in Photoshop) ─▶ action descriptors
                                               (main thread, one History step per edit)
+                                                   │ plug-in messaging
+                                                   ▼
+                                              Slippy.ccx - the docked panel (UXP)
 ```
 
-No JavaScript, no Node, nothing to start: Slippy starts with Photoshop.
+Two parts: **Slippy.plugin** (`Slippy.8li` on Windows) is the back end - the
+server, the commands, the History steps - written in C++ like Slippy for
+Illustrator. **Slippy.ccx** is the front end: the docked panel with Slippy, the
+feed and Copy connection, a small UXP plug-in (Photoshop's C++ SDK can't dock a
+panel). It only shows what the back end tells it, so agents work without it;
+without it, Slippy falls back to a floating window. No Node, nothing to start:
+Slippy starts with Photoshop.
 
 ## Build and install
 
@@ -21,8 +30,8 @@ From the repo root. It needs the Photoshop SDK at `~/Developer/AdobePhotoshopSDK
 **macOS** - the Xcode Command Line Tools (override the SDK with `PS_SDK=.../pluginsdk/photoshopapi`):
 
 ```sh
-make photoshop            # build/ps/Slippy.plugin, arm64, signed ad hoc
-make install-photoshop    # into Photoshop's Plug-ins/Slippy folder (quit Photoshop first)
+make photoshop            # build/ps/Slippy.plugin (arm64, signed ad hoc) and build/ps/Slippy.ccx (the panel)
+make install-photoshop    # the plug-in into Photoshop's Plug-ins/Slippy folder, the panel with Adobe's installer (quit Photoshop first)
 ```
 
 Photoshop's Plug-ins folder belongs to root, so once, make a `Slippy` folder
@@ -32,8 +41,9 @@ there that's yours (later installs need no sudo):
 sudo mkdir -p "/Applications/Adobe Photoshop 2026/Plug-ins/Slippy" && sudo chown $USER "/Applications/Adobe Photoshop 2026/Plug-ins/Slippy"
 ```
 
-Restart Photoshop. **Window > Slippy** shows the panel (File > Automate >
-Slippy too, when a document is open).
+Restart Photoshop and open **Plugins > Slippy**: the panel opens floating the
+first time; drag its tab into a dock and Photoshop keeps it there. (Without
+the panel installed, **Window > Slippy** shows the floating one.)
 
 **Windows** - Visual Studio 2022, CMake, Python 3:
 
@@ -43,8 +53,8 @@ cmake --build build-win --config Release    # -> build-win/photoshop/Release/Sli
 ```
 
 Quit Photoshop, copy `Slippy.8li` into `C:\Program Files\Adobe\Adobe Photoshop 2026\Plug-ins`,
-and restart it; File > Automate > Slippy shows the panel (a floating window;
-right-click it to pause agents). The Windows build compiles in CI but hasn't
+double-click `Slippy.ccx` (the panel; `python tools/package_panel.py Slippy.ccx`
+makes it), and restart Photoshop. The Windows build compiles in CI but hasn't
 been run in Photoshop yet.
 
 ## Connecting an agent
@@ -94,7 +104,9 @@ The same as Slippy for Illustrator:
 | `PsDescriptor.*` | Action descriptors <-> batchPlay-style JSON, and playing / getting them |
 | `PsSuites.*` | Photoshop's suites, string IDs, UTF-8 <-> ZString, errors |
 | `PsNarrate.cpp` | Plain-English feed lines and History names |
-| `PsPanel.mm`, `PsPanelWin.cpp` | The frog panel (`shared/SlippyPanelView.mm`, `shared/SlippyPanelWin.cpp`) in a floating window; Window > Slippy on macOS |
+| `panel/` | The docked panel (UXP): Slippy, the group bars, the feed, laid out to match the native panel; `tools/package_panel.py` packages it with the agents' logos |
+| `PsDockedPanel.*` | The back end's side of the docked panel: Photoshop's plug-in messaging (`PIUXPSuite`), both ways |
+| `PsPanel.mm`, `PsPanelWin.cpp` | The fallback floating panel (`shared/SlippyPanelView.mm`, `shared/SlippyPanelWin.cpp`); Window > Slippy on macOS |
 | `PiPLs.json`, `Slippy.rc` | The plug-in's resource description (a JSON PiPL: in the bundle on macOS, the `JSON_PIPL` resource on Windows) |
 
 Found building it, on Photoshop 27.4:
@@ -104,6 +116,8 @@ Found building it, on Photoshop 27.4:
 - `set` on a layer applies opacity and blend mode to the *active* layer, whatever layer it names, so `layer.set` selects the layer first.
 - ZString suite 2's `MakeFromUnicode` takes a count of UTF-16 units, despite naming it `byteCount`.
 - The plug-in only loads from Photoshop's own Plug-ins folder, not `~/Library/Application Support/Adobe/Plug-Ins/CC`.
+- A UXP panel and a C++ plug-in talk through `PIUXPSuite`: the C++ side sends to the panel's manifest id, the panel sends to the plug-in's PiPL component name ("Slippy").
+- UXP's SVG renderer doesn't pass a root `fill` down to the paths, and it restyles `<button>` (bigger, bold): the panel's logos carry their color on each path, and Copy connection is a styled div.
 - Files go into descriptors as bookmarks on macOS and as aliases (from the UTF-16 path) on Windows.
 
 ## The earlier UXP version

@@ -1,6 +1,7 @@
 # Builds all of Slippy's plug-ins:
 #   Slippy for Illustrator  - macOS Slippy.aip, Windows Slippy.aip (x64, ARM64)
-#   Slippy for Photoshop    - macOS Slippy.plugin, Windows Slippy.8li (x64, ARM64)
+#   Slippy for Photoshop    - macOS Slippy.plugin, Windows Slippy.8li (x64, ARM64), each with
+#                             Slippy.ccx, its docked panel (UXP; one file for both systems)
 # The macOS ones are signed with Developer ID and notarized when the secrets
 # are set (ad hoc otherwise). A v* tag also publishes them all as a release.
 #
@@ -104,7 +105,8 @@ jobs:
       - name: Package
         run: |
           ditto -c -k --keepParent build/Slippy.aip Slippy-Illustrator-macos.zip
-          ditto -c -k --keepParent build/ps/Slippy.plugin Slippy-Photoshop-macos.zip
+          mkdir -p ps-macos && ditto build/ps/Slippy.plugin ps-macos/Slippy.plugin && cp build/ps/Slippy.ccx ps-macos/
+          (cd ps-macos && ditto -c -k --sequesterRsrc . ../Slippy-Photoshop-macos.zip)
 
       - name: Upload Illustrator plug-in
         uses: actions/upload-artifact@v5
@@ -147,6 +149,11 @@ jobs:
         shell: pwsh
         run: cmake --build build-win --config Release
 
+      - name: Package the Photoshop panel
+        shell: pwsh
+        run: |
+          python tools/package_panel.py build-win/photoshop/Release/Slippy.ccx
+
       - name: Upload Illustrator plug-in
         uses: actions/upload-artifact@v5
         with:
@@ -158,7 +165,9 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: Slippy-Photoshop-windows-${{ matrix.arch }}
-          path: build-win/photoshop/Release/Slippy.8li
+          path: |
+            build-win/photoshop/Release/Slippy.8li
+            build-win/photoshop/Release/Slippy.ccx
           if-no-files-found: error
 
   release:
@@ -179,7 +188,7 @@ jobs:
           cd dist
           for arch in x64 ARM64; do
             (cd "Slippy-Illustrator-windows-$arch" && zip -q "../Slippy-Illustrator-windows-$arch.zip" Slippy.aip)
-            (cd "Slippy-Photoshop-windows-$arch" && zip -q "../Slippy-Photoshop-windows-$arch.zip" Slippy.8li)
+            (cd "Slippy-Photoshop-windows-$arch" && zip -q "../Slippy-Photoshop-windows-$arch.zip" Slippy.8li Slippy.ccx)
           done
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Slippy $GITHUB_REF_NAME" --generate-notes \
             Slippy-Illustrator-macos/Slippy-Illustrator-macos.zip Slippy-Photoshop-macos/Slippy-Photoshop-macos.zip \

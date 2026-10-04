@@ -169,6 +169,7 @@ add_library(SlippyPhotoshop SHARED
 	photoshop/PsDescriptor.cpp
 	photoshop/PsSuites.cpp
 	photoshop/PsNarrate.cpp
+	photoshop/PsDockedPanel.cpp
 	photoshop/PsPanelWin.cpp
 	${SHARED_SOURCES}
 	photoshop/Slippy.rc

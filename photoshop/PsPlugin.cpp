@@ -16,6 +16,7 @@
 #include "CrashLog.h"
 #include "Mcp.h"
 #include "Platform.h"
+#include "PsDockedPanel.h"
 #include "PsPanel.h"
 #include "PsSuites.h"
 #include "Server.h"
@@ -158,12 +159,26 @@ void Startup()
 	platform::MainThreadInit([] { RunPending(); });
 	SetMcpHost(PhotoshopHost());
 
+	// Two front ends, both fed everything: the docked panel (UXP) and the
+	// floating one, which stands aside while the docked one is open.
+	auto setPaused = [](bool paused) {
+		gPaused = paused;
+		PanelSetPaused(paused);
+		ps::docked::SetPaused(paused);
+	};
+	ps::docked::Callbacks dc;
+	dc.connection = [] { return ConnectionInfo(); };
+	dc.onPause = setPaused;
+	dc.onHello = [] { PanelHide(); };
+	ps::docked::Init(dc);
 	PanelCallbacks cb;
 	cb.connectionInfo = [] { return ConnectionInfo(); };
-	cb.onPause = [](bool paused) { gPaused = paused; };
+	cb.onPause = setPaused;
+	cb.docked = [] { return ps::docked::Connected(); };
 	PanelInit(cb);
 	SetCallObserver([](const std::string& method, bool ok, bool changes, double ms, const std::string& line, const std::string& agent) {
 		PanelCall(method, ok, changes, ms, line, agent);
+		ps::docked::Call(method, ok, changes, ms, line, agent);
 	});
 
 	int port = kDefaultPort;
@@ -183,10 +198,11 @@ void Startup()
 		else if (tagged.isObject() && !tagged.has("agent")) tagged["agent"] = agent;
 		return Submit(tagged);
 	};
-	if (gServer->Start(rpc, mcp, port, kSlippyVersion, gServerError))
-		PanelSetStatus("Listening on 127.0.0.1:" + std::to_string(gServer->Port()), true);
-	else
-		PanelSetStatus("Not listening: " + (gServerError.empty() ? std::string("the server didn't start") : gServerError), false);
+	bool listening = gServer->Start(rpc, mcp, port, kSlippyVersion, gServerError);
+	std::string status = listening ? "Listening on 127.0.0.1:" + std::to_string(gServer->Port())
+		: "Not listening: " + (gServerError.empty() ? std::string("the server didn't start") : gServerError);
+	PanelSetStatus(status, listening);
+	ps::docked::SetStatus(status, listening);
 }
 
 void Shutdown()
@@ -195,6 +211,7 @@ void Shutdown()
 	FailQueue();
 	if (gServer) { gServer->Stop(); delete gServer; gServer = nullptr; }
 	SetCallObserver(nullptr);
+	ps::docked::Shutdown();
 	PanelShutdown();
 	platform::MainThreadShutdown();
 	crashlog::Uninstall();

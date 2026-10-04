@@ -152,7 +152,8 @@ void PanelInit(PanelCallbacks callbacks)
 	gCallbacks = std::move(callbacks);
 	RECT r;
 	bool open = true;
-	if (!LoadState(r, open) || open) slippy::platform::MainThreadAfter(2, [] { PanelShow(); });
+	if (!LoadState(r, open) || open)   // unless the docked panel turns up first
+		slippy::platform::MainThreadAfter(6, [] { if (!gCallbacks.docked || !gCallbacks.docked()) PanelShow(); });
 }
 
 void PanelShow()
@@ -161,6 +162,11 @@ void PanelShow()
 	if (!gFrame) return;
 	ShowWindow(gFrame, SW_SHOWNOACTIVATE);
 	SaveState();
+}
+
+void PanelHide()
+{
+	if (gFrame) ShowWindow(gFrame, SW_HIDE);   // the saved "open" stays, for when the docked panel isn't there
 }
 
 void PanelShutdown()

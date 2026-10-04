@@ -10,9 +10,10 @@
 #   make clean
 #
 # Slippy for Photoshop (photoshop/ + shared/):
-#   make photoshop          build/ps/Slippy.plugin, arm64, signed ad hoc
-#   make install-photoshop  into Photoshop's Plug-ins/Slippy folder (quit Photoshop first; the
-#                           first time, that folder must exist and be yours - see the README)
+#   make photoshop          build/ps/Slippy.plugin (arm64, signed ad hoc) and build/ps/Slippy.ccx (the docked panel)
+#   make install-photoshop  the plug-in into Photoshop's Plug-ins/Slippy folder (quit Photoshop first; the
+#                           first time, that folder must exist and be yours - see the README), the panel
+#                           with Adobe's plug-in installer
 # The earlier UXP + Node version (photoshop/uxp):
 #   make photoshop-uxp / install-photoshop-uxp / test-photoshop-uxp
 
@@ -159,6 +160,7 @@ PS_OBJDIR  := $(PS_BUILD)/obj
 PS_BUNDLE  := $(PS_BUILD)/$(NAME).plugin
 PS_EXE     := $(PS_BUNDLE)/Contents/MacOS/$(NAME)
 PS_SOURCES := photoshop/PsPlugin.cpp photoshop/PsCommands.cpp photoshop/PsDescriptor.cpp photoshop/PsSuites.cpp photoshop/PsNarrate.cpp \
+	photoshop/PsDockedPanel.cpp \
 	shared/Server.cpp shared/Mcp.cpp shared/Json.cpp shared/Platform.cpp shared/CrashLog.cpp
 PS_MM      := photoshop/PsPanel.mm shared/SlippyPanelView.mm shared/Terminal.mm
 PS_OBJECTS := $(addprefix $(PS_OBJDIR)/,$(notdir $(PS_SOURCES:.cpp=.o) $(PS_MM:.mm=.o)))
@@ -192,12 +194,22 @@ $(PS_BUILD)/.signed: $(PS_EXE) photoshop/Info.plist photoshop/PiPLs.json $(wildc
 	codesign --verify --strict $(PS_BUNDLE)
 	touch $@
 
-photoshop: $(PS_BUILD)/.signed
+# The docked panel (UXP), with the agents' logos (tools/package_panel.py).
+PS_CCX := $(PS_BUILD)/$(NAME).ccx
+$(PS_CCX): tools/package_panel.py $(wildcard photoshop/panel/* photoshop/panel/icons/* shared/resources/agents/*.svg)
+	python3 tools/package_panel.py $@
+
+photoshop: $(PS_BUILD)/.signed $(PS_CCX)
+
+UPIA := /Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent
 
 install-photoshop: photoshop
 	@test -w "$(PS_APP)/Plug-ins/Slippy" || { echo "Make Photoshop's plug-in folder yours first (once):"; \
 		echo '  sudo mkdir -p "$(PS_APP)/Plug-ins/Slippy" && sudo chown $$USER "$(PS_APP)/Plug-ins/Slippy"'; exit 1; }
 	ditto $(PS_BUNDLE) "$(PS_APP)/Plug-ins/Slippy/$(NAME).plugin"
+	@# The installer won't replace a panel of the same version: take the old one out first.
+	-"$(UPIA)" --remove "$(NAME)" >/dev/null 2>&1
+	"$(UPIA)" --install "$(CURDIR)/$(PS_CCX)"
 
 # ---- the earlier UXP + Node version
 photoshop-uxp:
