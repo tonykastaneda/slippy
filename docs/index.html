@@ -110,7 +110,7 @@
 			const t = (since - i * BURST_GAP) / BURST_MS;
 			if (t <= 0 || t >= 1) continue;
 			const k = 1 + reach * (1 - Math.pow(1 - t, 2.2));
-			rings.push({ k, a: t < 0.85 ? 1 : (1 - t) / 0.15, hue: (i * 40 + since * 0.25) % 360, band: 3.5 + k * 0.25 });   // ring thickness, in characters
+			rings.push({ k, a: t < 0.85 ? 1 : (1 - t) / 0.15, hue: (i * 40 + since * 0.25) % 360, band: 5 - 4 * Math.pow(t, 0.8) });   // thickness in characters: 5 by him, thinning to 1 at the edges
 		}
 		let out = "";
 		for (let r = 0; r < rows; r++) {
