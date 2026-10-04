@@ -361,6 +361,17 @@
 	// A download click: Slippy wakes, hops for joy, and rings in his outline
 	// radiate out from him - the panels' ripple.
 	document.querySelectorAll(".app a").forEach((a) => a.addEventListener("click", () => { celebrateAt = performance.now() - start; burstAt = -1e9; }));
+	// Slippy himself: a click on him (not the space around him) wakes him with
+	// the download ripple. The pointer turns to a hand over him.
+	function onSlippy(ev) {
+		const rect = pre.getBoundingClientRect();
+		const c = (ev.clientX - rect.left) / (rect.width / COLS), r = (ev.clientY - rect.top) / (rect.height / ROWS);
+		const cellW = 1 / (COLS * 0.62), cellH = cellW * ASPECT;
+		const x = 0.5 + (c - 0.5 * COLS) * cellW, y = (ROWS - 2 - r) * cellH;
+		return bodyHeight(x, y) >= 0;
+	}
+	pre.addEventListener("mousemove", (ev) => { pre.style.cursor = onSlippy(ev) ? "pointer" : ""; });
+	pre.addEventListener("click", (ev) => { if (onSlippy(ev)) { celebrateAt = performance.now() - start; burstAt = -1e9; } });
 	// The logo: the full-window rainbow burst.
 	document.getElementById("logo").addEventListener("click", () => {
 		celebrateAt = performance.now() - start;
