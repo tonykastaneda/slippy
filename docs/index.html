@@ -174,10 +174,13 @@
 		const light = [-0.5, 0.65, 0.58];    // from the upper left, toward the viewer
 		const eyes = [-1, 1].map((s) => ({ x: 0.5 + s * EYE_X + p.look * 0.045, y: EYE_Y + p.lookY * 0.02 }));
 
-		const height = (x, y) => Math.max(
-			dome(x, y, HEAD.cx, HEAD.cy, HEAD.rx, HEAD.ry),
-			dome(x, y, 0.5 - EYE_X, EYE_Y, BUMP_R, BUMP_R),
-			dome(x, y, 0.5 + EYE_X, EYE_Y, BUMP_R, BUMP_R));
+		// Inside the head, its own surface (the bumps blend in, no shadow under
+		// them); above it, the bumps.
+		const height = (x, y) => {
+			const head = dome(x, y, HEAD.cx, HEAD.cy, HEAD.rx, HEAD.ry);
+			if (head >= 0) return head;
+			return Math.max(dome(x, y, 0.5 - EYE_X, EYE_Y, BUMP_R, BUMP_R), dome(x, y, 0.5 + EYE_X, EYE_Y, BUMP_R, BUMP_R));
+		};
 
 		const zList = zs(ms, p.asleep);
 		let out = "";
