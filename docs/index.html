@@ -60,7 +60,7 @@
 // his outline in green - in the spirit of ghostty.org's ghost. He sleeps
 // (Z's), wakes, hops, looks around, blinks, and dozes off again, in a loop.
 (function () {
-	const COLS = 84, ROWS = 62;   // the top rows are sky, for the Z's          // character grid; a cell is about twice as tall as wide
+	const COLS = 100, ROWS = 42;           // character grid, with room on his left for the Z's
 	const ASPECT = 1.65;                 // a monospace cell's height / width at line-height 1
 	const RAMP = " ·:~=+ox*%$@";        // dark -> bright
 	const LOOP = 14000;                  // ms for the whole story
@@ -131,11 +131,11 @@
 	function zs(ms, asleep) {
 		if (!asleep) return [];
 		const cycle = (ms % 4200) / 4200;
-		const sizes = [[28, 22, 5], [16, 12, 7], [2, 1, 9]];   // [left col, top row, rows tall]: clear of his head
+		const sizes = [[28, 4, 4], [16, 1, 5], [1, 2, 6]];   // [left col, top row, rows tall]: off to his upper left
 		const out = [];
 		sizes.forEach(([c, r, h], k) => {
 			const on = clamp((cycle - k * 0.2) / 0.12, 0, 1) * clamp((0.94 - cycle) / 0.12, 0, 1);
-			if (on > 0.02) out.push({ c, r: r - cycle * 1.6, h, w: h * ASPECT * 0.95, on });
+			if (on > 0.02) out.push({ c, r: r - cycle * 0.8, h, w: h * ASPECT * 0.95, on });
 		});
 		return out;
 	}
@@ -153,7 +153,7 @@
 	function draw(ms) {
 		const p = pose(ms);
 		p.hop *= MOTION; p.sq = 1 - (1 - p.sq) * MOTION; p.breath *= MOTION;
-		const W = 0.74;                      // his width, as a share of the grid's width
+		const W = 0.62;                      // his width, as a share of the grid's width
 		const sx = 1 + (1 - p.sq) * 0.6, sy = p.sq * (1 + p.breath);
 		const cellW = 1 / (COLS * W);        // grid cell -> his units
 		const cellH = cellW * ASPECT;
