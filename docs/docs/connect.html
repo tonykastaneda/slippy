@@ -36,24 +36,94 @@
 <p>Click <strong>Copy connection</strong> in Slippy's panel. It copies a URL like this, with your token at the end:</p>
 <pre><code>http://127.0.0.1:7331/mcp/&lt;token&gt;    # Illustrator
 http://127.0.0.1:7332/mcp/&lt;token&gt;    # Photoshop</code></pre>
-<p>That's an MCP server over streamable HTTP. Any MCP client that supports HTTP servers takes it as is. The token keeps other
-programs out; it stays the same across launches, so you only add Slippy to an agent once.</p>
-<div class="note"><strong>Keep the URL private.</strong> Anyone with it can drive the app on your computer. The token lives in
-<code>~/Library/Application Support/Slippy/token</code> (Photoshop: <code>…/Slippy/Photoshop/token</code>; Windows: <code>%APPDATA%\Slippy</code>).
-Delete the file to get a new one the next time the app starts.</div>
+<p>That's an MCP server over <strong>streamable HTTP</strong>, which almost every agent supports. The token keeps other
+programs out and stays the same across launches, so you add Slippy to an agent once.</p>
+<div class="note"><strong>The examples below use Illustrator.</strong> For Photoshop, add a second entry the same way with
+its own URL (<code>:7332</code>). With both, an agent can work in Illustrator and Photoshop in one conversation.</div>
 
-<h2 id="claude-code">Claude Code</h2>
+<h2 id="glance">At a glance</h2>
+<table>
+	<tr><th>Agent</th><th>How to add Slippy</th></tr>
+	<tr><td><a href="#claude-code">Claude Code</a></td><td><code>claude mcp add --transport http …</code></td></tr>
+	<tr><td><a href="#codex">Codex</a></td><td><code>codex mcp add … --url …</code> or <code>~/.codex/config.toml</code></td></tr>
+	<tr><td><a href="#gemini">Gemini CLI</a></td><td><code>gemini mcp add --transport http …</code></td></tr>
+	<tr><td><a href="#copilot-cli">GitHub Copilot CLI</a></td><td><code>copilot mcp add --transport http …</code></td></tr>
+	<tr><td><a href="#opencode">OpenCode</a></td><td><code>opencode.json</code>, <code>"type": "remote"</code></td></tr>
+	<tr><td><a href="#amp">Amp</a></td><td><code>settings.json</code>, <code>amp.mcpServers</code></td></tr>
+	<tr><td><a href="#goose">Goose</a></td><td><code>goose configure</code> &gt; Remote Extension (Streamable HTTP)</td></tr>
+	<tr><td><a href="#cursor">Cursor</a></td><td><code>~/.cursor/mcp.json</code>, <code>"url"</code></td></tr>
+	<tr><td><a href="#vscode">VS Code (Copilot)</a></td><td><code>mcp.json</code>, <code>"type": "http"</code></td></tr>
+	<tr><td><a href="#windsurf">Windsurf</a></td><td><code>mcp_config.json</code>, <code>"serverUrl"</code></td></tr>
+	<tr><td><a href="#zed">Zed</a></td><td><code>settings.json</code>, <code>context_servers</code></td></tr>
+	<tr><td><a href="#cline">Cline</a></td><td><code>cline_mcp_settings.json</code>, <code>"type": "streamableHttp"</code></td></tr>
+	<tr><td><a href="#roo">Roo Code</a></td><td><code>mcp_settings.json</code>, <code>"type": "streamable-http"</code></td></tr>
+	<tr><td><a href="#continue">Continue</a></td><td><code>config.yaml</code>, <code>type: streamable-http</code></td></tr>
+	<tr><td><a href="#jetbrains">JetBrains AI Assistant / Junie</a></td><td>Settings, or <code>.junie/mcp/mcp.json</code></td></tr>
+	<tr><td><a href="#kiro">Kiro</a></td><td><code>~/.kiro/settings/mcp.json</code></td></tr>
+	<tr><td><a href="#claude-desktop">Claude Desktop</a></td><td><code>claude_desktop_config.json</code> + <code>mcp-remote</code></td></tr>
+	<tr><td><a href="#lmstudio">LM Studio</a></td><td><code>~/.lmstudio/mcp.json</code></td></tr>
+	<tr><td><a href="#warp">Warp</a></td><td>Settings &gt; Agents &gt; MCP servers</td></tr>
+	<tr><td><a href="#others">Anything else</a></td><td>the URL, or <code>npx mcp-remote</code></td></tr>
+</table>
+
+<hr>
+<h2 id="terminal-agents">Terminal agents</h2>
+
+<h3 id="claude-code">Claude Code</h3>
 <pre><code>claude mcp add --transport http slippy-illustrator http://127.0.0.1:7331/mcp/&lt;token&gt;
 claude mcp add --transport http slippy-photoshop   http://127.0.0.1:7332/mcp/&lt;token&gt;</code></pre>
-<p>Start a new session (or run <code>/mcp</code>) and ask it to do something in Illustrator.</p>
+<p>Add <code>--scope user</code> to have Slippy in every project. Start a new session (or run <code>/mcp</code>) to see its tools.</p>
 
-<h2 id="codex">Codex</h2>
-<p>Add Slippy to <code>~/.codex/config.toml</code>. <code>mcp-remote</code> bridges Slippy's HTTP server for clients that start servers as commands:</p>
+<h3 id="codex">Codex</h3>
+<pre><code>codex mcp add slippy-illustrator --url http://127.0.0.1:7331/mcp/&lt;token&gt;</code></pre>
+<p>Or in <code>~/.codex/config.toml</code>:</p>
 <pre><code>[mcp_servers.slippy-illustrator]
-command = "npx"
-args = ["-y", "mcp-remote", "http://127.0.0.1:7331/mcp/&lt;token&gt;"]</code></pre>
+url = "http://127.0.0.1:7331/mcp/&lt;token&gt;"</code></pre>
+<p>On an older Codex without <code>url</code>, use the bridge instead: <code>command = "npx"</code>, <code>args = ["-y", "mcp-remote", "&lt;URL&gt;"]</code>.</p>
 
-<h2 id="cursor">Cursor</h2>
+<h3 id="gemini">Gemini CLI</h3>
+<pre><code>gemini mcp add --transport http slippy-illustrator http://127.0.0.1:7331/mcp/&lt;token&gt;</code></pre>
+<p>Or in <code>~/.gemini/settings.json</code> (note: <code>httpUrl</code>, not <code>url</code>):</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "httpUrl": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="copilot-cli">GitHub Copilot CLI</h3>
+<pre><code>copilot mcp add --transport http slippy-illustrator http://127.0.0.1:7331/mcp/&lt;token&gt;</code></pre>
+<p>Or in <code>~/.copilot/mcp-config.json</code>: <code>{"mcpServers": {"slippy-illustrator": {"type": "http", "url": "…"}}}</code>.</p>
+
+<h3 id="opencode">OpenCode</h3>
+<p>In <code>opencode.json</code> (the project's, or <code>~/.config/opencode/opencode.json</code>):</p>
+<pre><code>{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "slippy-illustrator": { "type": "remote", "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;", "enabled": true }
+  }
+}</code></pre>
+
+<h3 id="amp">Amp</h3>
+<p>In Amp's <code>settings.json</code>:</p>
+<pre><code>"amp.mcpServers": {
+  "slippy-illustrator": { "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+}</code></pre>
+
+<h3 id="goose">Goose</h3>
+<p>Run <code>goose configure</code>, choose <strong>Add Extension</strong> &gt; <strong>Remote Extension (Streamable HTTP)</strong>,
+name it, and paste the URL. Or in <code>~/.config/goose/config.yaml</code> (note: <code>uri</code>, not <code>url</code>):</p>
+<pre><code>extensions:
+  slippy-illustrator:
+    type: streamable_http
+    name: slippy-illustrator
+    enabled: true
+    uri: "http://127.0.0.1:7331/mcp/&lt;token&gt;"
+    timeout: 300</code></pre>
+
+<hr>
+<h2 id="editors">Editors</h2>
+
+<h3 id="cursor">Cursor</h3>
 <p>In <code>~/.cursor/mcp.json</code> (or the project's <code>.cursor/mcp.json</code>):</p>
 <pre><code>{
   "mcpServers": {
@@ -62,8 +132,80 @@ args = ["-y", "mcp-remote", "http://127.0.0.1:7331/mcp/&lt;token&gt;"]</code></p
   }
 }</code></pre>
 
-<h2 id="claude-desktop">Claude Desktop</h2>
-<p>In Claude Desktop's <code>claude_desktop_config.json</code> (Settings &gt; Developer &gt; Edit Config):</p>
+<h3 id="vscode">VS Code (GitHub Copilot)</h3>
+<p>Run <strong>MCP: Add Server</strong> from the Command Palette, pick <strong>HTTP</strong>, and paste the URL. Or in <code>.vscode/mcp.json</code>
+(or your profile's <code>mcp.json</code>), which uses <code>servers</code>, not <code>mcpServers</code>:</p>
+<pre><code>{
+  "servers": {
+    "slippy-illustrator": { "type": "http", "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="windsurf">Windsurf</h3>
+<p>In <code>~/.codeium/windsurf/mcp_config.json</code> (note: <code>serverUrl</code>, not <code>url</code>):</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "serverUrl": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="zed">Zed</h3>
+<p>In Zed's <code>settings.json</code>. Zed starts an OAuth sign-in when a server has no <code>Authorization</code> header, so pass the token
+as a header instead of in the URL:</p>
+<pre><code>"context_servers": {
+  "slippy-illustrator": {
+    "url": "http://127.0.0.1:7331/mcp",
+    "headers": { "Authorization": "Bearer &lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="cline">Cline</h3>
+<p>In Cline's MCP settings (<strong>MCP Servers</strong> &gt; <strong>Configure</strong>, <code>cline_mcp_settings.json</code>). Set the type, or Cline assumes the older SSE transport:</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "type": "streamableHttp", "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="roo">Roo Code</h3>
+<p>In <code>mcp_settings.json</code> (global) or the project's <code>.roo/mcp.json</code>:</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "type": "streamable-http", "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="continue">Continue</h3>
+<p>In Continue's <code>config.yaml</code>:</p>
+<pre><code>mcpServers:
+  - name: slippy-illustrator
+    type: streamable-http
+    url: http://127.0.0.1:7331/mcp/&lt;token&gt;</code></pre>
+
+<h3 id="jetbrains">JetBrains AI Assistant and Junie</h3>
+<p>In <strong>Settings &gt; Tools &gt; AI Assistant &gt; Model Context Protocol (MCP)</strong>, add a server as JSON (IDE 2025.3 or later for URLs).
+For Junie, use <code>.junie/mcp/mcp.json</code> in the project or <code>~/.junie/mcp/mcp.json</code>:</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="kiro">Kiro</h3>
+<p>In <code>~/.kiro/settings/mcp.json</code> (or the project's <code>.kiro/settings/mcp.json</code>):</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<hr>
+<h2 id="apps">Desktop apps</h2>
+
+<h3 id="claude-desktop">Claude Desktop</h3>
+<p>Claude Desktop's <strong>Connectors</strong> reach servers from the cloud, so they can't see Slippy on your computer. Add it
+to the config file instead (Settings &gt; Developer &gt; Edit Config, <code>claude_desktop_config.json</code>), through the
+<code>mcp-remote</code> bridge (needs <a href="https://nodejs.org">Node.js</a>):</p>
 <pre><code>{
   "mcpServers": {
     "slippy-illustrator": {
@@ -72,17 +214,40 @@ args = ["-y", "mcp-remote", "http://127.0.0.1:7331/mcp/&lt;token&gt;"]</code></p
     }
   }
 }</code></pre>
+<p>Restart Claude Desktop afterwards.</p>
 
+<h3 id="lmstudio">LM Studio</h3>
+<p>With a local model, in <code>~/.lmstudio/mcp.json</code> (Program &gt; Install &gt; Edit mcp.json):</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h3 id="warp">Warp</h3>
+<p>Open <strong>Settings &gt; Agents &gt; MCP servers</strong> (or <em>Open MCP Servers</em> from the command palette), click <strong>Add</strong>,
+and paste:</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<div class="note"><strong>ChatGPT and other web apps</strong> can't connect: they reach MCP servers from the internet, and
+Slippy only answers your own computer. Use a desktop or terminal agent instead.</div>
+
+<hr>
 <h2 id="others">Any other agent</h2>
 <ul>
-	<li><strong>Takes an HTTP MCP server</strong> (VS Code, Windsurf, Cline, Gemini CLI…): add the URL as the server's URL.</li>
-	<li><strong>Only starts command servers:</strong> use <code>npx -y mcp-remote &lt;URL&gt;</code> as the command, as for Codex above.</li>
-	<li><strong>Prefers a header to a token in the URL:</strong> use <code>http://127.0.0.1:7331/mcp</code> with <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+	<li><strong>Takes an HTTP (streamable HTTP) MCP server:</strong> give it the URL. If it asks for a type, pick HTTP or streamable HTTP, not SSE.</li>
+	<li><strong>Only starts servers as commands (stdio):</strong> use the bridge as the command: <code>npx -y mcp-remote http://127.0.0.1:7331/mcp/&lt;token&gt;</code>.</li>
+	<li><strong>Wants the token as a header:</strong> use <code>http://127.0.0.1:7331/mcp</code> with <code>Authorization: Bearer &lt;token&gt;</code>
+		(or <code>X-Slippy-Token: &lt;token&gt;</code>).</li>
 </ul>
 
 <h2 id="terminal">The terminal in Illustrator's panel</h2>
 <p>The chevron at the bottom of Illustrator's Slippy panel opens a terminal (macOS). Slippy's URL is already in it, as
-<code>$SLIPPY_URL</code>, so an agent started there can connect with nothing to paste:</p>
+<code>$SLIPPY_URL</code>, so an agent started there connects with nothing to paste:</p>
 <pre><code>claude mcp add --transport http slippy "$SLIPPY_URL"</code></pre>
 
 <h2 id="tools">The tools agents get</h2>
@@ -90,18 +255,26 @@ args = ["-y", "mcp-remote", "http://127.0.0.1:7331/mcp/&lt;token&gt;"]</code></p
 <code>layer_set</code>…), plus four of Slippy's own:</p>
 <table>
 	<tr><th>Tool</th><th>What it does</th></tr>
-	<tr><td><code>slippy_find</code></td><td>Searches every command by words ("gradient", "symbol", "blur") and returns their parameters.</td></tr>
+	<tr><td><code>slippy_find</code></td><td>Searches every command by words (“gradient”, “symbol”, “blur”) and returns their parameters.</td></tr>
 	<tr><td><code>slippy_call</code></td><td>Runs any command by name.</td></tr>
 	<tr><td><code>slippy_batch</code></td><td>Runs several commands as one undo step.</td></tr>
 	<tr><td><code>slippy_status</code></td><td>Checks the app is there: versions, open documents.</td></tr>
 </table>
-<p>That keeps the tool list short, which every client can handle. For clients that do well with hundreds of tools, add
+<p>That keeps the tool list short, which every client handles. For clients that do well with hundreds of tools, add
 <code>?tools=all</code> to the URL to get every command as its own tool.</p>
 
 <h2 id="scripts">Scripts and curl</h2>
 <p>Slippy also speaks plain JSON-RPC at <code>/rpc/&lt;token&gt;</code>, for scripts:</p>
 <pre><code>curl -s http://127.0.0.1:7331/rpc/&lt;token&gt; -d '{"jsonrpc":"2.0","id":1,"method":"document.info"}'</code></pre>
 <p>Send an array of calls to run them as one undo step.</p>
+
+<h2 id="trouble">If an agent can't connect</h2>
+<ul>
+	<li><strong>Is the app open?</strong> Slippy only runs while Illustrator or Photoshop is. <code>curl http://127.0.0.1:7331/health</code> should answer.</li>
+	<li><strong>Right token?</strong> Copy the URL again from the panel. If you deleted the token file, the token changed.</li>
+	<li><strong>Restart the agent</strong> after adding Slippy; most only read their MCP settings on startup.</li>
+	<li><strong>Right transport?</strong> Slippy speaks streamable HTTP. An agent set to SSE won't connect.</li>
+</ul>
 		<div class="pager"><a href="install.html"><small>Previous</small>Install</a><a class="next" href="why.html"><small>Next</small>Why Slippy</a></div>
 	</main>
 </div>
