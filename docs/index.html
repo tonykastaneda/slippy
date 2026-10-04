@@ -60,7 +60,7 @@
 // his outline in green - in the spirit of ghostty.org's ghost. He sleeps
 // (Z's), wakes, hops, looks around, blinks, and dozes off again, in a loop.
 (function () {
-	const COLS = 84, ROWS = 42;          // character grid; a cell is about twice as tall as wide
+	const COLS = 84, ROWS = 62;   // the top rows are sky, for the Z's          // character grid; a cell is about twice as tall as wide
 	const ASPECT = 1.65;                 // a monospace cell's height / width at line-height 1
 	const RAMP = " ·:~=+ox*%$@";        // dark -> bright
 	const LOOP = 14000;                  // ms for the whole story
@@ -116,6 +116,40 @@
 		return d < 1 ? Math.sqrt(1 - d) : -1;
 	}
 
+	// A block-letter Z in its unit box (x right, y up): top bar, bottom bar and
+	// the diagonal between them.
+	function inZ(x, y) {
+		if (x < 0 || x > 1 || y < 0 || y > 1) return false;
+		const bar = 0.3, t = 0.62;   // bar height; diagonal thickness, across x
+		if (y > 1 - bar || y < bar) return true;
+		const dx = x - y;            // the diagonal runs (0,0) - (1,1)
+		return Math.abs(dx) < t / 2;
+	}
+
+	// The Z's this frame: small, medium, large rising up and left from his left
+	// eye, each fading in after the one before, all fading out, again.
+	function zs(ms, asleep) {
+		if (!asleep) return [];
+		const cycle = (ms % 4200) / 4200;
+		const sizes = [[28, 22, 5], [16, 12, 7], [2, 1, 9]];   // [left col, top row, rows tall]: clear of his head
+		const out = [];
+		sizes.forEach(([c, r, h], k) => {
+			const on = clamp((cycle - k * 0.2) / 0.12, 0, 1) * clamp((0.94 - cycle) / 0.12, 0, 1);
+			if (on > 0.02) out.push({ c, r: r - cycle * 1.6, h, w: h * ASPECT * 0.95, on });
+		});
+		return out;
+	}
+
+	// The Z cell at (r, c): its alpha if (r, c) is on a Z's outline, else 0.
+	function zCell(list, r, c) {
+		for (const z of list) {
+			const at = (rr, cc) => inZ((cc + 0.5 - z.c) / z.w, 1 - (rr + 0.5 - z.r) / z.h);
+			if (!at(r, c)) continue;
+			if (!at(r - 1, c) || !at(r + 1, c) || !at(r, c - 1) || !at(r, c + 1)) return z.on;
+		}
+		return 0;
+	}
+
 	function draw(ms) {
 		const p = pose(ms);
 		p.hop *= MOTION; p.sq = 1 - (1 - p.sq) * MOTION; p.breath *= MOTION;
@@ -133,6 +167,7 @@
 			dome(x, y, 0.5 - EYE_X, EYE_Y, BUMP_R, BUMP_R),
 			dome(x, y, 0.5 + EYE_X, EYE_Y, BUMP_R, BUMP_R));
 
+		const zList = zs(ms, p.asleep);
 		let out = "";
 		for (let r = 0; r < ROWS; r++) {
 			let line = "";
@@ -142,6 +177,10 @@
 				const y = ((base - lift - (r + 0.5)) * cellH) / sy;
 				const z = height(x, y);
 				let ch = " ", kind = "";
+				if (z < 0 && zList.length) {
+					const a = zCell(zList, r, c);
+					if (a) { line += `<b style="color: rgba(146, 246, 7, ${a.toFixed(2)})">@</b>`; continue; }
+				}
 				if (z >= 0) {
 					// The outline: a band about three characters thick - how far in
 					// from his edge this cell is, in character widths (1, 2, 3; 0 = deeper).
@@ -179,19 +218,6 @@
 				line += kind ? `<${kind}>${ch === "<" ? "&lt;" : ch}</${kind}>` : ch;
 			}
 			out += line + "\n";
-		}
-		// Three little Z's while he sleeps: a diagonal above his left eye, each
-		// fading in after the one before, drifting up, then all fading out.
-		if (p.asleep) {
-			const lines = out.split("\n");
-			const cycle = (ms % 3600) / 3600;
-			for (let k = 0; k < 3; k++) {
-				const on = clamp((cycle - k * 0.18) / 0.12, 0, 1) * clamp((0.92 - cycle) / 0.12, 0, 1);
-				if (on <= 0.02) continue;
-				const r = 7 - k * 2 - Math.round(cycle * 1.5), c = 24 - k * 4;
-				if (r >= 0 && r < ROWS) lines[r] = place(lines[r], c, "Z", on);
-			}
-			out = lines.join("\n");
 		}
 		pre.innerHTML = out;
 	}
