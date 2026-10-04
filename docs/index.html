@@ -9,7 +9,10 @@
 <style>
 	:root { --bg: #0b0c0e; --text: #e6e6e6; --dim: #7c7f87; --green: #92f607; }
 	* { box-sizing: border-box; }
-	html, body { margin: 0; background: var(--bg); color: var(--text); }
+	/* Phones: no automatic text enlarging (it scaled some of his lines and not
+	   others), and no sideways scroll from the art's empty edges. */
+	html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+	html, body { margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden; }
 	body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; min-height: 100vh;
 		display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
 	#frog { margin: 0; font: 600 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #3b4a36;
