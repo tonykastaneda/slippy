@@ -28,7 +28,7 @@
 	.version { margin: 28px 0 10px; font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--dim); border: 1.5px solid #3a3d44;
 		border-radius: 5px; padding: 1px 7px; }
 	p { margin: 0; color: var(--dim); text-align: center; }
-	/* Side by side at every width; each shares the row. */
+	/* Side by side, each sharing the row (stacked on phones, below). */
 	.downloads { display: flex; gap: 16px; margin-top: 32px; justify-content: center; width: 100%; max-width: 532px; }
 	/* Each app: one button; open, its downloads. */
 	.app { border: 1px solid var(--green); border-radius: 10px; flex: 1 1 0; min-width: 0; align-self: flex-start; }
@@ -50,10 +50,10 @@
 	nav { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: center; padding: 20px 16px; }
 	nav button { padding: 0; border: 0; background: none; cursor: pointer; }
 	nav img { height: 26px; display: block; }
+	/* Phones: stacked, each the full width. */
 	@media (max-width: 560px) {
-		.downloads { gap: 10px; }
-		.app a { margin-left: 8px; margin-right: 8px; padding: 8px; font-size: 13px; }
-		.app a span { display: block; float: none; font-size: 11px; margin-top: 1px; }   /* the file types under the name */
+		.downloads { flex-direction: column; gap: 12px; max-width: 360px; }
+		.app { flex: none; width: 100%; align-self: stretch; }
 	}
 	footer { margin-top: 36px; font-size: 13px; color: var(--dim); }
 	footer a { color: var(--dim); }
