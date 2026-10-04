@@ -1,0 +1,44 @@
+<!-- title: Why Slippy -->
+<!-- lede: Most Adobe MCP servers send scripts to the app from outside it. Slippy lives inside the app. -->
+
+<h2 id="inside">It runs inside the app</h2>
+<p>The usual way to give an agent Illustrator or Photoshop is a separate server program, often Node or Python, that the agent
+talks to, which then sends scripts into the app: ExtendScript (JSX), or messages to a JavaScript panel. That's three moving
+parts, and the script layer can only do what the scripting API exposes.</p>
+<p>Slippy is a <strong>native C++ plug-in</strong> with the MCP server built in. The agent talks straight to the app, and each
+call runs through Adobe's own SDK on the app's main thread. There's no proxy to start, no JSX, no Python.</p>
+<table>
+	<tr><th></th><th>A typical Adobe MCP server</th><th>Slippy</th></tr>
+	<tr><td>What you run</td><td>a server program, plus a plug-in or script in the app</td><td>just the plug-in; it starts with the app</td></tr>
+	<tr><td>How calls run</td><td>scripts (JSX) or a JavaScript panel</td><td>the app's C++ SDK, directly</td></tr>
+	<tr><td>Undo</td><td>often one step per internal operation, or none</td><td>one named step per call (or per batch)</td></tr>
+	<tr><td>When the app is busy</td><td>a script can hang behind a dialog</td><td>no dialogs; a busy app answers right away</td></tr>
+	<tr><td>Seeing what happened</td><td>logs, if any</td><td>a live panel, plus a call log</td></tr>
+</table>
+
+<h2 id="undo">Every call is one undo</h2>
+<p>An agent's change shows up as a single step in Edit &gt; Undo (Photoshop: History), named after what it did, like
+<em>Slippy: Renamed a layer to “Logo”</em>. A batch of calls is one step too, so “undo what the agent just did” is always one press.</p>
+
+<h2 id="safe">It won't wreck your work</h2>
+<ul>
+	<li><strong>No surprise saves.</strong> Closing a document discards changes unless the agent explicitly asks to save.</li>
+	<li><strong>No dialogs.</strong> Slippy runs with the app's alerts off, so an agent can't freeze it behind a "Save changes?" box.</li>
+	<li><strong>Saves and exports run on their own,</strong> never mixed into a batch's edits, which is how other tools lose work.</li>
+	<li><strong>Honest errors.</strong> A command that can't run says what went wrong, in plain words, and changes nothing.</li>
+</ul>
+
+<h2 id="see">You can see what it's doing</h2>
+<p>Slippy's panel shows each call as it happens, in plain English (“Rotated “Logo” 15°”, “Couldn’t find that layer”), with
+the logo of the agent that sent it. In Illustrator, each change also gets a green box on the canvas around what it touched.
+And Slippy, the frog, sleeps when nothing's happening, wakes up when an agent starts, and winces at errors, so you can tell
+at a glance whether an agent is working.</p>
+
+<h2 id="reach">It reaches the whole app</h2>
+<p>Besides about 190 named commands in Illustrator, Slippy can run any menu command, play any action, and message other
+plug-ins. In Photoshop, <code>ps.batchplay</code> plays any action descriptor, the same thing Photoshop's own recorded actions use,
+so if Photoshop can do it, an agent can.</p>
+
+<h2 id="local">It stays on your computer</h2>
+<p>Slippy's server only listens on your own machine (<code>127.0.0.1</code>), needs your token, and refuses web pages, so a
+website can't reach it. Your documents never leave your computer; only your agent sees what it asks for.</p>

@@ -1,0 +1,73 @@
+<!-- title: Connect an agent -->
+<!-- lede: One URL is all an agent needs. Copy it from Slippy's panel, add it to your agent, and it can work in the app. -->
+
+<h2 id="url">Get Slippy's URL</h2>
+<p>Click <strong>Copy connection</strong> in Slippy's panel. It copies a URL like this, with your token at the end:</p>
+<pre><code>http://127.0.0.1:7331/mcp/&lt;token&gt;    # Illustrator
+http://127.0.0.1:7332/mcp/&lt;token&gt;    # Photoshop</code></pre>
+<p>That's an MCP server over streamable HTTP. Any MCP client that supports HTTP servers takes it as is. The token keeps other
+programs out; it stays the same across launches, so you only add Slippy to an agent once.</p>
+<div class="note"><strong>Keep the URL private.</strong> Anyone with it can drive the app on your computer. The token lives in
+<code>~/Library/Application Support/Slippy/token</code> (Photoshop: <code>…/Slippy/Photoshop/token</code>; Windows: <code>%APPDATA%\Slippy</code>).
+Delete the file to get a new one the next time the app starts.</div>
+
+<h2 id="claude-code">Claude Code</h2>
+<pre><code>claude mcp add --transport http slippy-illustrator http://127.0.0.1:7331/mcp/&lt;token&gt;
+claude mcp add --transport http slippy-photoshop   http://127.0.0.1:7332/mcp/&lt;token&gt;</code></pre>
+<p>Start a new session (or run <code>/mcp</code>) and ask it to do something in Illustrator.</p>
+
+<h2 id="codex">Codex</h2>
+<p>Add Slippy to <code>~/.codex/config.toml</code>. <code>mcp-remote</code> bridges Slippy's HTTP server for clients that start servers as commands:</p>
+<pre><code>[mcp_servers.slippy-illustrator]
+command = "npx"
+args = ["-y", "mcp-remote", "http://127.0.0.1:7331/mcp/&lt;token&gt;"]</code></pre>
+
+<h2 id="cursor">Cursor</h2>
+<p>In <code>~/.cursor/mcp.json</code> (or the project's <code>.cursor/mcp.json</code>):</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": { "url": "http://127.0.0.1:7331/mcp/&lt;token&gt;" },
+    "slippy-photoshop": { "url": "http://127.0.0.1:7332/mcp/&lt;token&gt;" }
+  }
+}</code></pre>
+
+<h2 id="claude-desktop">Claude Desktop</h2>
+<p>In Claude Desktop's <code>claude_desktop_config.json</code> (Settings &gt; Developer &gt; Edit Config):</p>
+<pre><code>{
+  "mcpServers": {
+    "slippy-illustrator": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:7331/mcp/&lt;token&gt;"]
+    }
+  }
+}</code></pre>
+
+<h2 id="others">Any other agent</h2>
+<ul>
+	<li><strong>Takes an HTTP MCP server</strong> (VS Code, Windsurf, Cline, Gemini CLI…): add the URL as the server's URL.</li>
+	<li><strong>Only starts command servers:</strong> use <code>npx -y mcp-remote &lt;URL&gt;</code> as the command, as for Codex above.</li>
+	<li><strong>Prefers a header to a token in the URL:</strong> use <code>http://127.0.0.1:7331/mcp</code> with <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+</ul>
+
+<h2 id="terminal">The terminal in Illustrator's panel</h2>
+<p>The chevron at the bottom of Illustrator's Slippy panel opens a terminal (macOS). Slippy's URL is already in it, as
+<code>$SLIPPY_URL</code>, so an agent started there can connect with nothing to paste:</p>
+<pre><code>claude mcp add --transport http slippy "$SLIPPY_URL"</code></pre>
+
+<h2 id="tools">The tools agents get</h2>
+<p>Agents see the everyday commands as their own tools (<code>document_info</code>, <code>art_tree</code>, <code>art_transform</code>,
+<code>layer_set</code>…), plus four of Slippy's own:</p>
+<table>
+	<tr><th>Tool</th><th>What it does</th></tr>
+	<tr><td><code>slippy_find</code></td><td>Searches every command by words ("gradient", "symbol", "blur") and returns their parameters.</td></tr>
+	<tr><td><code>slippy_call</code></td><td>Runs any command by name.</td></tr>
+	<tr><td><code>slippy_batch</code></td><td>Runs several commands as one undo step.</td></tr>
+	<tr><td><code>slippy_status</code></td><td>Checks the app is there: versions, open documents.</td></tr>
+</table>
+<p>That keeps the tool list short, which every client can handle. For clients that do well with hundreds of tools, add
+<code>?tools=all</code> to the URL to get every command as its own tool.</p>
+
+<h2 id="scripts">Scripts and curl</h2>
+<p>Slippy also speaks plain JSON-RPC at <code>/rpc/&lt;token&gt;</code>, for scripts:</p>
+<pre><code>curl -s http://127.0.0.1:7331/rpc/&lt;token&gt; -d '{"jsonrpc":"2.0","id":1,"method":"document.info"}'</code></pre>
+<p>Send an array of calls to run them as one undo step.</p>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install - Slippy docs</title>
+<meta name="description" content="Download the zip for your app and computer from the home page, then put the plug-in where the app looks for it.">
+<link rel="icon" href="../slippy.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<header class="top">
+	<a class="logo" href="../" aria-label="Slippy home"><img src="../navlogo.svg" alt="Slippy"></a>
+	<nav><a href="./" class="on">Docs</a><a href="../#downloads">Download</a><a href="https://github.com/tonykastaneda/slippy">GitHub</a></nav>
+	<button class="menu" type="button">Menu</button>
+</header>
+<div class="layout">
+	<aside class="side">
+		<div class="group">
+			<h4>Docs</h4>
+			<a href="index.html">Overview</a>
+			<a href="install.html" class="on">Install</a>
+			<a href="connect.html">Connect an agent</a>
+			<a href="why.html">Why Slippy</a>
+		</div>
+		<div class="group">
+			<h4>Links</h4>
+			<a href="../#downloads">Download</a>
+			<a href="https://github.com/tonykastaneda/slippy">GitHub</a>
+		</div>
+	</aside>
+	<main>
+		<h1>Install</h1>
+		<p class="lede">Download the zip for your app and computer from the home page, then put the plug-in where the app looks for it.</p>
+<p>Slippy needs <strong>Adobe Illustrator 2026</strong> or <strong>Adobe Photoshop 2026</strong>. Each app has its own download;
+install one or both. <a href="../#downloads">Downloads are on the home page.</a></p>
+
+<div class="note"><strong>Quit the app first.</strong> Plug-ins load when the app starts, so install with it closed, then open it again.</div>
+
+<h2 id="illustrator-mac">Illustrator on macOS</h2>
+<ol class="steps">
+	<li>Unzip <code>Slippy-Illustrator-macos.zip</code>. You get <code>Slippy.aip</code>.</li>
+	<li>Let macOS load it. Downloaded plug-ins are quarantined, and this build isn't signed by Apple yet, so clear the flag once:
+		<pre><code>xattr -dr com.apple.quarantine ~/Downloads/Slippy.aip</code></pre></li>
+	<li>Move <code>Slippy.aip</code> into Illustrator's plug-ins folder: <code>/Applications/Adobe Illustrator 2026/Plug-ins</code>.
+		Finder asks for your password the first time; that folder belongs to the system.</li>
+	<li>Open Illustrator, then <strong>Window &gt; Utilities &gt; Slippy</strong>. Dock the panel wherever you like.</li>
+</ol>
+
+<h2 id="illustrator-windows">Illustrator on Windows</h2>
+<ol class="steps">
+	<li>Pick the zip for your PC: <code>x64</code> for most PCs, <code>ARM64</code> for Snapdragon / ARM laptops. Unzip it to get <code>Slippy.aip</code>.</li>
+	<li>Copy <code>Slippy.aip</code> into <code>C:\Program Files\Adobe\Adobe Illustrator 2026\Plug-ins</code> (Windows asks for admin permission).</li>
+	<li>Open Illustrator, then <strong>Window &gt; Utilities &gt; Slippy</strong>.</li>
+</ol>
+
+<h2 id="photoshop-mac">Photoshop on macOS</h2>
+<p>Slippy for Photoshop comes in two parts: <code>Slippy.plugin</code> does the work, and <code>Slippy.ccx</code> is its docked panel.</p>
+<ol class="steps">
+	<li>Unzip <code>Slippy-Photoshop-macos.zip</code>. You get <code>Slippy.plugin</code> and <code>Slippy.ccx</code>.</li>
+	<li>Clear the quarantine flag on the plug-in:
+		<pre><code>xattr -dr com.apple.quarantine ~/Downloads/Slippy.plugin</code></pre></li>
+	<li>Make a <code>Slippy</code> folder in Photoshop's plug-ins folder and put <code>Slippy.plugin</code> in it:
+		<code>/Applications/Adobe Photoshop 2026/Plug-ins/Slippy/Slippy.plugin</code>. Finder asks for your password.</li>
+	<li>Double-click <code>Slippy.ccx</code>. Creative Cloud installs the panel.</li>
+	<li>Open Photoshop, then <strong>Plugins &gt; Slippy</strong>. Drag the panel's tab into a dock and Photoshop keeps it there.</li>
+</ol>
+<div class="note"><strong>No panel?</strong> Slippy still works without <code>Slippy.ccx</code>: it shows a floating panel instead, from <strong>Window &gt; Slippy</strong>.</div>
+
+<h2 id="photoshop-windows">Photoshop on Windows</h2>
+<ol class="steps">
+	<li>Pick the zip for your PC (<code>x64</code> or <code>ARM64</code>) and unzip it: <code>Slippy.8li</code> and <code>Slippy.ccx</code>.</li>
+	<li>Copy <code>Slippy.8li</code> into <code>C:\Program Files\Adobe\Adobe Photoshop 2026\Plug-ins</code>.</li>
+	<li>Double-click <code>Slippy.ccx</code> to install the panel.</li>
+	<li>Open Photoshop, then <strong>Plugins &gt; Slippy</strong>.</li>
+</ol>
+
+<div class="note"><strong>Windows builds are new.</strong> They're built and checked automatically, but haven't had much real use yet. If something's off, <a href="https://github.com/tonykastaneda/slippy/issues">open an issue</a>.</div>
+
+<h2 id="check">Check it's working</h2>
+<p>Slippy's panel says <strong>Listening on 127.0.0.1:7331</strong> (Illustrator) or <strong>:7332</strong> (Photoshop). From a terminal:</p>
+<pre><code>curl http://127.0.0.1:7331/health    # Illustrator
+curl http://127.0.0.1:7332/health    # Photoshop</code></pre>
+<p>Each answers <code>{"ok":true,"name":"Slippy",...}</code>. Next: <a href="connect.html">connect an agent</a>.</p>
+
+<h2 id="update">Updating and removing</h2>
+<p>To update, quit the app and replace the plug-in file with the new one (and double-click the new <code>.ccx</code>).
+To remove Slippy, quit the app and delete the plug-in file; for Photoshop's panel, use <strong>Plugins &gt; Manage Plugins</strong>.</p>
+		<div class="pager"><a href="index.html"><small>Previous</small>Overview</a><a class="next" href="connect.html"><small>Next</small>Connect an agent</a></div>
+	</main>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>
