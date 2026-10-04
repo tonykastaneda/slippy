@@ -85,7 +85,7 @@
 	let celebrateAt = -1e9;   // when a download was clicked (ms into the animation)
 	let burstAt = -1e9;       // when the logo was clicked: the full-window rainbow burst
 	const burstPre = document.getElementById("burst");
-	const BURST_MS = 2600, BURST_RINGS = 9, BURST_GAP = 140;
+	const BURST_MS = 2400, BURST_RINGS = 6, BURST_GAP = 170;
 
 	// The burst: rings in his outline growing from him past the window's
 	// edges, a beat apart, each a moving rainbow, fading at the end.
@@ -113,8 +113,8 @@
 			if (t <= 0 || t >= 1) continue;
 			// Slow by him, faster as it goes: it lingers thick around him, then
 			// races out thinning to a single character at the window's edges.
-			const k = 1 + reach * Math.pow(t, 1.7);
-			rings.push({ k, a: t < 0.85 ? 1 : (1 - t) / 0.15, hue: (i * 40 + since * 0.25) % 360, band: 1 + 4 * Math.pow(1 - t, 1.3) });
+			const k = 1 + reach * Math.pow(t, 1.45);
+			rings.push({ k, a: 0.85 * (t < 0.8 ? 1 : (1 - t) / 0.2), hue: (i * 50 + since * 0.25) % 360, band: 1 + 2 * Math.pow(1 - t, 1.3) });
 		}
 		let out = "";
 		for (let r = 0; r < rows; r++) {
