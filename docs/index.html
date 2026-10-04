@@ -64,7 +64,8 @@
 	const LOOP = 14000;                  // ms for the whole story
 	const pre = document.getElementById("frog");
 	const still = new URLSearchParams(location.search).get("t");   // ?t=<ms>: one moment, still
-	const reduce = still === null && window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+	// Reduce Motion: smaller moves (a third, as in the plug-ins' panels), not none.
+	const MOTION = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.35 : 1;
 
 	// Shape, in units of his width, y up from his bottom (FrogShape.h).
 	const HEAD = { cx: 0.5, cy: 0.305, rx: 0.5, ry: 0.305 };
@@ -114,7 +115,8 @@
 	}
 
 	function draw(ms) {
-		const p = reduce ? { hop: 0, sq: 1, look: 0, lookY: 0, eyes: 1, asleep: false, happy: false, breath: 0 } : pose(ms);
+		const p = pose(ms);
+		p.hop *= MOTION; p.sq = 1 - (1 - p.sq) * MOTION; p.breath *= MOTION;
 		const W = 0.74;                      // his width, as a share of the grid's width
 		const sx = 1 + (1 - p.sq) * 0.6, sy = p.sq * (1 + p.breath);
 		const cellW = 1 / (COLS * W);        // grid cell -> his units
@@ -170,7 +172,7 @@
 			out += line + "\n";
 		}
 		// Z's while he sleeps: rising past his left eye.
-		if (p.asleep && !reduce) {
+		if (p.asleep) {
 			const lines = out.split("\n");
 			for (let k = 0; k < 3; k++) {
 				const t = ((ms / 2600) + k / 3) % 1;
@@ -196,7 +198,7 @@
 
 	if (still !== null) { draw(+still); return; }
 	let start = performance.now();
-	function frame(now) { draw(now - start); if (!reduce) requestAnimationFrame(frame); }
+	function frame(now) { draw(now - start); requestAnimationFrame(frame); }
 	requestAnimationFrame(frame);
 })();
 </script>
