@@ -294,6 +294,8 @@
 	// A download click: Slippy wakes, hops for joy, and rings in his outline
 	// radiate out from him - the panels' ripple.
 	document.querySelectorAll(".app a").forEach((a) => a.addEventListener("click", () => { celebrateAt = performance.now() - start; }));
+	// The nav logo too: no reload, just the celebration.
+	document.querySelector("nav a").addEventListener("click", (e) => { e.preventDefault(); celebrateAt = performance.now() - start; });
 	function frame(now) { draw(now - start); requestAnimationFrame(frame); }
 	requestAnimationFrame(frame);
 })();
