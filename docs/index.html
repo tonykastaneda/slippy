@@ -44,7 +44,6 @@
 	nav img { height: 26px; display: block; }
 	footer { margin-top: 36px; font-size: 13px; color: var(--dim); }
 	footer a { color: var(--dim); }
-	@media (max-width: 560px) { #frog, #zs { font-size: 7px; } }
 </style>
 </head>
 <body>
@@ -345,6 +344,20 @@
 		return line;
 	}
 
+	// Phones: size the art so Slippy himself spans the screen less a small
+	// margin - as big as fits, never clipped. (The art's empty edges, room for
+	// the Z's, may run off the sides; the page doesn't scroll sideways.)
+	function fit() {
+		if (innerWidth > 560) { pre.style.fontSize = zpre.style.fontSize = ""; return; }
+		const sp = document.createElement("span");
+		sp.textContent = "M".repeat(20); sp.style.position = "absolute"; sp.style.visibility = "hidden"; sp.style.fontSize = "10px";
+		pre.appendChild(sp); const perPx = sp.getBoundingClientRect().width / 20 / 10; sp.remove();   // a character's width per px of font size
+		const hisCols = COLS * 0.62 + 4;   // his width in characters, with room for his outline and a squash
+		const size = Math.min(12, (innerWidth - 24) / (hisCols * perPx));
+		pre.style.fontSize = zpre.style.fontSize = size.toFixed(2) + "px";
+	}
+	fit();
+	addEventListener("resize", fit);
 	zpre.style.bottom = `${ROWS - Z_BOTTOM - 1}em`;   // the layer's last row sits on grid row Z_BOTTOM
 	const cParam = new URLSearchParams(location.search).get("c");
 	const bParam = new URLSearchParams(location.search).get("b");
