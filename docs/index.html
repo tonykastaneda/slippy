@@ -29,8 +29,18 @@
 		border-radius: 5px; padding: 1px 7px; }
 	p { margin: 0; color: var(--dim); text-align: center; }
 	.downloads { display: flex; gap: 16px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
-	.app { border: 1px solid #23262b; border-radius: 10px; padding: 16px 18px; min-width: 250px; }
-	.app h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+	/* Each app: one button; open, its downloads. */
+	.app { border: 1px solid var(--green); border-radius: 10px; min-width: 250px; align-self: flex-start; }
+	.app summary { list-style: none; cursor: pointer; padding: 14px 18px; font-size: 15px; font-weight: 600;
+		display: flex; justify-content: space-between; align-items: center; user-select: none; }
+	.app summary::-webkit-details-marker { display: none; }
+	.app summary::after { content: ""; width: 7px; height: 7px; border: solid var(--dim); border-width: 0 1.5px 1.5px 0;
+		transform: rotate(45deg) translateY(-2px); transition: transform 0.15s; }
+	.app[open] summary::after { transform: rotate(225deg) translate(-1px, -1px); }
+	.app summary:hover { color: #fff; }
+	.app[open] { padding-bottom: 12px; }
+	.app[open] summary { padding-bottom: 8px; }
+	.app a { margin-left: 14px; margin-right: 14px; }
 	.app a { display: block; margin-top: 6px; padding: 8px 12px; border-radius: 6px; color: var(--text); text-decoration: none;
 		background: #16181c; font-size: 14px; }
 	.app a:hover { background: #1f2227; }
@@ -55,18 +65,18 @@
 <p>An MCP for Illustrator and Photoshop</p>
 
 <div class="downloads">
-	<div class="app">
-		<h2>Illustrator</h2>
+	<details class="app">
+		<summary>Illustrator</summary>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-macos.zip">macOS <span>.aip</span></a>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-x64.zip">Windows x64 <span>.aip</span></a>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-ARM64.zip">Windows ARM64 <span>.aip</span></a>
-	</div>
-	<div class="app">
-		<h2>Photoshop</h2>
+	</details>
+	<details class="app">
+		<summary>Photoshop</summary>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-macos.zip">macOS <span>.plugin + .ccx</span></a>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-x64.zip">Windows x64 <span>.8li + .ccx</span></a>
 		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-ARM64.zip">Windows ARM64 <span>.8li + .ccx</span></a>
-	</div>
+	</details>
 </div>
 
 <footer><a href="https://github.com/tonykastaneda/slippy">GitHub</a></footer>
