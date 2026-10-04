@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Slippy</title>
-<meta name="description" content="Slippy lets AI agents work in Adobe Illustrator and Photoshop.">
+<meta name="description" content="Slippy: an MCP for Illustrator and Photoshop.">
 <link rel="icon" href="slippy.svg">
 <style>
 	:root { --bg: #0b0c0e; --text: #e6e6e6; --dim: #7c7f87; --green: #92f607; }
@@ -15,7 +15,10 @@
 	#frog { margin: 0; font: 600 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #3b4a36;
 		white-space: pre; user-select: none; letter-spacing: 0; }
 	#frog b { color: var(--green); font-weight: 600; }
-	h1 { margin: 28px 0 4px; font-size: 32px; letter-spacing: -0.5px; }
+	h1 { margin: 28px 0 4px; font-size: 32px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px; }
+	/* The version, boxed as in Slippy's panels. */
+	.version { font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--dim); border: 1.5px solid #3a3d44;
+		border-radius: 5px; padding: 1px 7px; }
 	p { margin: 0; color: var(--dim); text-align: center; }
 	.downloads { display: flex; gap: 16px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
 	.app { border: 1px solid #23262b; border-radius: 10px; padding: 16px 18px; min-width: 250px; }
@@ -31,8 +34,8 @@
 </head>
 <body>
 <pre id="frog" aria-label="Slippy the frog"></pre>
-<h1>Slippy</h1>
-<p>Lets AI agents work in Adobe Illustrator and Photoshop.</p>
+<h1>Slippy <span class="version">v0.1</span></h1>
+<p>An MCP for Illustrator and Photoshop</p>
 
 <div class="downloads">
 	<div class="app">
