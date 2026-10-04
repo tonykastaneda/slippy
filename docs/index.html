@@ -15,7 +15,6 @@
 	#frog { margin: 0; font: 600 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #3b4a36;
 		white-space: pre; user-select: none; letter-spacing: 0; }
 	#frog b { color: var(--green); font-weight: 600; }
-	#frog i { color: #9aa394; font-style: normal; }
 	h1 { margin: 28px 0 4px; font-size: 32px; letter-spacing: -0.5px; }
 	p { margin: 0; color: var(--dim); text-align: center; }
 	.downloads { display: flex; gap: 16px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
@@ -155,13 +154,13 @@
 					let eye = false, lid = false;
 					for (const ey of eyes) {
 						const dx = (x - ey.x) / 0.087, dy = (y - ey.y) / 0.095;
-						if (p.asleep) { if (Math.abs(dx) < 1.1 && Math.abs(dy + 0.1 - 0.3 * dx * dx) < 0.17) lid = true; }
-						else if (p.happy) { if (Math.abs(dx) < 1.1 && Math.abs(dy - 0.3 + 0.8 * Math.abs(dx)) < 0.2) lid = true; }
+						if (p.asleep) { if (Math.abs(dx) < 1.1 && Math.abs(dy + 0.1 - 0.3 * dx * dx) < 0.26) lid = true; }
+						else if (p.happy) { if (Math.abs(dx) < 1.1 && Math.abs(dy - 0.3 + 0.8 * Math.abs(dx)) < 0.3) lid = true; }
 						else if (dx * dx + (dy / Math.max(0.05, p.eyes)) * (dy / Math.max(0.05, p.eyes)) < 1) eye = true;
 						else if (p.eyes < 0.3 && Math.abs(dx) < 1 && Math.abs(dy) < 0.2) lid = true;
 					}
 					if (eye) { ch = " "; }
-					else if (lid) { ch = p.happy && !p.asleep ? "^" : "-"; kind = "i"; }
+					else if (lid) { ch = " "; }   // closed and happy eyes are cut out too, like open ones
 					else if (edge) { ch = "@%+"[edge - 1]; kind = "b"; }
 					else {
 						// Shade: the surface normal from the height field, lit.
@@ -178,13 +177,16 @@
 			}
 			out += line + "\n";
 		}
-		// Z's while he sleeps: rising past his left eye.
+		// Three little Z's while he sleeps: a diagonal above his left eye, each
+		// fading in after the one before, drifting up, then all fading out.
 		if (p.asleep) {
 			const lines = out.split("\n");
+			const cycle = (ms % 3600) / 3600;
 			for (let k = 0; k < 3; k++) {
-				const t = ((ms / 2600) + k / 3) % 1;
-				const r = Math.round(9 - 8 * t), c = Math.round(18 - 6 * t);
-				if (r >= 0 && r < ROWS && Math.sin(Math.PI * t) > 0.2) lines[r] = place(lines[r], c, t < 0.5 ? "z" : "Z");
+				const on = clamp((cycle - k * 0.18) / 0.12, 0, 1) * clamp((0.92 - cycle) / 0.12, 0, 1);
+				if (on <= 0.02) continue;
+				const r = 7 - k * 2 - Math.round(cycle * 1.5), c = 24 - k * 4;
+				if (r >= 0 && r < ROWS) lines[r] = place(lines[r], c, "Z", on);
 			}
 			out = lines.join("\n");
 		}
@@ -192,14 +194,14 @@
 	}
 
 	// Puts a green character at visible column c of a line that may hold tags.
-	function place(line, c, chr) {
+	function place(line, c, chr, alpha = 1) {
 		let col = 0, i = 0;
 		while (i < line.length && col < c) {
 			if (line[i] === "<") { i = line.indexOf(">", i) + 1; if (line[i - 2] === "/" || line[i - 3] === "/") continue; continue; }
 			if (line[i] === "&") i = line.indexOf(";", i);
 			i++; col++;
 		}
-		if (line[i] === " ") return line.slice(0, i) + `<b>${chr}</b>` + line.slice(i + 1);
+		if (line[i] === " ") return line.slice(0, i) + `<b style="color: rgba(146, 246, 7, ${alpha.toFixed(2)})">${chr}</b>` + line.slice(i + 1);
 		return line;
 	}
 
