@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slippy</title>
+<meta name="description" content="Slippy lets AI agents work in Adobe Illustrator and Photoshop.">
+<link rel="icon" href="slippy.svg">
+<style>
+	:root { --bg: #0b0c0e; --text: #e6e6e6; --dim: #7c7f87; --green: #92f607; }
+	* { box-sizing: border-box; }
+	html, body { margin: 0; background: var(--bg); color: var(--text); }
+	body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; min-height: 100vh;
+		display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
+	#frog { margin: 0; font: 600 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #3b4a36;
+		white-space: pre; user-select: none; letter-spacing: 0; }
+	#frog b { color: var(--green); font-weight: 600; }
+	#frog i { color: #9aa394; font-style: normal; }
+	h1 { margin: 28px 0 4px; font-size: 32px; letter-spacing: -0.5px; }
+	p { margin: 0; color: var(--dim); text-align: center; }
+	.downloads { display: flex; gap: 16px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
+	.app { border: 1px solid #23262b; border-radius: 10px; padding: 16px 18px; min-width: 250px; }
+	.app h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+	.app a { display: block; margin-top: 6px; padding: 8px 12px; border-radius: 6px; color: var(--text); text-decoration: none;
+		background: #16181c; font-size: 14px; }
+	.app a:hover { background: #1f2227; }
+	.app a span { color: var(--dim); float: right; }
+	footer { margin-top: 36px; font-size: 13px; color: var(--dim); }
+	footer a { color: var(--dim); }
+	@media (max-width: 560px) { #frog { font-size: 7px; } }
+</style>
+</head>
+<body>
+<pre id="frog" aria-label="Slippy the frog"></pre>
+<h1>Slippy</h1>
+<p>Lets AI agents work in Adobe Illustrator and Photoshop.</p>
+
+<div class="downloads">
+	<div class="app">
+		<h2>Illustrator</h2>
+		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-macos.zip">macOS <span>.aip</span></a>
+		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-x64.zip">Windows x64 <span>.aip</span></a>
+		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Illustrator-windows-ARM64.zip">Windows ARM64 <span>.aip</span></a>
+	</div>
+	<div class="app">
+		<h2>Photoshop</h2>
+		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-macos.zip">macOS <span>.plugin + .ccx</span></a>
+		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-x64.zip">Windows x64 <span>.8li + .ccx</span></a>
+		<a href="https://github.com/tonykastaneda/slippy/releases/latest/download/Slippy-Photoshop-windows-ARM64.zip">Windows ARM64 <span>.8li + .ccx</span></a>
+	</div>
+</div>
+
+<footer><a href="https://github.com/tonykastaneda/slippy">GitHub</a></footer>
+
+<script>
+// Slippy in ASCII, drawn live: his shape (the same proportions as the
+// plug-ins' frog) shaded like a lit, rounded surface into a character ramp,
+// his outline in green - in the spirit of ghostty.org's ghost. He sleeps
+// (Z's), wakes, hops, looks around, blinks, and dozes off again, in a loop.
+(function () {
+	const COLS = 84, ROWS = 42;          // character grid; a cell is about twice as tall as wide
+	const ASPECT = 1.65;                 // a monospace cell's height / width at line-height 1
+	const RAMP = " ·:~=+ox*%$@";        // dark -> bright
+	const LOOP = 14000;                  // ms for the whole story
+	const pre = document.getElementById("frog");
+	const still = new URLSearchParams(location.search).get("t");   // ?t=<ms>: one moment, still
+	const reduce = still === null && window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+	// Shape, in units of his width, y up from his bottom (FrogShape.h).
+	const HEAD = { cx: 0.5, cy: 0.305, rx: 0.5, ry: 0.305 };
+	const EYE_X = 0.208, EYE_Y = 0.61, BUMP_R = 0.2078;
+
+	const smooth = (t) => t * t * (3 - 2 * t);
+	const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+	const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+
+	// The story at time t (0..1 of the loop): his pose.
+	function pose(ms) {
+		const t = (ms % LOOP) / LOOP;
+		const p = { hop: 0, sq: 1, look: 0, lookY: 0, eyes: 1, asleep: false, happy: false, breath: 0 };
+		const breathe = Math.sin(ms / 520) * (t < 0.18 || t > 0.86 ? 0.03 : 0.012);
+		p.breath = breathe;
+		if (t < 0.18 || t > 0.9) { p.asleep = true; return p; }                 // asleep
+		if (t < 0.24) { p.happy = true; }                                       // wakes, ^ ^
+		const h = seg(t, 0.2, 0.3);                                              // the hop
+		if (h > 0 && h < 1) {
+			p.hop = Math.sin(Math.PI * h) * 0.12;
+			p.sq = h < 0.12 ? 1 - 0.1 * Math.sin(Math.PI * h / 0.12) : h > 0.88 ? 1 - 0.12 * Math.sin(Math.PI * (h - 0.88) / 0.12) : 1.04;
+		}
+		// Looking around: held glances.
+		const looks = [[0.32, 0], [0.38, -1], [0.48, 1], [0.58, -0.4], [0.66, 0.9], [0.74, 0]];
+		let lx = 0;
+		for (let i = 0; i < looks.length - 1; i++) {
+			const [a, va] = looks[i], [b, vb] = looks[i + 1];
+			if (t >= a && t < b) lx = va + (vb - va) * smooth(seg(t, a, a + 0.025));
+		}
+		if (t >= looks[looks.length - 1][0]) lx = 0;
+		p.look = lx;
+		p.lookY = Math.sin(t * 40) * 0.15;
+		// Blinks.
+		for (const b of [0.35, 0.53, 0.56, 0.7]) { const d = Math.abs(t - b); if (d < 0.008) p.eyes = d / 0.008; }
+		// A second hop of joy, then dozing: ^ ^, a nod.
+		const h2 = seg(t, 0.78, 0.83);
+		if (h2 > 0 && h2 < 1) { p.hop = Math.sin(Math.PI * h2) * 0.08; p.happy = true; }
+		if (t > 0.84) { p.happy = true; p.hop = -0.02 * Math.sin(Math.PI * seg(t, 0.84, 0.9)); }
+		return p;
+	}
+
+	// Height of his rounded surface at (x, y), 0 outside: the union of the head
+	// and the two bumps, each a dome.
+	function dome(x, y, cx, cy, rx, ry) {
+		const u = (x - cx) / rx, v = (y - cy) / ry, d = u * u + v * v;
+		return d < 1 ? Math.sqrt(1 - d) : -1;
+	}
+
+	function draw(ms) {
+		const p = reduce ? { hop: 0, sq: 1, look: 0, lookY: 0, eyes: 1, asleep: false, happy: false, breath: 0 } : pose(ms);
+		const W = 0.74;                      // his width, as a share of the grid's width
+		const sx = 1 + (1 - p.sq) * 0.6, sy = p.sq * (1 + p.breath);
+		const cellW = 1 / (COLS * W);        // grid cell -> his units
+		const cellH = cellW * ASPECT;
+		const ox = 0.5 * COLS, base = ROWS - 2;   // his bottom-center, in cells
+		const lift = p.hop / cellH;
+		const light = [-0.5, 0.65, 0.58];    // from the upper left, toward the viewer
+		const eyes = [-1, 1].map((s) => ({ x: 0.5 + s * EYE_X + p.look * 0.045, y: EYE_Y + p.lookY * 0.02 }));
+
+		const height = (x, y) => Math.max(
+			dome(x, y, HEAD.cx, HEAD.cy, HEAD.rx, HEAD.ry),
+			dome(x, y, 0.5 - EYE_X, EYE_Y, BUMP_R, BUMP_R),
+			dome(x, y, 0.5 + EYE_X, EYE_Y, BUMP_R, BUMP_R));
+
+		let out = "";
+		for (let r = 0; r < ROWS; r++) {
+			let line = "";
+			for (let c = 0; c < COLS; c++) {
+				// Cell center -> his coordinates (with the squash about his bottom).
+				const x = 0.5 + ((c + 0.5 - ox) * cellW) / sx;
+				const y = ((base - lift - (r + 0.5)) * cellH) / sy;
+				const z = height(x, y);
+				let ch = " ", kind = "";
+				if (z >= 0) {
+					// The outline: a cell inside him with an outside neighbor.
+					const e = cellW * 1.05, f = cellH * 0.55;
+					const edge = height(x + e, y) < 0 || height(x - e, y) < 0 || height(x, y + f) < 0 || height(x, y - f) < 0;
+					// Eyes: solid dark ovals; closed, a line; happy, a caret.
+					let eye = false, lid = false;
+					for (const ey of eyes) {
+						const dx = (x - ey.x) / 0.087, dy = (y - ey.y) / 0.095;
+						if (p.asleep) { if (Math.abs(dx) < 1.1 && Math.abs(dy + 0.1 - 0.3 * dx * dx) < 0.17) lid = true; }
+						else if (p.happy) { if (Math.abs(dx) < 1.1 && Math.abs(dy - 0.3 + 0.8 * Math.abs(dx)) < 0.2) lid = true; }
+						else if (dx * dx + (dy / Math.max(0.05, p.eyes)) * (dy / Math.max(0.05, p.eyes)) < 1) eye = true;
+						else if (p.eyes < 0.3 && Math.abs(dx) < 1 && Math.abs(dy) < 0.2) lid = true;
+					}
+					if (eye) { ch = " "; }
+					else if (lid) { ch = p.happy && !p.asleep ? "^" : "-"; kind = "i"; }
+					else if (edge) { ch = "@"; kind = "b"; }
+					else {
+						// Shade: the surface normal from the height field, lit.
+						const d = 0.004;
+						const nx = (height(x - d, y) - height(x + d, y)) / (2 * d) * 0.12;
+						const ny = (height(x, y - d) - height(x, y + d)) / (2 * d) * 0.12;
+						const n = Math.hypot(nx, ny, 1);
+						const lit = clamp((nx * light[0] + ny * light[1] + light[2]) / n, 0, 1);
+						const v = clamp(0.15 + 0.85 * lit * (0.55 + 0.45 * z), 0, 0.999);
+						ch = RAMP[Math.floor(v * RAMP.length)];
+					}
+				}
+				line += kind ? `<${kind}>${ch === "<" ? "&lt;" : ch}</${kind}>` : ch;
+			}
+			out += line + "\n";
+		}
+		// Z's while he sleeps: rising past his left eye.
+		if (p.asleep && !reduce) {
+			const lines = out.split("\n");
+			for (let k = 0; k < 3; k++) {
+				const t = ((ms / 2600) + k / 3) % 1;
+				const r = Math.round(9 - 8 * t), c = Math.round(18 - 6 * t);
+				if (r >= 0 && r < ROWS && Math.sin(Math.PI * t) > 0.2) lines[r] = place(lines[r], c, t < 0.5 ? "z" : "Z");
+			}
+			out = lines.join("\n");
+		}
+		pre.innerHTML = out;
+	}
+
+	// Puts a green character at visible column c of a line that may hold tags.
+	function place(line, c, chr) {
+		let col = 0, i = 0;
+		while (i < line.length && col < c) {
+			if (line[i] === "<") { i = line.indexOf(">", i) + 1; if (line[i - 2] === "/" || line[i - 3] === "/") continue; continue; }
+			if (line[i] === "&") i = line.indexOf(";", i);
+			i++; col++;
+		}
+		if (line[i] === " ") return line.slice(0, i) + `<b>${chr}</b>` + line.slice(i + 1);
+		return line;
+	}
+
+	if (still !== null) { draw(+still); return; }
+	let start = performance.now();
+	function frame(now) { draw(now - start); if (!reduce) requestAnimationFrame(frame); }
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
