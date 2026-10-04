@@ -141,9 +141,16 @@
 				const z = height(x, y);
 				let ch = " ", kind = "";
 				if (z >= 0) {
-					// The outline: a cell inside him with an outside neighbor.
-					const e = cellW * 1.05, f = cellH * 0.55;
-					const edge = height(x + e, y) < 0 || height(x - e, y) < 0 || height(x, y + f) < 0 || height(x, y - f) < 0;
+					// The outline: a band about three characters thick - how far in
+					// from his edge this cell is, in character widths (1, 2, 3; 0 = deeper).
+					let edge = 0;
+					for (let k = 1; k <= 3 && !edge; k++) {
+						const rr = cellW * (k - 0.35);
+						for (let a = 0; a < 12; a++) {
+							const ang = (a / 12) * 2 * Math.PI;
+							if (height(x + rr * Math.cos(ang), y + rr * Math.sin(ang)) < 0) { edge = k; break; }
+						}
+					}
 					// Eyes: solid dark ovals; closed, a line; happy, a caret.
 					let eye = false, lid = false;
 					for (const ey of eyes) {
@@ -155,7 +162,7 @@
 					}
 					if (eye) { ch = " "; }
 					else if (lid) { ch = p.happy && !p.asleep ? "^" : "-"; kind = "i"; }
-					else if (edge) { ch = "@"; kind = "b"; }
+					else if (edge) { ch = "@%+"[edge - 1]; kind = "b"; }
 					else {
 						// Shade: the surface normal from the height field, lit.
 						const d = 0.004;
