@@ -112,9 +112,16 @@
 	// one, on top of the others, and each plays out on its own.
 	const effects = [];
 	const RIPPLE_MS = 1300;
+	// His story's clock runs ahead of the page's by storyShift: waking him
+	// moves it forward to the moment he wakes, so he plays the whole awake
+	// part (wake, hop, look around, blink) before dozing off again.
+	let storyShift = 0;
+	const asleepAt = (ms) => { const t = ((ms + storyShift) % LOOP) / LOOP; return t < 0.18 || t > 0.9; };
 	function addEffect(burst) {
-		celebrateAt = performance.now() - start;   // he hops for the latest
-		effects.push({ at: celebrateAt, burst });
+		const now = performance.now() - start;
+		if (asleepAt(now)) storyShift += (0.18 * LOOP - ((now + storyShift) % LOOP) + LOOP) % LOOP;   // wake him: no extra hop, the story has one
+		else celebrateAt = now;   // awake already: a happy hop
+		effects.push({ at: now, burst });
 	}
 	const burstPre = document.getElementById("burst");
 	const BURST_MS = 2400, BURST_RINGS = 6, BURST_GAP = 170;
@@ -281,7 +288,7 @@
 	}
 
 	function draw(ms) {
-		const p = pose(ms);
+		const p = pose(ms + storyShift);
 		const since = ms - celebrateAt;
 		if (since >= 0 && since < 1800) {
 			p.asleep = false; p.happy = true; p.eyes = 1;
