@@ -5,12 +5,11 @@
 install one or both. <a href="../#downloads">Downloads are on the home page.</a></p>
 
 <div class="note"><strong>Quit the app first.</strong> Plug-ins load when the app starts, so install with it closed, then open it again.</div>
+<p>The macOS plug-ins are signed with a Developer ID and notarized by Apple, so macOS opens them without warnings.</p>
 
 <h2 id="illustrator-mac">Illustrator on macOS</h2>
 <ol class="steps">
 	<li>Unzip <code>Slippy-Illustrator-macos.zip</code>. You get <code>Slippy.aip</code>.</li>
-	<li>Let macOS load it. Downloaded plug-ins are quarantined, and this build isn't signed by Apple yet, so clear the flag once:
-		<pre><code>xattr -dr com.apple.quarantine ~/Downloads/Slippy.aip</code></pre></li>
 	<li>Move <code>Slippy.aip</code> into Illustrator's plug-ins folder: <code>/Applications/Adobe Illustrator 2026/Plug-ins</code>.
 		Finder asks for your password the first time; that folder belongs to the system.</li>
 	<li>Open Illustrator, then <strong>Window &gt; Utilities &gt; Slippy</strong>. Dock the panel wherever you like.</li>
@@ -27,8 +26,6 @@ install one or both. <a href="../#downloads">Downloads are on the home page.</a>
 <p>Slippy for Photoshop comes in two parts: <code>Slippy.plugin</code> does the work, and <code>Slippy.ccx</code> is its docked panel.</p>
 <ol class="steps">
 	<li>Unzip <code>Slippy-Photoshop-macos.zip</code>. You get <code>Slippy.plugin</code> and <code>Slippy.ccx</code>.</li>
-	<li>Clear the quarantine flag on the plug-in:
-		<pre><code>xattr -dr com.apple.quarantine ~/Downloads/Slippy.plugin</code></pre></li>
 	<li>Make a <code>Slippy</code> folder in Photoshop's plug-ins folder and put <code>Slippy.plugin</code> in it:
 		<code>/Applications/Adobe Photoshop 2026/Plug-ins/Slippy/Slippy.plugin</code>. Finder asks for your password.</li>
 	<li>Double-click <code>Slippy.ccx</code>. Creative Cloud installs the panel.</li>
