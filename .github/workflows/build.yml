@@ -111,9 +111,11 @@ jobs:
 
       - name: Package
         run: |
-          ditto -c -k --keepParent build/Slippy.aip Slippy-Illustrator-macos.zip
-          mkdir -p ps-macos && ditto build/ps/Slippy.plugin ps-macos/Slippy.plugin && cp build/ps/Slippy.ccx ps-macos/
-          (cd ps-macos && ditto -c -k --sequesterRsrc . ../Slippy-Photoshop-macos.zip)
+          # No extended attributes or resource forks in the zips: unzip turns them
+          # into ._ files inside the bundle, which breaks its signature.
+          ditto -c -k --norsrc --noextattr --noacl --keepParent build/Slippy.aip Slippy-Illustrator-macos.zip
+          mkdir -p ps-macos && ditto --norsrc --noextattr --noacl build/ps/Slippy.plugin ps-macos/Slippy.plugin && cp build/ps/Slippy.ccx ps-macos/
+          (cd ps-macos && ditto -c -k --norsrc --noextattr --noacl . ../Slippy-Photoshop-macos.zip)
 
       - name: Upload Illustrator plug-in
         uses: actions/upload-artifact@v5
