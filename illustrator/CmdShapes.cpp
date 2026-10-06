@@ -225,6 +225,54 @@ json::Value PathMeasure(const json::Value& p)
 	return out;
 }
 
+json::Value PathPoints(const json::Value& p)
+{
+	Need(sAIPath, "The path suite");
+	AIArtHandle art = ArtById(IdText(Required(p, "id")));
+	if (ArtType(art) != kPathArt) Fail(kErrInvalidParams, "art " + ArtId(art) + " isn't a path");
+	std::string kind = p.str("kind", "key");
+	if (kind != "key" && kind != "all") Fail(kErrInvalidParams, "'kind' must be key or all");
+	double threshold = p.num("minTurn", 25);
+	if (threshold < 0 || threshold > 180) Fail(kErrInvalidParams, "'minTurn' must be 0 to 180 degrees");
+	ai::int16 count = 0;
+	AIBoolean closed = false;
+	Check(sAIPath->GetPathSegmentCount(art, &count), "GetPathSegmentCount");
+	Check(sAIPath->GetPathClosed(art, &closed), "GetPathClosed");
+	std::vector<AIPathSegment> segments((size_t) count);
+	if (count) Check(sAIPath->GetPathSegments(art, 0, count, segments.data()), "GetPathSegments");
+	AIReal area = 0;
+	sAIPath->GetPathArea(art, &area);
+	json::Value out;
+	out["id"] = ArtId(art);
+	AIRealRect bounds;
+	if (!sAIArt->GetArtBounds(art, &bounds)) out["bounds"] = RectJson(bounds);
+	out["closed"] = (bool) closed;
+	out["anchors"] = count;
+	out["points"] = json::Value::MakeArray();
+	for (int i = 0; i < count; i++) {
+		bool hasPrev = closed || i > 0, hasNext = closed || i + 1 < count;
+		double turn = 0;
+		if (hasPrev && hasNext) {
+			const auto& a = segments[(size_t) ((i + count - 1) % count)].p;
+			const auto& b = segments[(size_t) i].p;
+			const auto& c = segments[(size_t) ((i + 1) % count)].p;
+			double ux = b.h - a.h, uy = b.v - a.v, vx = c.h - b.h, vy = c.v - b.v;
+			turn = std::atan2(ux * vy - uy * vx, ux * vx + uy * vy) * 180.0 / kPi;
+		}
+		bool endpoint = !hasPrev || !hasNext;
+		bool key = endpoint || segments[(size_t) i].corner || std::fabs(turn) >= threshold;
+		if (kind == "key" && !key) continue;
+		json::Value point;
+		point["index"] = i;
+		point["p"] = PointJson(segments[(size_t) i].p);
+		point["turn"] = turn;
+		point["kind"] = endpoint ? "end" : !key ? "smooth" :
+			(area != 0 && turn * area < 0 && std::fabs(turn) >= threshold ? "notch" : "corner");
+		out["points"].push(point);
+	}
+	return out;
+}
+
 // The point (and direction) a share of the way along a path.
 json::Value PathPointAt(const json::Value& p)
 {
@@ -706,6 +754,8 @@ void AddShapeCommands(CommandTable& t)
 	t["compound.make"] = {"Make a compound path (holes where paths overlap), like Object > Compound Path > Make.", Params({{"ids", ids}, {"name", "string"}}), CompoundMake, true};
 	t["compound.release"] = {"Release compound paths back into separate paths.", Params({{"ids", ids}, {"id", "string"}}), CompoundRelease, true};
 	t["path.measure"] = {"Length, area, anchor count and direction of paths.", Params({{"ids", ids}, {"id", "string"}}), PathMeasure, false};
+	t["path.points"] = {"Key path geometry: endpoints, corners and inward notches with index, position and turn angle; kind=all returns every anchor.",
+		Params({{"id", "string - path id"}, {"kind", "key | all (default key)"}, {"minTurn", "number - minimum change of direction in degrees (default 25)"}}), PathPoints, false};
 	t["path.pointAt"] = {"The point and direction a share of the way along a path ('at' 0-1, or 'distance' in points).",
 		Params({{"id", "string"}, {"at", "number 0-1 (default 0.5)"}, {"distance", "number - points from the start"}}), PathPointAt, false};
 	t["path.reverse"] = {"Reverse path direction.", Params({{"ids", ids}, {"id", "string"}}), PathReverse, true};

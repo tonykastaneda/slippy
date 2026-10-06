@@ -36,7 +36,9 @@ enum ErrorCode {
 // calls all report success, then the changes are gone. So a write runs alone -
 // a batch splits before and after it, and StartsRun says a queued call or
 // batch must wait for an event of its own.
-json::Value Handle(const json::Value& request, json::Value* rest = nullptr);
+// prior holds responses from earlier parts of a document-split batch, so
+// references such as $0.id still resolve after Illustrator changes documents.
+json::Value Handle(const json::Value& request, json::Value* rest = nullptr, const json::Value* prior = nullptr);
 bool EndsRun(const json::Value& call);
 bool StartsRun(const json::Value& request);
 bool WritesFile(const json::Value& call);

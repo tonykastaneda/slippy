@@ -72,6 +72,8 @@ json::Value SchemaFor(const json::Value& params)
 		else if (head == "string[]") { p["type"] = "array"; p["items"]["type"] = "string"; }
 		schema["properties"][kv.first] = p;
 	}
+	schema["properties"]["quiet"]["type"] = "boolean";
+	schema["properties"]["quiet"]["description"] = "Return only identifiers, bounds and brief status (default false)";
 	return schema;
 }
 
@@ -119,6 +121,7 @@ json::Value ToolList(bool allTools)
 		t["inputSchema"]["properties"]["method"]["description"] = "dotted method name, e.g. \"gradient.create\"";
 		t["inputSchema"]["properties"]["params"]["type"] = "object";
 		t["inputSchema"]["properties"]["params"]["description"] = "the command's parameters, as slippy_find lists them";
+		t["inputSchema"]["properties"]["quiet"]["type"] = "boolean";
 		t["inputSchema"]["required"] = json::Array{"method"};
 		tools.push(t);
 	}
@@ -126,7 +129,8 @@ json::Value ToolList(bool allTools)
 		json::Value t;
 		t["name"] = "slippy_batch";
 		t["description"] = "Run several Slippy commands back to back as ONE undo step; stops at the first error. "
-			"Each call is {method, params} with the dotted method names " + Host().batchExamples + ". "
+			"Each call is {method, params} with the dotted method names " + Host().batchExamples + ". " +
+			(Host().batchReferences ? "A later step can refer to an earlier result: $5.id, $5[0].id, or $5.bounds.left. " : "") +
 			"Opening, closing, creating or switching documents splits the batch there: " + Host().app + " finishes that "
 			"before the rest runs (results still come back together); saving or exporting runs on its own, after "
 			"the edits before it, so a save at the end of a batch is fine. Batch edits that belong together.";
@@ -138,6 +142,8 @@ json::Value ToolList(bool allTools)
 		t["inputSchema"]["type"] = "object";
 		t["inputSchema"]["properties"]["calls"]["type"] = "array";
 		t["inputSchema"]["properties"]["calls"]["items"] = call;
+		t["inputSchema"]["properties"]["quiet"]["type"] = "boolean";
+		t["inputSchema"]["properties"]["quiet"]["description"] = "Return only step identifiers, art IDs, bounds and brief status";
 		t["inputSchema"]["required"] = json::Array{"calls"};
 		tools.push(t);
 	}
@@ -194,7 +200,24 @@ json::Value Find(const std::string& search)
 }
 
 // A command's JSON-RPC response as an MCP tool result.
-json::Value ToolResult(const json::Value& response)
+json::Value Brief(const json::Value& result)
+{
+	if (result.isArray()) {
+		json::Value out = json::Value::MakeArray();
+		for (const json::Value& v : result.asArray()) out.push(Brief(v));
+		return out;
+	}
+	if (!result.isObject()) return result;
+	json::Value out = json::Value::MakeObject();
+	for (const char* key : {"id", "bounds", "name", "path", "saved", "closed", "format", "width", "height"})
+		if (result.has(key)) out[key] = result.get(key);
+	if (result.get("artboards").isArray())
+		for (const json::Value& board : result.get("artboards").asArray())
+			if (board.boolean("active", false)) { out["bounds"] = board.get("bounds"); break; }
+	return out;
+}
+
+json::Value ToolResult(const json::Value& response, bool quiet = false)
 {
 	json::Value out;
 	const json::Value& err = response.get("error");
@@ -209,8 +232,9 @@ json::Value ToolResult(const json::Value& response)
 	}
 	else {
 		const json::Value& result = response.get("result");
-		text["text"] = result.dump(2);
-		if (result.isObject()) out["structuredContent"] = result;
+		json::Value display = quiet ? Brief(result) : result;
+		text["text"] = display.dump(quiet ? -1 : 2);
+		if (display.isObject()) out["structuredContent"] = display;
 		out["isError"] = false;
 	}
 	out["content"] = json::Array{text};
@@ -247,8 +271,20 @@ json::Value CallTool(const json::Value& params, const RunCall& run, const std::s
 		json::Value out;
 		json::Value text;
 		text["type"] = "text";
-		text["text"] = responses.dump(2);
+		json::Value display = responses;
+		if (arguments.boolean("quiet", false) && responses.isArray()) {
+			display = json::Value::MakeArray();
+			for (const json::Value& response : responses.asArray()) {
+				json::Value item;
+				item["step"] = response.get("id");
+				if (response.has("error")) item["error"] = response.get("error");
+				else item["result"] = Brief(response.get("result"));
+				display.push(item);
+			}
+		}
+		text["text"] = display.dump(arguments.boolean("quiet", false) ? -1 : 2);
 		out["content"] = json::Array{text};
+		if (arguments.boolean("quiet", false)) out["structuredContent"]["steps"] = display;
 		out["isError"] = failed;
 		return out;
 	}
@@ -271,7 +307,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run, const std::s
 		}
 		req["method"] = arguments.get("method");
 		req["params"] = arguments.get("params").isObject() ? arguments.get("params") : json::Value::MakeObject();
-		return ToolResult(run(req));
+		return ToolResult(run(req), arguments.boolean("quiet", false));
 	}
 	// A command's own tool: its name back to the dotted method (swatch_group_create -> swatch.group.create).
 	std::string method = name == "slippy_status" ? "app.info" : "";
@@ -287,7 +323,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run, const std::s
 	}
 	req["method"] = method;
 	req["params"] = arguments;
-	return ToolResult(run(req));
+	return ToolResult(run(req), arguments.boolean("quiet", false));
 }
 
 } // namespace

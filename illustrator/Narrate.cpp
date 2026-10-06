@@ -156,7 +156,9 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 		return {"Edited " + who, "edit that"};
 	}
 	if (m == "art.transform") return {Transform(p, who), "move that"};
+	if (m == "art.fit") return {"Fitted " + who + " to another object", "fit that"};
 	if (m == "art.duplicate") return {"Duplicated " + who, "duplicate that"};
+	if (m == "art.copyTo") return {"Copied " + who + " to another document", "copy that to another document"};
 	if (m == "art.arrange") return {p.str("to") == "back" ? "Sent " + who + " to the back" : "Brought " + who + " to the front", "rearrange that"};
 	if (m == "art.group") {
 		size_t n = p.get("ids").isArray() ? p.get("ids").size() : 0;
@@ -170,6 +172,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	}
 	if (m == "art.ungroup") return {"Ungrouped" + (r.isArray() ? " " + Plural(r.size(), "object", "objects") : std::string()), "ungroup that"};
 	if (m == "art.clip") return {"Made a clipping mask" + Named(p, r), "make the clipping mask"};
+	if (m == "art.clipTo") return {"Clipped art to a piece, with its outline on top" + Named(p, r), "clip art to that piece"};
 	if (m == "art.unclip") return {"Released a clipping mask", "release the mask"};
 	if (m == "art.place") {
 		std::string path = p.str("path");
@@ -263,6 +266,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	if (m == "compound.make") return {"Made a compound path", "make a compound path"};
 	if (m == "compound.release") return {"Released a compound path", "release a compound path"};
 	if (m == "path.measure") return {"Measured " + Target(p, json::Value()), "measure a path"};
+	if (m == "path.points") return {"Read key points on a path", "read path points"};
 	if (m == "path.pointAt") return {"Found a point along a path", "find a point on a path"};
 	if (m == "path.reverse") return {"Reversed " + Target(p, json::Value()), "reverse a path"};
 	if (m == "path.setClosed") return {p.boolean("closed", true) ? "Closed " + Target(p, json::Value()) : "Opened " + Target(p, json::Value()), "close a path"};

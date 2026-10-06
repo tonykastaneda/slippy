@@ -34,7 +34,7 @@ void Install()
 		SlippyTerminal.shared.stateDirectory = NS(slippy::platform::SupportDir());
 		gView = [[SlippyPanelView alloc] initWithFrame:host.bounds];
 		gView.connectionInfo = ^NSString* { return gCallbacks.connectionInfo ? NS(gCallbacks.connectionInfo()) : @""; };
-		NSString* version = NS(kSlippyVersion);   // "0.1.0" -> "0.1"
+		NSString* version = NS(kSlippyVersion);   // "1.2.0" -> "1.2"
 		if ([version hasSuffix:@".0"]) version = [version substringToIndex:version.length - 2];
 		gView.version = version;
 		// Opening the terminal drawer makes the panel taller (when Illustrator lets it).

@@ -344,7 +344,7 @@ void SlippyPlugin::RunPending()
 		ran = true;
 		json::Value response, rest;
 		try {
-			response = slippy::Handle(job->request, &rest);
+			response = slippy::Handle(job->request, &rest, &job->done);
 		}
 		catch (...) {
 			response = Failure(json::Value(), slippy::kErrInternal, "internal error");

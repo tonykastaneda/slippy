@@ -85,7 +85,7 @@ void Build()
 	gView = [[SlippyPanelView alloc] initWithFrame:gWindow.contentView.bounds];
 	gView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	gView.connectionInfo = ^NSString* { return gCallbacks.connectionInfo ? NS(gCallbacks.connectionInfo()) : @""; };
-	NSString* version = NS(kSlippyVersion);   // "0.1.0" -> "0.1"
+	NSString* version = NS(kSlippyVersion);   // "1.2.0" -> "1.2"
 	if ([version hasSuffix:@".0"]) version = [version substringToIndex:version.length - 2];
 	gView.version = version;
 	// Opening the terminal drawer makes the window taller (from its top edge down).

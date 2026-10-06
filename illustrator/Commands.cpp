@@ -1,6 +1,7 @@
 #include "IllustratorSDK.h"
 #include "CrashLog.h"
 #include "Commands.h"
+#include "BatchRefs.h"
 #include "Kit.h"
 #include "Narrate.h"
 #include "Overlay.h"
@@ -1312,6 +1313,49 @@ json::Value ArtDuplicate(const json::Value& p)
 	return out;
 }
 
+std::vector<AIArtHandle> FrontToBack(std::vector<AIArtHandle> arts);
+
+json::Value ArtCopyTo(const json::Value& p)
+{
+	Need(sAIDictionary, "The dictionary suite");
+	Need(sAIDocumentList, "The document list suite");
+	std::vector<AIArtHandle> arts = ArtList(p, true);
+	if (arts.empty()) Fail(kErrInvalidParams, "art.copyTo needs art to copy");
+	arts = FrontToBack(arts);
+	std::reverse(arts.begin(), arts.end());  // bottom first; each copy lands on top
+	const json::Value& targetParam = Required(p, "document");
+	if (!targetParam.isNumber() || targetParam.asNumber() != std::floor(targetParam.asNumber()))
+		Fail(kErrInvalidParams, "'document' must be an index from document.list");
+	auto docs = OpenDocuments();
+	int index = targetParam.asInt();
+	if (index < 0 || index >= (int) docs.size()) Fail(kErrNotFound, "no document at index " + std::to_string(index));
+	AIDocumentHandle destination = docs[(size_t) index].first;
+	AIDocumentHandle source = ActiveDocument();
+	if (destination == source) return ArtDuplicate(p);
+	AIDictionaryRef buffer = nullptr;
+	Check(sAIDictionary->CreateDictionary(&buffer), "CreateDictionary");
+	json::Value out = json::Value::MakeArray();
+	try {
+		for (size_t i = 0; i < arts.size(); i++)
+			Check(sAIDictionary->CopyArtToEntry(buffer, sAIDictionary->Key(("slippy-copy-" + std::to_string(i)).c_str()), arts[i]), "CopyArtToEntry");
+		Check(sAIDocumentList->Activate(destination, true), "Activate destination");
+		AILayerHandle layer = nullptr;
+		Check(sAILayer->GetCurrentLayer(&layer), "GetCurrentLayer");
+		AIArtHandle parent = nullptr;
+		Check(sAIArt->GetFirstArtOfLayer(layer, &parent), "GetFirstArtOfLayer");
+		for (size_t i = 0; i < arts.size(); i++) {
+			AIArtHandle copy = nullptr;
+			Check(sAIDictionary->CopyEntryToArt(buffer, sAIDictionary->Key(("slippy-copy-" + std::to_string(i)).c_str()),
+				kPlaceInsideOnTop, parent, &copy), "CopyEntryToArt");
+			overlay::Touch(copy);
+			out.push(ArtSummary(copy, 0));
+		}
+	}
+	catch (...) { sAIDictionary->Release(buffer); throw; }
+	sAIDictionary->Release(buffer);
+	return out;
+}
+
 json::Value ArtArrange(const json::Value& p)
 {
 	std::string to = ReqStr(p, "to");
@@ -1515,6 +1559,32 @@ json::Value ArtClip(const json::Value& p)
 	return Finish(group, p);
 }
 
+json::Value ArtClipTo(const json::Value& p)
+{
+	Need(sAIGroup, "The group suite");
+	AIArtHandle piece = ArtById(IdText(Required(p, "piece")));
+	short type = ArtType(piece);
+	if (type != kPathArt && type != kCompoundPathArt && type != kTextFrameArt)
+		Fail(kErrInvalidParams, "'piece' must be a path, compound path or text");
+	std::vector<AIArtHandle> contents = ArtList(p, true);
+	if (contents.empty()) Fail(kErrInvalidParams, "art.clipTo needs art to clip");
+	for (AIArtHandle a : contents) if (a == piece) Fail(kErrInvalidParams, "the piece must be separate from the art to clip");
+	AIArtHandle mask = nullptr;
+	Check(sAIArt->DuplicateArt(piece, kPlaceAbove, piece, &mask), "DuplicateArt mask");
+	json::Value clip;
+	clip["ids"] = json::Value::MakeArray();
+	for (AIArtHandle a : contents) clip["ids"].push(ArtId(a));
+	clip["ids"].push(ArtId(mask));
+	clip["mask"] = ArtId(mask);
+	if (p.has("name")) clip["name"] = p.get("name");
+	json::Value group = ArtClip(clip);
+	AIArtHandle groupArt = ArtById(group.get("id").asString());
+	Check(sAIArt->ReorderArt(piece, kPlaceAbove, groupArt), "ReorderArt outline");
+	group["mask"] = ArtId(mask);
+	group["outline"] = ArtId(piece);
+	return group;
+}
+
 json::Value ArtUnclip(const json::Value& p)
 {
 	json::Value out = json::Value::MakeArray();
@@ -1550,25 +1620,55 @@ json::Value ArtUngroup(const json::Value& p)
 
 // Scales and centers art on a target's bounds: "fill" covers it (the
 // clipping group crops the rest), "fit" fits inside, "stretch" matches both.
-void FitTo(AIArtHandle art, AIArtHandle target, const std::string& how)
+void FitTo(AIArtHandle art, AIArtHandle target, const std::string& how, double bleed = 0, const std::string& anchor = "center")
 {
 	AIRealRect a, t;
 	Check(sAIArt->GetArtBounds(art, &a), "GetArtBounds");
 	Check(sAIArt->GetArtBounds(target, &t), "GetArtBounds target");
+	if (art == target) Fail(kErrInvalidParams, "art.fit can't fit an object to itself");
+	if (bleed < 0) Fail(kErrInvalidParams, "'bleed' must be non-negative");
+	t.left -= (AIReal) bleed; t.right += (AIReal) bleed;
+	t.top += (AIReal) bleed; t.bottom -= (AIReal) bleed;
 	double aw = std::fabs(a.right - a.left), ah = std::fabs(a.top - a.bottom);
 	double tw = std::fabs(t.right - t.left), th = std::fabs(t.top - t.bottom);
 	if (aw <= 0 || ah <= 0) Fail(kErrInvalidParams, "the art has no size to scale");
 	double sx = tw / aw, sy = th / ah;
-	if (how == "fill") sx = sy = std::max(sx, sy);
-	else if (how == "fit") sx = sy = std::min(sx, sy);
-	else if (how != "stretch") Fail(kErrInvalidParams, "'fit' must be \"fill\", \"fit\" or \"stretch\"");
-	double ax = (a.left + a.right) / 2, ay = (a.top + a.bottom) / 2, tx = (t.left + t.right) / 2, ty = (t.top + t.bottom) / 2;
+	if (how == "fill" || how == "cover") sx = sy = std::max(sx, sy);
+	else if (how == "fit" || how == "contain") sx = sy = std::min(sx, sy);
+	else if (how != "stretch") Fail(kErrInvalidParams, "mode must be cover, contain or stretch");
+	if (anchor != "center" && anchor != "top" && anchor != "bottom" && anchor != "left" && anchor != "right" &&
+		anchor != "topLeft" && anchor != "topRight" && anchor != "bottomLeft" && anchor != "bottomRight")
+		Fail(kErrInvalidParams, "anchor must be center, top, bottom, left, right, or a corner");
+	bool left = anchor == "left" || anchor == "topLeft" || anchor == "bottomLeft";
+	bool right = anchor == "right" || anchor == "topRight" || anchor == "bottomRight";
+	bool top = anchor == "top" || anchor == "topLeft" || anchor == "topRight";
+	bool bottom = anchor == "bottom" || anchor == "bottomLeft" || anchor == "bottomRight";
+	double ax = left ? a.left : right ? a.right : (a.left + a.right) / 2;
+	double ay = top ? a.top : bottom ? a.bottom : (a.top + a.bottom) / 2;
+	double tx = left ? t.left : right ? t.right : (t.left + t.right) / 2;
+	double ty = top ? t.top : bottom ? t.bottom : (t.top + t.bottom) / 2;
 	AIRealMatrix m;
 	m.a = (AIReal) sx; m.b = 0; m.c = 0; m.d = (AIReal) sy;
 	m.tx = (AIReal) (tx - sx * ax);
 	m.ty = (AIReal) (ty - sy * ay);
 	ai::int32 flags = kTransformObjects | kTransformFillGradients | kTransformFillPatterns | kTransformStrokeGradients | kTransformStrokePatterns | kScaleLines;
 	TransformDeep(art, m, (AIReal) std::sqrt(sx * sy), flags);
+}
+
+json::Value ArtFit(const json::Value& p)
+{
+	Need(sAITransformArt, "The transform art suite");
+	AIArtHandle target = ArtById(IdText(Required(p, "to")));
+	std::vector<AIArtHandle> arts = ArtList(p, true);
+	std::string mode = p.str("mode", "cover");
+	double bleed = p.num("bleed", 0);
+	std::string anchor = p.str("anchor", "center");
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : arts) {
+		FitTo(a, target, mode, bleed, anchor);
+		out.push(ArtSummary(a, 0));
+	}
+	return out;
 }
 
 json::Value ArtPlace(const json::Value& p)
@@ -1853,7 +1953,12 @@ std::map<std::string, Command>& Table()
 		{"art.transform", {"Move / scale / rotate art (default: the selection) about its center or 'origin'.",
 			Params({{"ids", "string[]"}, {"id", "string"}, {"translate", "[dx, dy]"}, {"scale", "number | [sx, sy]"}, {"rotate", "number - degrees, counterclockwise"},
 				{"origin", "[x, y]"}, {"scaleStrokes", "boolean (default true)"}}), ArtTransform, true}},
+		{"art.fit", {"Scale and position art on another object's bounds. Bleed expands the target on every side; anchor controls alignment.",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"to", "string - target art id"}, {"mode", "cover | contain | stretch (default cover)"},
+				{"bleed", "number - points outside the target (default 0)"}, {"anchor", "center | top | bottom | left | right | topLeft | topRight | bottomLeft | bottomRight"}}), ArtFit, true}},
 		{"art.duplicate", {"Duplicate art (default: the selection) in place.", Params({{"ids", "string[]"}, {"id", "string"}}), ArtDuplicate, true}},
+		{"art.copyTo", {"Copy art into another open document without using the clipboard; leaves the destination active.",
+			Params({{"ids", "string[]"}, {"id", "string"}, {"document", "number - destination index from document.list"}}), ArtCopyTo, true}},
 		{"art.arrange", {"Bring to front / send to back within its parent.", Params({{"ids", "string[]"}, {"id", "string"}, {"to", "\"front\" | \"back\""}}), ArtArrange, true}},
 		{"art.group", {"Group art (default: the selection).", Params({{"ids", "string[]"}, {"id", "string"}, {"name", "string"}}), ArtGroup, true}},
 		{"art.move", {"Move art (default: the selection) into a group - including a clipping group - or right above / below another object. Keeps its stacking order.",
@@ -1863,6 +1968,8 @@ std::map<std::string, Command>& Table()
 			Params({{"ids", "string[]"}, {"id", "string"}}), ArtUngroup, true}},
 		{"art.clip", {"Make a clipping mask: 'mask' (default: the front-most object) clips the rest. Returns the clipping group.",
 			Params({{"ids", "string[]"}, {"id", "string"}, {"mask", "string - art id of a path, compound path or text"}, {"name", "string"}}), ArtClip, true}},
+		{"art.clipTo", {"Clip art to a duplicate of the piece's cut line and place the original painted outline above the clipping group.",
+			Params({{"ids", "string[] - art to clip (default: selection)"}, {"id", "string"}, {"piece", "string - cut-line path, compound path or text id"}, {"name", "string - clipping group name"}}), ArtClipTo, true}},
 		{"art.unclip", {"Release a clipping group's mask; the group and the (unpainted) mask path stay.",
 			Params({{"ids", "string[]"}, {"id", "string"}}), ArtUnclip, true}},
 		{"art.place", {"Place a file (image, PDF, .ai...) without a dialog, linked by default. Put it 'into' a group or 'above'/'below' art, and scale it to 'fitTo' an object.",
@@ -2041,16 +2148,32 @@ bool EndsRun(const json::Value& call)
 	if (WritesFile(call)) return true;
 	if (!call.isObject() || !call.get("method").isString()) return false;
 	const std::string& m = call.get("method").asString();
-	return m == "document.open" || m == "document.close" || m == "document.new" || m == "document.activate";
+	return m == "document.open" || m == "document.close" || m == "document.new" || m == "document.activate" || m == "art.copyTo";
 }
 
-json::Value Handle(const json::Value& request, json::Value* rest)
+namespace {
+
+json::Value BatchRefErrorResponse(const json::Value& call, const BatchRefError& e)
+{
+	json::Value r;
+	r["jsonrpc"] = "2.0";
+	r["id"] = call.get("id");
+	r["error"]["code"] = kErrInvalidParams;
+	r["error"]["message"] = e.what();
+	return r;
+}
+
+} // namespace
+
+json::Value Handle(const json::Value& request, json::Value* rest, const json::Value* prior)
 {
 	if (request.isArray()) {
 		// A batch: one run, so the calls land as one undo step - up to a call
 		// that opens / closes / switches documents, or around one that writes
 		// a file (see Commands.h).
 		json::Value out = json::Value::MakeArray();
+		const json::Value empty = json::Value::MakeArray();
+		const json::Value& previous = prior && prior->isArray() ? *prior : empty;
 		bool stopped = false;
 		overlay::BeginBatch();   // one highlight around everything the batch touched
 		const json::Array& calls = request.asArray();
@@ -2070,7 +2193,17 @@ json::Value Handle(const json::Value& request, json::Value* rest)
 				for (size_t k = i; k < calls.size(); k++) rest->push(calls[k]);
 				break;
 			}
-			json::Value r = RunOne(call);
+			json::Value r;
+			try {
+				if (!call.isObject()) r = RunOne(call);
+				else {
+					json::Value resolved = json::Value::MakeObject();
+					for (const auto& kv : call.asObject()) resolved[kv.first] = kv.second;
+					resolved["params"] = ResolveBatchRefs(call.get("params"), previous, out, previous.size() + i);
+					r = RunOne(resolved);
+				}
+			}
+			catch (const BatchRefError& e) { r = BatchRefErrorResponse(call, e); }
 			if (r.has("error") && call.boolean("stopOnError", true)) stopped = true;
 			out.push(r);
 			if (!stopped && rest && EndsRun(call) && i + 1 < calls.size()) {

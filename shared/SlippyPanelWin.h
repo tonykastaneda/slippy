@@ -20,7 +20,7 @@ struct Options {
 	// The host's panel background (0-1 each) and whether its theme is dark;
 	// false (or none) keeps the default dark gray.
 	std::function<bool(double rgb[3], bool& dark)> theme;
-	std::string version;   // "0.1.0", shown as "v.0.1"
+	std::string version;   // "1.2.0", shown as "v.1.2"
 };
 
 bool Create(HWND parent, Options options);   // the view, filling 'parent' (once; later calls just Fit)

@@ -30,13 +30,15 @@ struct McpHost {
 		"tools here: find the rest with slippy_find (search words like \"symbol\", \"gradient\", \"artboard\") and run them with slippy_call. "
 		"Coordinates are Illustrator artwork points with y growing upward; call document_info first for the artboard bounds. "
 		"Art ids are strings from art_tree / art_selection / creation results. Commands that take ids act on the selection when none are given. "
-		"Every call is one step on Edit > Undo; use slippy_batch to make several calls one step.";
+		"Every call is one step on Edit > Undo; use slippy_batch to make several calls one step. "
+		"Within a batch, $0.id refers to the first result; quiet=true returns concise IDs and bounds.";
 	std::string findExamples = "(\"symbol edit\", \"gradient\", \"artboard\", \"opacity\", \"font\")";
 	std::string callExamples = "(e.g. \"symbol.edit\", \"swatch.create\")";
 	std::string batchExamples = "(shape.rect, art.transform, ...)";
 	std::string commandCount = "~190";
+	bool batchReferences = true;
 	std::vector<std::string> everyday = {"document.info", "art.tree", "art.get", "art.selection", "art.select", "art.set", "art.transform",
-		"art.delete", "shape.rect", "path.create", "text.create", "document.export", "history.undo"};
+		"art.fit", "art.clipTo", "art.copyTo", "path.points", "art.delete", "shape.rect", "path.create", "text.create", "document.export", "history.undo"};
 };
 void SetMcpHost(McpHost host);
 

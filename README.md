@@ -48,9 +48,9 @@ cmake --build build-win --config Release
 
 **Versions.** The version is set in one place, `VERSION` at the repo's root;
 both plug-ins, their panels and the docked Photoshop panel take it from there
-at build time, and the website shows the latest release. To release: set
-`VERSION` (say `0.1.2`), commit, and push the tag `v0.1.2`. CI refuses a tag
-that doesn't match `VERSION`.
+at build time, and the website shows the latest release. To release: update
+`VERSION`, commit, and push the matching `v` tag. CI refuses a tag that doesn't
+match `VERSION`.
 
 **CI** (`.github/workflows/build.yml`) builds all four on every push to `main`
 and on pull requests: macOS (signed with Developer ID and notarized once the

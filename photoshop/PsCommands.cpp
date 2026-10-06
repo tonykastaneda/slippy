@@ -1279,7 +1279,7 @@ bool WritesFile(const Value& call)
 bool StartsRun(const Value&) { return false; }
 bool EndsRun(const Value&) { return false; }
 
-Value Handle(const Value& request, Value* rest)
+Value Handle(const Value& request, Value* rest, const Value*)
 {
 	if (rest) *rest = Value();
 	if (!request.isArray()) {

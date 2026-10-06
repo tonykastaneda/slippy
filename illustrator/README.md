@@ -151,6 +151,18 @@ back to back as one undo step. A batch stops at the first error unless that
 call sets `"stopOnError": false`. The `timeout` field (seconds, default 60)
 sets how long the client waits.
 
+In `slippy_batch`, a parameter can use a result from an earlier step:
+`"$0.id"` gets step 0's art ID, `"$2[0].id"` gets the first result of step 2,
+and `"$3.bounds.left"` gets a coordinate. A single-element array is unwrapped
+for property lookup, so `"$2.id"` also works. References survive the document
+switches and file writes that split a batch into separate Illustrator events.
+For example, `[{"method":"art.duplicate","params":{"id":"cut-line-id"}},
+{"method":"art.fit","params":{"id":"$0.id","to":"piece-id","bleed":18}}]`
+duplicates and fits the copy in one batch.
+Pass `quiet: true` to `slippy_batch`, `slippy_call`, or a direct MCP command to
+return brief IDs, bounds and status instead of full results. Quiet only changes
+the reply; later batch references still see each command's full result.
+
 ## Commands
 
 What's covered and what's still to come, suite by suite: [COVERAGE.md](COVERAGE.md).
@@ -160,11 +172,11 @@ What's covered and what's still to come, suite by suite: [COVERAGE.md](COVERAGE.
 | app | `app.info`, `commands.list` (full parameter docs) |
 | document | `document.list`, `.info`, `.new`, `.open`, `.activate`, `.save`, `.export`, `.formats`, `.close`, `.redraw` |
 | layer | `layer.list`, `.create`, `.set` (rename / visible / locked / current / delete) |
-| art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.duplicate`, `.arrange`, `.delete` |
-| structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.unclip` |
+| art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.fit`, `.duplicate`, `.copyTo`, `.arrange`, `.delete` |
+| structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.clipTo`, `art.unclip` |
 | files | `art.place` (link or embed an image / PDF / .ai, into a group or next to an object, scaled to `fitTo` another object) |
 | create | `shape.rect`, `.ellipse`, `.roundedRect`, `.polygon`, `.star`, `.spiral`, `.pie`, `path.create` (corners or Bézier anchors), `text.create` |
-| path operations | `pathfinder.*` (unite, intersect, exclude, minusFront, minusBack, divide, trim, merge, crop, outline), `compound.make/release`, `path.measure/pointAt/reverse/setClosed/simplify/offset/outlineStroke/join/addAnchors/removeAnchors`, anchor points: `path.setSegments/editPoint/insertPoint/deletePoints/selectPoints`, `art.outline/toPaths/expand/expandAppearance`, `envelope.*`, `repeat.*`, `blend.*`, `livePaint.*` |
+| path operations | `pathfinder.*` (unite, intersect, exclude, minusFront, minusBack, divide, trim, merge, crop, outline), `compound.make/release`, `path.measure/points/pointAt/reverse/setClosed/simplify/offset/outlineStroke/join/addAnchors/removeAnchors`, anchor points: `path.setSegments/editPoint/insertPoint/deletePoints/selectPoints`, `art.outline/toPaths/expand/expandAppearance`, `envelope.*`, `repeat.*`, `blend.*`, `livePaint.*` |
 | paint | swatches (`swatch.*`), spot / global colors (`spot.*`), `gradient.*`, `pattern.*`; any color param also takes `{"swatch"}`, `{"spot"}`, `{"gradient"}`, `{"pattern"}` by name; `color.used`, `.replace`, `.adjust` |
 | appearance | `appearance.get`, `.set` (opacity, blend mode), `.add` (extra fills / strokes), `.clear`, `.copy`; `effect.list`, `effect.apply`; graphic styles `style.*` |
 | text | `text.get`, `.format` (font, size, leading, tracking, color, alignment, indents... on frames or ranges), `.area`, `.onPath`, `.outline`, `.link` / `.unlink`, `.find`, `.replace`; `font.list`; `charStyle.*`, `paraStyle.*` |
@@ -194,6 +206,13 @@ What's covered and what's still to come, suite by suite: [COVERAGE.md](COVERAGE.
   `art.place {path, above: <placeholder>, fitTo: <placeholder>}` then
   `art.delete {id: <placeholder>}`. `art.tree` marks clipping groups
   (`clipped`), their masks (`clipMask`) and placed files (`file`).
+- **Piece layout:** `art.fit {id, to, mode: "cover", bleed: 18, anchor: "top"}`
+  sizes art to a piece's bounds. `art.clipTo {ids, piece}` duplicates the cut
+  line as a mask and puts the original outline above the clipped art.
+  `art.copyTo {ids, document}` copies directly to an open document identified
+  by its `document.list` index and leaves that document active. `path.points`
+  returns a path's corner and inward-turn anchors, or every anchor with
+  `kind: "all"`; the reported notches are geometric candidates.
 - **Other plug-ins:** `plugin.message {plugin, selector, param}` sends the
   message `app.sendScriptMessage` would and returns the plug-in's text reply.
   Pressing RAGE's MAKE is `plugin.message plugin=RAGE selector=design.make`;

@@ -2,6 +2,7 @@
 #import "Terminal.h"
 #include "FrogShape.h"
 #include "AgentLogo.h"
+#include "Version.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -1183,7 +1184,9 @@ const CGFloat kRowH = 18, kRowGap = 4, kHandleH = 18, kTerminalH = 300;
 		if (_drawerOpen) [_terminal attach];
 		_rows = [NSMutableArray array];
 		for (NSView* v in @[_slippy, _bars, _title, _version, _agent, _counts, _status, _copy, _feed, _terminal, _handle]) [self addSubview:v];
-		self.version = @"0.1";
+		NSString* version = [NSString stringWithUTF8String:kSlippyVersion];
+		if ([version hasSuffix:@".0"]) version = [version substringToIndex:version.length - 2];
+		self.version = version;
 		[self setStatus:@"Starting…" listening:NO];
 		[self updateCounts];
 	}

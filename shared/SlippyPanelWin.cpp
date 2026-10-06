@@ -10,6 +10,7 @@
 #include "Platform.h"
 #include "FrogShape.h"
 #include "AgentLogo.h"
+#include "Version.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -837,7 +838,7 @@ public:
 	HWND hwnd = nullptr;
 	std::function<std::string()> connectionInfo;
 	std::function<void(bool open, double extraHeight)> onDrawer;   // grow / shrink the panel for the terminal
-	std::wstring version = L"0.1";
+	std::wstring version = W(kSlippyVersion);
 
 	Panel()
 	{
@@ -1385,7 +1386,7 @@ bool Create(HWND parent, Options options)
 	gView.reset(new Panel);
 	gView->onDrawer = options.onDrawer;
 	{
-		std::wstring v = W(options.version);   // "0.1.0" -> "0.1"
+		std::wstring v = W(options.version);   // "1.2.0" -> "1.2"
 		if (v.size() > 2 && v.compare(v.size() - 2, 2, L".0") == 0) v.resize(v.size() - 2);
 		gView->version = v;
 	}

@@ -87,7 +87,7 @@ CXXFLAGS := $(ARCH) -std=c++17 -stdlib=libc++ -x objective-c++ -O2 -g \
 	$(INCLUDES) -MMD -MP
 LDFLAGS  := $(ARCH) -bundle -stdlib=libc++ -framework Cocoa -framework QuartzCore -framework CoreFoundation -framework ImageIO -framework WebKit
 
-.PHONY: all clean install preview photoshop install-photoshop photoshop-uxp install-photoshop-uxp test-photoshop-uxp
+.PHONY: all clean install preview photoshop install-photoshop photoshop-uxp install-photoshop-uxp test-photoshop-uxp test-batch-refs
 all: $(BUILD)/.signed
 
 $(OBJDIR)/%.o: %.cpp | $(OBJDIR)
@@ -234,6 +234,10 @@ install-photoshop-uxp:
 
 test-photoshop-uxp:
 	cd photoshop/uxp/bridge && npm ci && npm test
+
+test-batch-refs:
+	$(CXX) -std=c++17 -Ishared tests/batch_refs.cpp shared/Json.cpp -o $(BUILD)/batch_refs_test
+	$(BUILD)/batch_refs_test
 
 clean:
 	rm -rf $(BUILD) photoshop/uxp/dist

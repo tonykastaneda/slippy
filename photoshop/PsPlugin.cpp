@@ -144,6 +144,7 @@ slippy::McpHost PhotoshopHost()
 	h.findExamples = "(\"layer\", \"select\", \"blur\", \"perspective\", \"export\")";
 	h.callExamples = "(e.g. \"layer.perspective\", \"select.ellipse\")";
 	h.batchExamples = "(select.rect, filter.blur, layer.set, ...)";
+	h.batchReferences = false;
 	h.commandCount = "~35";
 	h.everyday = {"document.info", "document.open", "document.export", "layer.tree", "layer.get", "layer.set", "layer.create",
 		"layer.transform", "text.create", "ps.batchplay", "ps.get", "history.undo"};
