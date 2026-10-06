@@ -217,7 +217,44 @@ jobs:
             (cd "Slippy-Illustrator-windows-$arch" && zip -q "../Slippy-Illustrator-windows-$arch.zip" Slippy.aip)
             (cd "Slippy-Photoshop-windows-$arch" && zip -q "../Slippy-Photoshop-windows-$arch.zip" Slippy.8li Slippy.ccx)
           done
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Slippy $GITHUB_REF_NAME" --generate-notes \
-            Slippy-Illustrator-macos/Slippy-Illustrator-macos.zip Slippy-Photoshop-macos/Slippy-Photoshop-macos.zip \
-            Slippy-Illustrator-windows-x64.zip Slippy-Illustrator-windows-ARM64.zip \
-            Slippy-Photoshop-windows-x64.zip Slippy-Photoshop-windows-ARM64.zip
+          assets=(
+            Slippy-Illustrator-macos/Slippy-Illustrator-macos.zip
+            Slippy-Photoshop-macos/Slippy-Photoshop-macos.zip
+            Slippy-Illustrator-windows-x64.zip
+            Slippy-Illustrator-windows-ARM64.zip
+            Slippy-Photoshop-windows-x64.zip
+            Slippy-Photoshop-windows-ARM64.zip
+          )
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "Slippy $GITHUB_REF_NAME" --generate-notes --draft
+          fi
+          release_assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets)
+          for asset in "${assets[@]}"; do
+            if jq -e --arg name "${asset##*/}" \
+              '.assets | any(.name == $name and .size > 0)' <<< "$release_assets" >/dev/null; then
+              continue
+            fi
+            for attempt in 1 2 3; do
+              if gh release upload "$GITHUB_REF_NAME" "$asset" --repo "$GITHUB_REPOSITORY" --clobber; then
+                break
+              fi
+              sleep "$((attempt * 5))"
+            done
+            release_assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets)
+          done
+          release_assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets)
+          for asset in "${assets[@]}"; do
+            jq -e --arg name "${asset##*/}" \
+              '.assets | any(.name == $name and .size > 0)' <<< "$release_assets" >/dev/null
+          done
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .id)
+          for attempt in 1 2 3; do
+            if gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -F draft=false --jq .html_url; then
+              break
+            fi
+            sleep "$((attempt * 5))"
+          done
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq .isDraft)" = false
