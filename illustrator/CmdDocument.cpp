@@ -511,18 +511,61 @@ json::Value ArtRasterize(const json::Value& p)
 	return raster ? ArtSummary(raster, 0) : json::Value();
 }
 
-// Image Trace with the default settings; expand=true (default) leaves plain paths.
+// Image Trace: the default settings, or the Image Trace panel's main options
+// (mode, threshold, colors, fidelities, ignore white); expand=true (default)
+// leaves plain paths.
 json::Value ImageTrace(const json::Value& p)
 {
 	Need(sAIVectorize, "The image trace suite");
 	AIArtHandle image = ArtById(IdText(Required(p, "id")));
 	AIArtHandle tracing = nullptr;
 	Check(sAIVectorize->CreateTracing(kPlaceAbove, image, image, &tracing), "CreateTracing");
+	std::string mode = p.str("mode", "");
+	bool custom = !mode.empty() || p.has("threshold") || p.has("colors") || p.has("ignoreWhite") || p.has("paths") || p.has("corners") || p.has("noise");
+	if (custom && sAIDictionary) {
+		AIDictionaryRef options = nullptr;
+		Check(sAIVectorize->AcquireTracingOptions(tracing, &options), "AcquireTracingOptions");
+		auto key = [](const char* k) { return sAIDictionary->Key(k); };
+		AIErr e = kNoErr;
+		if (mode == "bw" || mode == "blackAndWhite" || mode == "blackandwhite") e = sAIDictionary->SetIntegerEntry(options, key(kTracingModeKey), kAIVectorizeModeBlackAndWhite);
+		else if (mode == "gray" || mode == "grayscale") e = sAIDictionary->SetIntegerEntry(options, key(kTracingModeKey), kAIVectorizeModeGray);
+		else if (mode == "color") e = sAIDictionary->SetIntegerEntry(options, key(kTracingModeKey), kAIVectorizeModeColor);
+		if (!e && p.has("threshold")) e = sAIDictionary->SetIntegerEntry(options, key(kTracingThresholdKey), (ai::int32) p.num("threshold", 128));
+		if (!e && p.has("colors")) {
+			e = sAIDictionary->SetIntegerEntry(options, key(kTracingTypeColorKey), kAILimitedTracingColors);
+			if (!e) e = sAIDictionary->SetIntegerEntry(options, key(kTracingLimitedColorsKey), (ai::int32) p.num("colors", 6));
+		}
+		if (!e && p.has("paths")) e = sAIDictionary->SetRealEntry(options, key(kTracingPathFidelityKey), (AIReal) p.num("paths", 50));
+		if (!e && p.has("corners")) e = sAIDictionary->SetRealEntry(options, key(kTracingCornerFidelityKey), (AIReal) p.num("corners", 50));
+		if (!e && p.has("noise")) e = sAIDictionary->SetIntegerEntry(options, key(kTracingNoiseFidelityKey), (ai::int32) p.num("noise", 50));
+		if (!e && p.has("ignoreWhite")) e = sAIDictionary->SetBooleanEntry(options, key(kTracingIgnoreWhiteKey), p.boolean("ignoreWhite", false));
+		// Abutting cuts the holes into the shapes, so dropping the white ones
+		// below leaves counters open instead of filled.
+		if (!e && p.boolean("ignoreWhite", false)) e = sAIDictionary->SetIntegerEntry(options, key(kTracingOverlappingOrAbuttingKey), kAIAbutting);
+		sAIDictionary->Release(options);
+		if (e) sAIArt->DisposeArt(tracing);
+		Check(e, "Tracing options");
+	}
 	Check(sAIVectorize->Update(tracing), "Update tracing");
 	if (!p.boolean("expand", true)) return ArtSummary(tracing, 0);
 	AIArtHandle art = nullptr;
 	Check(sAIVectorize->CopyTracingArt(tracing, kPlaceAbove, tracing, &art, false), "CopyTracingArt");
 	sAIArt->DisposeArt(tracing);
+	// The engine doesn't always honor ignore white; drop any white shapes left.
+	if (art && p.boolean("ignoreWhite", false) && sAIPathStyle) {
+		std::vector<AIArtHandle> white;
+		AIArtHandle c = nullptr;
+		for (sAIArt->GetArtFirstChild(art, &c); c; sAIArt->GetArtSibling(c, &c)) {
+			AIPathStyle style;
+			if (sAIPathStyle->GetPathStyle(c, &style, nullptr) || !style.fillPaint) continue;
+			const AIColor& f = style.fill.color;
+			bool isWhite = (f.kind == kGrayColor && f.c.g.gray <= 0.002)
+				|| (f.kind == kFourColor && f.c.f.cyan + f.c.f.magenta + f.c.f.yellow + f.c.f.black <= 0.008)
+				|| (f.kind == kThreeColor && f.c.rgb.red >= 0.998 && f.c.rgb.green >= 0.998 && f.c.rgb.blue >= 0.998);
+			if (isWhite) white.push_back(c);
+		}
+		for (AIArtHandle w : white) sAIArt->DisposeArt(w);
+	}
 	return art ? ArtSummary(art, 1) : json::Value();
 }
 
@@ -621,8 +664,9 @@ void AddDocumentCommands(CommandTable& t)
 	t["image.info"] = {"Images (default: the selection): linked or embedded, file, effective resolution.", Params({{"ids", ids}}), ImageInfo, false};
 	t["image.embed"] = {"Embed linked files (default: the selection).", Params({{"ids", ids}}), ImageEmbed, true};
 	t["image.relink"] = {"Point a linked image at another file.", Params({{"id", "string"}, {"path", "string - absolute path"}}), ImageRelink, true};
-	t["image.trace"] = {"Image Trace an image with the default settings; expand=true (default) leaves plain paths.",
-		Params({{"id", "string"}, {"expand", "boolean (default true)"}}), ImageTrace, true};
+	t["image.trace"] = {"Image Trace an image: the default settings, or mode / threshold / colors / fidelities / ignoreWhite as in the Image Trace panel; expand=true (default) leaves plain paths. The image is used up by the trace - art.duplicate it first (or art.place it again) to keep a copy.",
+		Params({{"id", "string"}, {"mode", "color | gray | bw"}, {"threshold", "number 0-255 - bw"}, {"colors", "number - color: limited palette size"},
+			{"paths", "number 0-100 - path fidelity"}, {"corners", "number 0-100"}, {"noise", "number - px"}, {"ignoreWhite", "boolean"}, {"expand", "boolean (default true)"}}), ImageTrace, true};
 	t["art.rasterize"] = {"Object > Rasterize: art (default: the selection) becomes an image.",
 		Params({{"ids", ids}, {"resolution", "number - ppi (default 150)"}, {"colorModel", "rgb (default) | cmyk | gray"}, {"background", "transparent (default) | white"},
 			{"antialias", "boolean (default true)"}, {"padding", "number - points"}, {"keepOriginal", "boolean"}}), ArtRasterize, true};

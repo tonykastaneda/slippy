@@ -238,7 +238,18 @@ std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing)
 	const json::Value& id = p.get("id");
 	if (IsId(id)) out.push_back(ArtById(IdText(id)));
 	else if (ids.isArray()) {
-		for (const json::Value& v : ids.asArray()) out.push_back(ArtById(IdText(v)));
+		// Look every id up before failing, so the error names all the missing ones.
+		std::vector<std::string> missing;
+		for (const json::Value& v : ids.asArray()) {
+			try { out.push_back(ArtById(IdText(v))); }
+			catch (const CommandError& e) { if (e.code != kErrNotFound) throw; missing.push_back(IdText(v)); }
+		}
+		if (!missing.empty()) {
+			std::string list;
+			for (const std::string& m : missing) list += (list.empty() ? "" : ", ") + m;
+			Fail(kErrNotFound, "no art with id" + std::string(missing.size() > 1 ? "s " : " ") + list + " in the active document (" +
+				std::to_string(missing.size()) + " of " + std::to_string(ids.asArray().size()) + ") - nothing was changed. Ids last only while the document stays open; look art up again after reopening.");
+		}
 	}
 	else if (selectionIfMissing) {
 		out = SelectedArt();
@@ -997,8 +1008,24 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 		ai::ArtboardList list;
 		Check(Need(sAIArtboard, "The artboard suite")->GetArtboardList(list), "GetArtboardList");
 		sAIArtboard->GetActive(list, index);
-		sAIArtboard->ReleaseArtboardList(list);
+		ai::ArtboardID count = 0;
+		sAIArtboard->GetCount(list, count);
 		if (p.get("artboard").isNumber()) index = (ai::ArtboardID) p.get("artboard").asInt();
+		else if (object) {
+			// No artboard named: the one the objects sit on (most overlap).
+			AIRealRect r{};
+			bool have = false;
+			for (AIArtHandle a : ArtList(p)) { AIRealRect b; if (!sAIArt->GetArtBounds(a, &b)) Grow(r, b, have); }
+			double best = 0;
+			for (ai::ArtboardID i = 0; have && i < count; i++) {
+				json::Value q = p;
+				q["artboard"] = (double) i;
+				AIRealRect b = ArtboardRect(q);
+				double w = std::min(r.right, b.right) - std::max(r.left, b.left), h = std::min(r.top, b.top) - std::max(r.bottom, b.bottom);
+				if (w > 0 && h > 0 && w * h > best) { best = w * h; index = i; }
+			}
+		}
+		sAIArtboard->ReleaseArtboardList(list);
 		which["artboard"] = (double) index;
 	}
 	AIRealRect board = ArtboardRect(which), crop = board;
@@ -1039,6 +1066,19 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 	// in Illustrator's own export.
 	auto cleanup = [&job] { for (const std::string& f : job.images) platform::RemoveFile(f); };
 	try {
+		if (area == "object" && p.boolean("only", false)) {
+			// Just these objects, back to front.
+			std::vector<AIArtHandle> arts = ArtList(p);
+			std::stable_sort(arts.begin(), arts.end(), [](AIArtHandle a, AIArtHandle b) {
+				short order = kUnknownOrder;
+				return !sAIArt->GetArtOrder(a, b, &order) && order == kFirstAfterSecond;
+			});
+			for (size_t i = 0; i < arts.size(); i++) {
+				job.images.push_back(path + ".slippy" + std::to_string(i) + ".png");
+				RasterizeTo(job.images.back(), arts[i], crop, dpi, job.pixelsWide, job.pixelsHigh);
+			}
+		}
+		else {
 		ai::int32 layers = 0;
 		sAILayer->CountLayers(&layers);
 		for (ai::int32 i = layers - 1; i >= 0; i--) {
@@ -1051,6 +1091,7 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 			if (!visible || hidden || sAIArt->GetFirstArtOfLayer(layer, &group) || !group) continue;
 			job.images.push_back(path + ".slippy" + std::to_string(i) + ".png");
 			RasterizeTo(job.images.back(), group, crop, dpi, job.pixelsWide, job.pixelsHigh);
+		}
 		}
 	}
 	catch (...) { cleanup(); throw; }
@@ -1914,15 +1955,16 @@ std::map<std::string, Command>& Table()
 		{"document.info", {"The active document: name, path, color model, artboards (with bounds), layer count.", Params({}), DocumentInfo, false}},
 		{"document.new", {"New document without a dialog.", Params({{"preset", "string - new-document preset name (optional)"}, {"width", "number - points"},
 			{"height", "number - points"}, {"colorMode", "\"rgb\" | \"cmyk\""}, {"title", "string"}, {"artboards", "number"}}), DocumentNew, true}},
-		{"document.open", {"Open a file without a dialog.", Params({{"path", "string - absolute path"}}), DocumentOpen, true}},
+		{"document.open", {"Open a file without a dialog. Art ids are per session: after reopening a file, earlier ids no longer apply - look art up again (art.tree, select.matching by name).", Params({{"path", "string - absolute path"}}), DocumentOpen, true}},
 		{"document.activate", {"Bring a document to the front.", Params({{"index", "number - from document.list"}}), DocumentActivate, false}},
 		{"document.save", {"Save; with 'path': native .ai is a Save As (the document moves there), any other 'format' writes a copy.",
 			Params({{"path", "string - optional absolute path"}, {"format", "string - a name from document.formats"}}), DocumentSave, false}},
 		{"document.export", {"Export a copy: png / jpg rendered at any resolution (artboard, all art, or one object), or pdf, svg, tiff, psd, webp... Format from 'format' or the path's extension.",
 			Params({{"path", "string - absolute path"}, {"format", "string - png, jpg, pdf, svg, tiff, psd, webp, eps... (default: the extension)"},
 				{"scale", "number - png/jpg size, 1 = 72 dpi (default 1)"}, {"dpi", "number - png/jpg, instead of scale"},
-				{"area", "\"artboard\" (default) | \"art\" - png/jpg"}, {"artboard", "number - which artboard (default: active)"},
-				{"id", "string - png/jpg: crop to this object (ids: several)"}, {"ids", "string[]"}, {"transparent", "boolean - png (default true)"},
+				{"area", "\"artboard\" (default) | \"art\" - png/jpg"}, {"artboard", "number - which artboard (default: the one the id / ids sit on, else the active one)"},
+				{"id", "string - png/jpg: crop to this object (ids: several)"}, {"ids", "string[]"},
+				{"only", "boolean - with id / ids: render just those objects, nothing else around or under them (default false)"}, {"transparent", "boolean - png (default true)"},
 				{"quality", "number - jpg 1-100 (default 90)"}}), DocumentExport, false}},
 		{"document.formats", {"File formats Illustrator can save or export, by the names document.save takes.", Params({}), DocumentFormats, false}},
 		{"document.close", {"Close a document (default: the active one). Unsaved changes may prompt unless save=true.",
@@ -1951,7 +1993,7 @@ std::map<std::string, Command>& Table()
 				{"opacity", "number 0-100"}, {"blendMode", "normal | multiply | screen | overlay | ... (see appearance.set)"},
 				{"contents", "string - text only"}, {"size", "number - font size, with contents"}}), ArtSet, true}},
 		{"art.transform", {"Move / scale / rotate art (default: the selection) about its center or 'origin'.",
-			Params({{"ids", "string[]"}, {"id", "string"}, {"translate", "[dx, dy]"}, {"scale", "number | [sx, sy]"}, {"rotate", "number - degrees, counterclockwise"},
+			Params({{"ids", "string[]"}, {"id", "string"}, {"translate", "[dx, dy]"}, {"scale", "number | [sx, sy] - a factor, not percent: 1 = unchanged, 0.5 = half, 2 = double"}, {"rotate", "number - degrees, counterclockwise"},
 				{"origin", "[x, y]"}, {"scaleStrokes", "boolean (default true)"}}), ArtTransform, true}},
 		{"art.fit", {"Scale and position art on another object's bounds. Bleed expands the target on every side; anchor controls alignment.",
 			Params({{"ids", "string[]"}, {"id", "string"}, {"to", "string - target art id"}, {"mode", "cover | contain | stretch (default cover)"},

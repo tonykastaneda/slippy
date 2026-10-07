@@ -527,15 +527,43 @@ json::Value ColorUsed(const json::Value& p)
 	return list;
 }
 
+// Process colors match within a hair (0.5%), so a color read back from
+// appearance.get / art.get - rounded on the way out - still finds itself.
+struct ColorSwap {
+	AIColor from, to;
+};
+
+bool Near(AIReal a, AIReal b) { return std::fabs(a - b) <= 0.005; }
+
+bool SameColor(const AIColor& a, const AIColor& b)
+{
+	if (a.kind != b.kind) return false;
+	if (a.kind == kFourColor) return Near(a.c.f.cyan, b.c.f.cyan) && Near(a.c.f.magenta, b.c.f.magenta) && Near(a.c.f.yellow, b.c.f.yellow) && Near(a.c.f.black, b.c.f.black);
+	if (a.kind == kThreeColor) return Near(a.c.rgb.red, b.c.rgb.red) && Near(a.c.rgb.green, b.c.rgb.green) && Near(a.c.rgb.blue, b.c.rgb.blue);
+	if (a.kind == kGrayColor) return Near(a.c.g.gray, b.c.g.gray);
+	return false;
+}
+
+void SwapColor(AIColor* color, void* data, AIErr* result, AIBoolean* altered)
+{
+	ColorSwap& s = *(ColorSwap*) data;
+	*result = kNoErr;
+	*altered = SameColor(*color, s.from);
+	if (*altered) *color = s.to;
+}
+
 json::Value ColorReplace(const json::Value& p)
 {
 	Need(sAIPathStyle, "The path style suite");
 	ActiveDocument();
 	AIColor from = ParseColor(Required(p, "from"), "from"), to = ParseColor(Required(p, "to"), "to");
+	bool process = from.kind == kFourColor || from.kind == kThreeColor || from.kind == kGrayColor;
+	ColorSwap swap{from, to};
 	bool any = false;
 	for (AIArtHandle a : TargetsOrDocument(p)) {
 		AIBoolean made = false;
-		Check(sAIPathStyle->ReplaceObjectAIColor(a, &from, &to, false, &made), "ReplaceObjectAIColor");
+		if (process) Check(sAIPathStyle->AdjustObjectAIColors(a, SwapColor, &swap, kVisitColorsNullFlags, &made), "AdjustObjectAIColors");
+		else Check(sAIPathStyle->ReplaceObjectAIColor(a, &from, &to, false, &made), "ReplaceObjectAIColor");
 		any = any || made;
 	}
 	json::Value v;
