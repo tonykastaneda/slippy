@@ -248,7 +248,10 @@ jobs:
             jq -e --arg name "${asset##*/}" \
               '.assets | any(.name == $name and .size > 0)' <<< "$release_assets" >/dev/null
           done
-          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .id)
+          # A draft isn't attached to its tag yet (releases/tags/<tag> 404s), so find it in the list.
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -1)
+          test -n "$release_id"
           for attempt in 1 2 3; do
             if gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
               -F draft=false --jq .html_url; then
