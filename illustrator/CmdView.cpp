@@ -156,7 +156,10 @@ json::Value ViewScreenshot(const json::Value& p)
 	ActiveDocument();
 	std::string path = ReqStr(p, "path");
 	if (!platform::IsAbsolutePath(path)) Fail(kErrInvalidParams, "'path' must be absolute");
-	Check(sAIDocumentView->ScreenShot(nullptr, U(path)), "ScreenShot");
+	// ScreenShot needs a real view: unlike the other view calls it crashes on null (Windows, AI 30.8).
+	AIDocumentViewHandle view = nullptr;
+	Check(sAIDocumentView->GetNthDocumentView(0, &view), "GetNthDocumentView");
+	Check(sAIDocumentView->ScreenShot(view, U(path)), "ScreenShot");
 	json::Value v;
 	v["path"] = path;
 	v["format"] = "png";
