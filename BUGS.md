@@ -6,6 +6,20 @@ _No open bugs right now._
 
 ## Fixed
 
+### Fixed after 1.2.1 (unreleased) - Illustrator on Windows: `view.screenshot` crashed Illustrator
+
+**Seen:** 2026-10-09, first Windows run (Illustrator 30.8.2, Windows 11).
+`view.screenshot` on a fresh scratch document killed Illustrator with an
+access violation (0xc0000005 inside `Illustrator.exe`); the client saw
+`ECONNRESET`. It crashed the same way with a long path and with a short one.
+
+**Why:** `ViewScreenshot` (`illustrator/CmdView.cpp`) passed `nullptr` as the
+view. The other `AIDocumentViewSuite` calls take null to mean the current
+view, but `ScreenShot` doesn't say so, and on Windows it dereferences it.
+
+**Fix:** pass the real view from `GetNthDocumentView(0, ...)`. Checked live on
+Windows: the PNG is written and Illustrator stays up.
+
 ### Fixed in 0.1.1 - Illustrator: `pathfinder.*` returned `{"result": null}` when the shapes were the only things in a group
 
 **Seen:** 2026-10-04, cutting the frog out of the nav logo's green square
