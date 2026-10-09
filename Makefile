@@ -48,6 +48,7 @@ SOURCES := \
 	illustrator/CmdCatalog.cpp \
 	illustrator/CmdSymbols.cpp \
 	illustrator/CmdView.cpp \
+	illustrator/CmdGeometry.cpp \
 	illustrator/CmdPaint.cpp \
 	illustrator/CmdAppearance.cpp \
 	illustrator/CmdShapes.cpp \

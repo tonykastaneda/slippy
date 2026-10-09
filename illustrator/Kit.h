@@ -71,7 +71,7 @@ std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing =
 short ArtType(AIArtHandle art);
 const char* TypeName(short type);
 bool Attr(AIArtHandle art, ai::int32 which);
-json::Value ArtSummary(AIArtHandle art, int depth);
+json::Value ArtSummary(AIArtHandle art, int depth, bool skipClipped = false);
 std::string LayerTitle(AILayerHandle layer);
 AILayerHandle LayerByParam(const json::Value& p);
 // Where new art goes: 'parent' group, top of 'layer', or the current layer.
@@ -135,6 +135,7 @@ inline const char* const kIds = "string[] - art ids (default: the selection)";
 void AddCatalogCommands(CommandTable& t);   // CmdCatalog.cpp: menu.list, action.list/describe, tool.*
 void AddSymbolCommands(CommandTable& t);    // CmdSymbols.cpp: symbol.*, isolation
 void AddViewCommands(CommandTable& t);      // CmdView.cpp: view.*, hit.test
+void AddGeometryCommands(CommandTable& t);  // CmdGeometry.cpp: art.distance, art.above
 void AddPaintCommands(CommandTable& t);     // CmdPaint.cpp: swatch.*, spot.*, gradient.*, pattern.*
 void AddAppearanceCommands(CommandTable& t);   // CmdAppearance.cpp: style.*, appearance.*, effect.*
 void AddShapeCommands(CommandTable& t);

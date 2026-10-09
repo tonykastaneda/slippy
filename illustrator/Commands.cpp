@@ -301,7 +301,7 @@ std::string LayerTitle(AILayerHandle layer)
 	return S(t);
 }
 
-json::Value ArtSummary(AIArtHandle art, int depth)
+json::Value ArtSummary(AIArtHandle art, int depth, bool skipClipped)
 {
 	json::Value v;
 	short type = ArtType(art);
@@ -327,12 +327,16 @@ json::Value ArtSummary(AIArtHandle art, int depth)
 		sAIArt->GetArtFirstChild(art, &child);
 		int count = 0;
 		json::Value children = json::Value::MakeArray();
+		// skipClipped: a clip group (texture, masked image) lists only its mask, so a
+		// tree of a heavily textured file stays small; childCount still counts everything.
+		bool onlyMask = skipClipped && clipped;
 		for (; child; sAIArt->GetArtSibling(child, &child)) {
 			count++;
-			if (depth > 0) children.push(ArtSummary(child, depth - 1));
+			if (depth > 0 && (!onlyMask || Attr(child, kArtIsClipMask))) children.push(ArtSummary(child, depth - 1, skipClipped));
 		}
 		v["childCount"] = count;
 		if (depth > 0) v["children"] = children;
+		if (onlyMask) v["collapsed"] = true;
 	}
 	return v;
 }
@@ -1257,7 +1261,8 @@ json::Value ArtTree(const json::Value& p)
 {
 	ActiveDocument();
 	int depth = (int) p.num("depth", 3);
-	if (IsId(p.get("id"))) return ArtSummary(ArtById(IdText(p.get("id"))), depth);
+	bool skip = p.boolean("skipClipped", false);
+	if (IsId(p.get("id"))) return ArtSummary(ArtById(IdText(p.get("id"))), depth, skip);
 	json::Value out = json::Value::MakeArray();
 	ai::int32 count = 0;
 	sAILayer->CountLayers(&count);
@@ -1267,7 +1272,7 @@ json::Value ArtTree(const json::Value& p)
 		if (sAILayer->GetNthLayer(i, &layer) || (only && layer != only)) continue;
 		AIArtHandle group = nullptr;
 		if (sAIArt->GetFirstArtOfLayer(layer, &group) || !group) continue;
-		json::Value l = ArtSummary(group, depth);
+		json::Value l = ArtSummary(group, depth, skip);
 		l["type"] = "layer";
 		l["name"] = LayerTitle(layer);
 		l["index"] = i;
@@ -1979,7 +1984,8 @@ std::map<std::string, Command>& Table()
 			{"locked", "boolean"}, {"current", "boolean"}, {"template", "boolean"}, {"printable", "boolean"}, {"preview", "boolean - false = outline view"},
 			{"dimImages", "boolean"}, {"color", "\"#RRGGBB\" - the layer's selection color"}, {"delete", "boolean"}}), LayerSet, true}},
 		{"art.tree", {"The art tree: per layer, or below one art id.", Params({{"depth", "number - levels of children (default 3)"},
-			{"layer", "string | number - only this layer"}, {"id", "string - start at this art"}}), ArtTree, false}},
+			{"layer", "string | number - only this layer"}, {"id", "string - start at this art"},
+			{"skipClipped", "boolean - list only the mask of each clip group (textures, masked images), not what's inside it"}}), ArtTree, false}},
 		{"art.get", {"One art object in detail: bounds, style, path segments, text contents, layer, parent.",
 			Params({{"id", "string"}, {"depth", "number - levels of children (default 1)"}}), ArtGet, false}},
 		{"art.selection", {"The selected art.", Params({{"depth", "number - levels of children (default 0)"}}), ArtSelection, false}},
@@ -2046,6 +2052,7 @@ std::map<std::string, Command>& Table()
 	AddCatalogCommands(t);
 	AddSymbolCommands(t);
 	AddViewCommands(t);
+	AddGeometryCommands(t);
 	AddPaintCommands(t);
 	AddAppearanceCommands(t);
 	AddShapeCommands(t);

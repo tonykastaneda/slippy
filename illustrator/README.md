@@ -172,7 +172,7 @@ What's covered and what's still to come, suite by suite: [COVERAGE.md](COVERAGE.
 | app | `app.info`, `commands.list` (full parameter docs) |
 | document | `document.list`, `.info`, `.new`, `.open`, `.activate`, `.save`, `.export`, `.formats`, `.close`, `.redraw` |
 | layer | `layer.list`, `.create`, `.set` (rename / visible / locked / current / delete) |
-| art | `art.tree`, `.get`, `.selection`, `.select`, `.set`, `.transform`, `.fit`, `.duplicate`, `.copyTo`, `.arrange`, `.delete` |
+| art | `art.tree` (`skipClipped` to list only clip masks), `.get`, `.selection`, `.select`, `.set`, `.transform`, `.fit`, `.duplicate`, `.copyTo`, `.arrange`, `.delete`, `.distance` (outline-to-path distance), `.above` (what's stacked over an object) |
 | structure | `art.move` (into a group or above / below an object), `art.group`, `art.ungroup`, `art.clip`, `art.clipTo`, `art.unclip` |
 | files | `art.place` (link or embed an image / PDF / .ai, into a group or next to an object, scaled to `fitTo` another object) |
 | create | `shape.rect`, `.ellipse`, `.roundedRect`, `.polygon`, `.star`, `.spiral`, `.pie`, `path.create` (corners or Bézier anchors), `text.create` |
@@ -253,7 +253,7 @@ What's covered and what's still to come, suite by suite: [COVERAGE.md](COVERAGE.
 | `Raster.*` | `document.export` PNG / JPEG: stacks Illustrator's per-layer renders and writes the file (Core Graphics + ImageIO / WIC) |
 | `Commands.cpp` (+ `shared/Commands.h`) | The command table and the core commands: JSON in and out, undo labels |
 | `Kit.h` | What every command file shares: errors, params, art ids, paint |
-| `Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test), `CmdPaint` (swatches, spots, gradients, patterns, recolor), `CmdAppearance` (appearance, effects, graphic styles), `CmdShapes` (shapes, pathfinder, path operations, envelopes, repeats), `CmdText` (text, fonts, text styles), `CmdDocument` (artboards, settings, selection, clipboard, guides, images, data) |
+| `Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test), `CmdGeometry` (art.distance, art.above), `CmdPaint` (swatches, spots, gradients, patterns, recolor), `CmdAppearance` (appearance, effects, graphic styles), `CmdShapes` (shapes, pathfinder, path operations, envelopes, repeats), `CmdText` (text, fonts, text styles), `CmdDocument` (artboards, settings, selection, clipboard, guides, images, data) |
 | `sdk_catalog.py` | Build step: the menu commands, action events and tools the SDK names, for `menu.list` and friends |
 | `Narrate.cpp` | Turns each call into the feed's plain-English line |
 | `Overlay.*` | The canvas overlay: box, cursor and label for what each call touched |

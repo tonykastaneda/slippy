@@ -222,6 +222,8 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 	if (m == "view.set") return {"Changed the view", "change the view"};
 	if (m == "view.fit") return {"Zoomed to fit", "zoom to fit"};
 	if (m == "view.screenshot") return {"Took a screenshot of the window", "take a screenshot"};
+	if (m == "art.distance") return {"Measured how close " + Target(p, json::Value()) + " comes to a path", "measure a distance"};
+	if (m == "art.above") return {r.get("covered").isBool() && r.get("covered").asBool() ? std::string("Found art stacked above an object") : std::string("Nothing is stacked above that object"), "check what's on top"};
 	if (m == "hit.test") return {r.get("hit").isBool() && r.get("hit").asBool() ? std::string("Found ") + KindOf(r.get("art").str("type")) + " at a point" : "Found nothing at that point", "look at a point"};
 	if (m == "swatch.list") return {"Looked at the swatches", "list swatches"};
 	if (m == "swatch.create") return {"Made the swatch " + Quote(p.str("name")), "make a swatch"};
