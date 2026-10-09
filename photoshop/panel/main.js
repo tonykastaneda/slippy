@@ -75,7 +75,7 @@
 
 	// ---- browser preview
 	function preview() {
-		show({ type: "state", status: "Preview · not running in Photoshop", listening: false, version: "1.2.1" });
+		show({ type: "state", status: "Preview · not running in Photoshop", listening: false, version: "1.3.0" });
 		const script = [
 			["document.open", "Opened “ballot.jpeg”", true, false],
 			["layer.tree", "Looked over the layers", true, false],
