@@ -13,6 +13,7 @@
 #include "Narrate.h"
 #include "Platform.h"
 #include "PsDescriptor.h"
+#include "Raster.h"
 #include "Version.h"
 
 #include <algorithm>
@@ -549,7 +550,10 @@ Value DocumentSave(const Value& p)
 Value DocumentExport(const Value& p)
 {
 	int id = ActiveDocumentId();
-	std::string path = p.str("path");
+	// No path: the picture comes back in the reply, for an agent that can't open files here.
+	bool inlined = p.str("path").empty();
+	std::string path = inlined ? platform::JoinPath(platform::SupportDir(), "export.png") : platform::OutputPath(p.str("path"));
+	if (path.empty()) Fail(kErrInvalidParams, platform::kOutputPathHelp);
 	std::string ext = path.substr(path.find_last_of('.') == std::string::npos ? path.size() : path.find_last_of('.') + 1);
 	for (char& c : ext) c = (char) tolower((unsigned char) c);
 	Value as;
@@ -576,10 +580,15 @@ Value DocumentExport(const Value& p)
 	d["documentID"] = id;
 	d["copy"] = true;
 	d["lowerCase"] = true;
-	Play(d, "export " + path);
+	Play(d, inlined ? std::string("export a picture") : "export " + path);
+	Value out;
+	if (inlined) {
+		std::string error = InlineImage(path, out);
+		if (!error.empty()) Fail(kErrHost, error);
+		return out;
+	}
 	Value doc = DocumentById(id);
 	double res = doc.get("resolution").num("_value", 72);
-	Value out;
 	out["path"] = path;
 	out["format"] = ext == "png" ? "png" : "jpg";
 	out["width"] = std::round(Pixels(doc.get("width"), res));
@@ -1045,8 +1054,9 @@ CommandTable& Table()
 		{"document.open", {"Open a file by absolute path, no dialog.", Params({{"path", "string - absolute"}}), DocumentOpen, Kind::Plain}},
 		{"document.save", {"Save the active document; with 'path', save as a PSD there (the document moves to it).",
 			Params({{"path", "string - absolute .psd (needed the first time)"}}), DocumentSave, Kind::Plain}},
-		{"document.export", {"Export a copy of the active document as PNG or JPEG (from the extension). The document itself is untouched.",
-			Params({{"path", "string - absolute, .png or .jpg"}, {"quality", "number - JPEG 1-12 (default 10)"}}), DocumentExport, Kind::Plain}},
+		{"document.export", {"Export a copy of the active document as PNG or JPEG (from the extension). The document itself is untouched. "
+			"Without 'path', it comes back as an image (JPEG, at most 1024 px) for you to look at.",
+			Params({{"path", "string - optional: a full .png / .jpg path on this computer, or a file name for the Desktop"}, {"quality", "number - JPEG 1-12 (default 10)"}}), DocumentExport, Kind::Plain}},
 		{"document.close", {"Close a document (default: active). Discards changes unless save=true - never asks.",
 			Params({{"id", "number"}, {"name", "string"}, {"save", "boolean (default false)"}}), DocumentClose, Kind::Plain}},
 		{"document.crop", {"Crop the document to a rectangle (pixels), deleting what's outside.",

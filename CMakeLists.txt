@@ -53,11 +53,15 @@ set(SHARED_SOURCES
 	shared/Json.cpp
 	shared/Platform.cpp
 	shared/CrashLog.cpp
+	shared/Raster.cpp
 	shared/SlippyPanelWin.cpp
 )
 set(WIN_DEFINES NOMINMAX _USE_MATH_DEFINES _WIN32_WINNT=0x0A00 WINVER=0x0A00	# Windows 10: GetDpiForWindow
 	$<$<CONFIG:Debug>:_DEBUG> $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
-set(WIN_LIBS user32 gdi32 gdiplus comctl32 ole32 shell32 shcore ws2_32 bcrypt)
+set(WIN_LIBS user32 gdi32 gdiplus comctl32 ole32 shell32 shcore ws2_32 bcrypt windowscodecs windowsapp)
+# C++/WinRT (the PNG / JPEG export worker thread) wants these, and C++20:
+# under C++17 it reaches for the removed <experimental/coroutine>.
+set_source_files_properties(shared/Raster.cpp PROPERTIES COMPILE_OPTIONS "/std:c++20;/bigobj;/permissive-;/Zc:__cplusplus")
 
 # ================================================================ Illustrator
 if(HAVE_AI)
@@ -70,7 +74,6 @@ add_library(SlippyIllustrator SHARED
 	illustrator/Commands.cpp
 	illustrator/Overlay.cpp
 	illustrator/Narrate.cpp
-	illustrator/Raster.cpp
 	illustrator/CmdCatalog.cpp
 	illustrator/CmdSymbols.cpp
 	illustrator/CmdView.cpp
@@ -125,11 +128,8 @@ target_compile_definitions(SlippyIllustrator PRIVATE WIN_ENV _WINDOWS ${WIN_DEFI
 # pragma.h silences SDK warnings (as in the SDK's own projects); /utf-8 keeps
 # the feed's “quotes” and the panel's glyphs intact.
 target_compile_options(SlippyIllustrator PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8 /EHsc /W3 /FI${COMMON}/win/pragma.h /wd4996>)
-# C++/WinRT (the PNG / JPEG export worker thread) wants these, and C++20:
-# under C++17 it reaches for the removed <experimental/coroutine>.
-set_source_files_properties(illustrator/Raster.cpp PROPERTIES COMPILE_OPTIONS "/std:c++20;/bigobj;/permissive-;/Zc:__cplusplus")
 
-target_link_libraries(SlippyIllustrator PRIVATE ${WIN_LIBS} windowscodecs windowsapp)
+target_link_libraries(SlippyIllustrator PRIVATE ${WIN_LIBS})
 
 # Windows PiPL: create_pipl.py writes a platform-specific binary, so it runs
 # here rather than being checked in. The .rc embeds it as resource "plugin".

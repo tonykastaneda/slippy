@@ -5,6 +5,8 @@
 // writes them at the asked size, resolution and quality. ImageIO / Core
 // Graphics on macOS; WIC on Windows. No SDK.
 
+#include "Json.h"
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -23,6 +25,13 @@ struct RasterJob {
 
 // "" when written; otherwise what went wrong.
 std::string EncodeImage(const RasterJob& job);
+
+// A picture for an agent that can't open files on this computer: the PNG at
+// 'png' as a JPEG on white, at most maxSide pixels on its long side. Adds
+// "image": {mimeType, data (base64)} and the sent width / height to 'result'
+// (Mcp.cpp makes "image" an MCP image block) and removes the PNG.
+// "" when done; otherwise what went wrong.
+std::string InlineImage(const std::string& png, json::Value& result, size_t maxSide = 1024);
 
 } // namespace slippy
 

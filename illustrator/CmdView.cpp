@@ -4,6 +4,7 @@
 
 #include "Kit.h"
 #include "Platform.h"
+#include "Raster.h"
 
 #include <algorithm>
 #include <cmath>
@@ -154,13 +155,20 @@ json::Value ViewScreenshot(const json::Value& p)
 {
 	Need(sAIDocumentView, "The document view suite");
 	ActiveDocument();
-	std::string path = ReqStr(p, "path");
-	if (!platform::IsAbsolutePath(path)) Fail(kErrInvalidParams, "'path' must be absolute");
+	// No path: the picture comes back in the reply, for an agent that can't open files here.
+	bool inlined = p.str("path").empty();
+	std::string path = inlined ? platform::JoinPath(platform::SupportDir(), "screenshot.png") : platform::OutputPath(ReqStr(p, "path"));
+	if (path.empty()) Fail(kErrInvalidParams, platform::kOutputPathHelp);
 	// ScreenShot needs a real view: unlike the other view calls it crashes on null (Windows, AI 30.8).
 	AIDocumentViewHandle view = nullptr;
 	Check(sAIDocumentView->GetNthDocumentView(0, &view), "GetNthDocumentView");
 	Check(sAIDocumentView->ScreenShot(view, U(path)), "ScreenShot");
 	json::Value v;
+	if (inlined) {
+		std::string error = InlineImage(path, v);
+		if (!error.empty()) Fail(kErrIllustrator, error);
+		return v;
+	}
 	v["path"] = path;
 	v["format"] = "png";
 	return v;
@@ -224,7 +232,8 @@ void AddViewCommands(CommandTable& t)
 			{"snapToGrid", "boolean"}, {"transparencyGrid", "boolean"}, {"rulers", "boolean"}}), ViewSet, false};
 	t["view.fit"] = {"Zoom and scroll to fit art (id / ids) or an artboard (default: the active one) in the window.",
 		Params({{"id", "string"}, {"ids", "string[]"}, {"artboard", "number"}, {"margin", "number - share of the window to fill (default 0.9)"}}), ViewFit, false};
-	t["view.screenshot"] = {"Save what the document window shows right now as a PNG.", Params({{"path", "string - absolute .png path"}}), ViewScreenshot, false};
+	t["view.screenshot"] = {"What the document window shows right now: with 'path', saved as a PNG; without, sent back as an image (JPEG, at most 1024 px) for you to look at.",
+		Params({{"path", "string - optional: a full .png path on this computer, or a file name for the Desktop"}}), ViewScreenshot, false};
 	t["hit.test"] = {"What's at a point (artwork coordinates): the art, and whether it's an anchor, handle, segment or fill.",
 		Params({{"point", "[x, y]"}, {"tolerance", "number - points (default 2)"}, {"find", "all (default) | paint | text | anchor | guide | selected | stroke"}}), HitTest, false};
 }

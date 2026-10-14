@@ -250,7 +250,7 @@ What's covered and what's still to come, suite by suite: [COVERAGE.md](COVERAGE.
 | `shared/Server.*` | Loopback HTTP server on its own threads; never touches the SDK |
 | `SlippyPlugin.*` | Plug-in entry. Queues each request, wakes the main thread, runs the queue in a one-tick timer message, a normal plug-in context |
 | `shared/Platform.*` | What differs between macOS and Windows outside the panel: files, randomness, waking the main thread (GCD / a message window) |
-| `Raster.*` | `document.export` PNG / JPEG: stacks Illustrator's per-layer renders and writes the file (Core Graphics + ImageIO / WIC) |
+| `../shared/Raster.*` | `document.export` PNG / JPEG: stacks Illustrator's per-layer renders and writes the file (Core Graphics + ImageIO / WIC) |
 | `Commands.cpp` (+ `shared/Commands.h`) | The command table and the core commands: JSON in and out, undo labels |
 | `Kit.h` | What every command file shares: errors, params, art ids, paint |
 | `Cmd*.cpp` | Command families: `CmdCatalog` (menu / action / tool discovery), `CmdSymbols` (symbols, isolation), `CmdView` (view, hit test), `CmdGeometry` (art.distance, art.above), `CmdPaint` (swatches, spots, gradients, patterns, recolor), `CmdAppearance` (appearance, effects, graphic styles), `CmdShapes` (shapes, pathfinder, path operations, envelopes, repeats), `CmdText` (text, fonts, text styles), `CmdDocument` (artboards, settings, selection, clipboard, guides, images, data) |

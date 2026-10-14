@@ -1116,8 +1116,20 @@ json::Value ExportRaster(const json::Value& p, const std::string& path, const st
 
 json::Value DocumentExport(const json::Value& p)
 {
-	std::string path = ReqStr(p, "path");
-	if (!platform::IsAbsolutePath(path)) Fail(kErrInvalidParams, "'path' must be absolute");
+	if (p.str("path").empty()) {
+		// The picture comes back in the reply, for an agent that can't open files here.
+		std::string kind = FormatKind(p, ".png");
+		if (kind != "png" && kind != "jpg") Fail(kErrInvalidParams, "a " + kind + " export needs a 'path'; leave out 'format' too to get a picture back");
+		json::Value rendered = ExportRaster(p, platform::JoinPath(platform::SupportDir(), "export.png"), "png");
+		json::Value v;
+		v["area"] = rendered.get("area");
+		v["artboard"] = rendered.get("artboard");
+		std::string error = InlineImage(rendered.str("path"), v);
+		if (!error.empty()) Fail(kErrIllustrator, error);
+		return v;
+	}
+	std::string path = platform::OutputPath(ReqStr(p, "path"));
+	if (path.empty()) Fail(kErrInvalidParams, platform::kOutputPathHelp);
 	std::string kind = FormatKind(p, path);
 	if (kind == "png" || kind == "jpg") return ExportRaster(p, path, kind);
 	auto w = Writers().find(kind);
@@ -1964,8 +1976,9 @@ std::map<std::string, Command>& Table()
 		{"document.activate", {"Bring a document to the front.", Params({{"index", "number - from document.list"}}), DocumentActivate, false}},
 		{"document.save", {"Save; with 'path': native .ai is a Save As (the document moves there), any other 'format' writes a copy.",
 			Params({{"path", "string - optional absolute path"}, {"format", "string - a name from document.formats"}}), DocumentSave, false}},
-		{"document.export", {"Export a copy: png / jpg rendered at any resolution (artboard, all art, or one object), or pdf, svg, tiff, psd, webp... Format from 'format' or the path's extension.",
-			Params({{"path", "string - absolute path"}, {"format", "string - png, jpg, pdf, svg, tiff, psd, webp, eps... (default: the extension)"},
+		{"document.export", {"Export a copy: png / jpg rendered at any resolution (artboard, all art, or one object), or pdf, svg, tiff, psd, webp... Format from 'format' or the path's extension. "
+			"Without 'path', the render comes back as an image (JPEG, at most 1024 px) for you to look at.",
+			Params({{"path", "string - optional: a full path on this computer, or a file name for the Desktop"}, {"format", "string - png, jpg, pdf, svg, tiff, psd, webp, eps... (default: the extension)"},
 				{"scale", "number - png/jpg size, 1 = 72 dpi (default 1)"}, {"dpi", "number - png/jpg, instead of scale"},
 				{"area", "\"artboard\" (default) | \"art\" - png/jpg"}, {"artboard", "number - which artboard (default: the one the id / ids sit on, else the active one)"},
 				{"id", "string - png/jpg: crop to this object (ids: several)"}, {"ids", "string[]"},

@@ -25,6 +25,18 @@ std::string ReadFile(const std::string& path);
 void RemoveFile(const std::string& path);
 bool Readable(const std::string& path);
 bool IsAbsolutePath(const std::string& path);
+// Where to write a file an agent named: an absolute path as given, a bare
+// file name on the Desktop; "" for anything else (a relative path, or a path
+// from another computer, like an agent's own sandbox).
+std::string OutputPath(const std::string& path);
+std::string DesktopDir();
+// The error when OutputPath gives "".
+#ifdef _WIN32
+constexpr const char* kOutputPathHelp = "'path' must be a full Windows path on this computer, like C:\\Users\\you\\Desktop\\art.png, "
+#else
+constexpr const char* kOutputPathHelp = "'path' must be a full path on this Mac, like /Users/you/Desktop/art.png, "
+#endif
+	"or just a file name (saved to the Desktop). To see the picture yourself, leave 'path' out: the image comes back in the reply.";
 int ProcessId();
 void RandomBytes(unsigned char* out, size_t count);
 bool EnvFlag(const char* name, const char* value);   // getenv(name) == value

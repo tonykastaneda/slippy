@@ -1,6 +1,8 @@
 #include "Raster.h"
+#include "Platform.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 #ifdef _WIN32
@@ -212,3 +214,57 @@ std::string EncodeImage(const RasterJob& job)
 } // namespace slippy
 
 #endif
+
+namespace {
+
+std::string Base64(const std::string& bytes)
+{
+	static const char abc[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	std::string out;
+	out.reserve((bytes.size() + 2) / 3 * 4);
+	for (size_t i = 0; i < bytes.size(); i += 3) {
+		unsigned n = (unsigned char) bytes[i] << 16;
+		if (i + 1 < bytes.size()) n |= (unsigned char) bytes[i + 1] << 8;
+		if (i + 2 < bytes.size()) n |= (unsigned char) bytes[i + 2];
+		out += abc[n >> 18 & 63];
+		out += abc[n >> 12 & 63];
+		out += i + 1 < bytes.size() ? abc[n >> 6 & 63] : '=';
+		out += i + 2 < bytes.size() ? abc[n & 63] : '=';
+	}
+	return out;
+}
+
+} // namespace
+
+namespace slippy {
+
+std::string InlineImage(const std::string& png, json::Value& result, size_t maxSide)
+{
+	std::string bytes = platform::ReadFile(png);
+	// The size, from the PNG's IHDR chunk: big-endian width and height at bytes 16-23.
+	auto at = [&bytes](size_t i) { size_t n = 0; for (size_t k = i; k < i + 4; k++) n = n << 8 | (unsigned char) bytes[k]; return n; };
+	if (bytes.size() < 24 || bytes.compare(1, 3, "PNG") || !at(16) || !at(20)) {
+		platform::RemoveFile(png);
+		return "couldn't read the picture";
+	}
+	double k = std::min(1.0, (double) maxSide / std::max(at(16), at(20)));
+	RasterJob job;
+	job.images = {png};
+	job.pixelsWide = (size_t) std::max(1.0, std::round(at(16) * k));
+	job.pixelsHigh = (size_t) std::max(1.0, std::round(at(20) * k));
+	job.png = false;
+	job.quality = 85;
+	job.out = png + ".jpg";
+	std::string error = EncodeImage(job);
+	platform::RemoveFile(png);
+	if (error.empty()) {
+		result["image"]["mimeType"] = "image/jpeg";
+		result["image"]["data"] = Base64(platform::ReadFile(job.out));
+		result["width"] = (double) job.pixelsWide;
+		result["height"] = (double) job.pixelsHigh;
+	}
+	platform::RemoveFile(job.out);
+	return error;
+}
+
+} // namespace slippy

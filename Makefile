@@ -44,7 +44,7 @@ SOURCES := \
 	shared/Server.cpp \
 	shared/Json.cpp \
 	shared/Platform.cpp \
-	illustrator/Raster.cpp \
+	shared/Raster.cpp \
 	illustrator/CmdCatalog.cpp \
 	illustrator/CmdSymbols.cpp \
 	illustrator/CmdView.cpp \
@@ -175,7 +175,7 @@ PS_BUNDLE  := $(PS_BUILD)/$(NAME).plugin
 PS_EXE     := $(PS_BUNDLE)/Contents/MacOS/$(NAME)
 PS_SOURCES := photoshop/PsPlugin.cpp photoshop/PsCommands.cpp photoshop/PsDescriptor.cpp photoshop/PsSuites.cpp photoshop/PsNarrate.cpp \
 	photoshop/PsDockedPanel.cpp \
-	shared/Server.cpp shared/Mcp.cpp shared/Json.cpp shared/Platform.cpp shared/CrashLog.cpp
+	shared/Server.cpp shared/Mcp.cpp shared/Json.cpp shared/Platform.cpp shared/CrashLog.cpp shared/Raster.cpp
 PS_MM      := photoshop/PsPanel.mm shared/SlippyPanelView.mm shared/Terminal.mm
 PS_OBJECTS := $(addprefix $(PS_OBJDIR)/,$(notdir $(PS_SOURCES:.cpp=.o) $(PS_MM:.mm=.o)))
 PS_FLAGS   := $(ARCH) -std=c++17 -stdlib=libc++ -x objective-c++ -O2 -g -fvisibility=hidden -fvisibility-inlines-hidden \

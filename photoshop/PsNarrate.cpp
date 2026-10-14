@@ -60,6 +60,7 @@ Phrase Describe(const std::string& m, const json::Value& p, const json::Value& r
 		std::string who = r.isObject() && r.get("closed").isString() ? Q(r.get("closed").asString()) : "the document";
 		return {"Closed " + who + (p.boolean("save") ? " (saved)" : ""), "close the document"};
 	}
+	if (m == "document.export" && p.str("path").empty()) return {"Looked at the picture", "look at the picture"};
 	if (m == "document.export") return {"Exported " + Q(File(p.str("path"))), "export " + Q(File(p.str("path")))};
 	if (m == "document.crop") return {"Cropped the document", "crop the document"};
 	if (m == "history.undo") return {p.num("steps", 1) > 1 ? "Undid " + Num(p.num("steps")) + " steps" : "Undid a step", "undo"};

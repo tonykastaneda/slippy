@@ -99,6 +99,15 @@ void SetSupportSubdir(const std::string& name) { gSubdir = name; }
 
 std::string JoinPath(const std::string& dir, const std::string& name) { return dir + "\\" + name; }
 
+std::string DesktopDir()
+{
+	PWSTR desktop = nullptr;
+	std::string dir;
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desktop))) dir = Utf8(desktop);
+	CoTaskMemFree(desktop);
+	return dir;
+}
+
 void MakeDirs(const std::string& dir)
 {
 	std::error_code ignored;
@@ -225,6 +234,12 @@ void SetSupportSubdir(const std::string& name) { gSubdir = name; }
 
 std::string JoinPath(const std::string& dir, const std::string& name) { return dir + "/" + name; }
 
+std::string DesktopDir()
+{
+	const char* home = getenv("HOME");
+	return std::string(home ? home : "/tmp") + "/Desktop";
+}
+
 void MakeDirs(const std::string& dir)
 {
 	for (size_t slash = dir.find('/', 1); ; slash = dir.find('/', slash + 1)) {   // mkdir -p
@@ -292,3 +307,16 @@ void MainThreadShutdown() { gKick = nullptr; }
 } // namespace slippy
 
 #endif
+
+namespace slippy {
+namespace platform {
+
+std::string OutputPath(const std::string& path)
+{
+	if (IsAbsolutePath(path)) return path;
+	if (path.empty() || path.find_first_of("/\\:") != std::string::npos || DesktopDir().empty()) return "";
+	return JoinPath(DesktopDir(), path);
+}
+
+} // namespace platform
+} // namespace slippy

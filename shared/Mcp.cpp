@@ -217,12 +217,29 @@ json::Value Brief(const json::Value& result)
 	return out;
 }
 
+// A command's picture (document.export / view.screenshot without a path) as an
+// MCP image block, taken out of 'result' so the text stays short; null if none.
+json::Value TakeImage(json::Value& result)
+{
+	const json::Value& image = result.get("image");
+	if (!image.get("data").isString()) return json::Value();
+	json::Value block;
+	block["type"] = "image";
+	block["data"] = image.get("data");
+	block["mimeType"] = image.get("mimeType");
+	json::Value rest = json::Value::MakeObject();   // a copy: Values share their objects
+	for (const auto& kv : result.asObject()) if (kv.first != "image") rest[kv.first] = kv.second;
+	result = rest;
+	return block;
+}
+
 json::Value ToolResult(const json::Value& response, bool quiet = false)
 {
 	json::Value out;
 	const json::Value& err = response.get("error");
 	json::Value text;
 	text["type"] = "text";
+	json::Value image;
 	if (!err.isNull()) {
 		std::string message = err.get("message").isString() ? err.get("message").asString() : "error";
 		if (err.get("code").isNumber()) message = "Slippy error " + std::to_string(err.get("code").asInt()) + ": " + message;
@@ -231,13 +248,15 @@ json::Value ToolResult(const json::Value& response, bool quiet = false)
 		out["isError"] = true;
 	}
 	else {
-		const json::Value& result = response.get("result");
+		json::Value result = response.get("result");
+		image = TakeImage(result);
 		json::Value display = quiet ? Brief(result) : result;
 		text["text"] = display.dump(quiet ? -1 : 2);
 		if (display.isObject()) out["structuredContent"] = display;
 		out["isError"] = false;
 	}
 	out["content"] = json::Array{text};
+	if (!image.isNull()) out["content"].push(image);
 	return out;
 }
 
@@ -267,7 +286,13 @@ json::Value CallTool(const json::Value& params, const RunCall& run, const std::s
 		}
 		json::Value responses = run(batch);
 		bool failed = !responses.isArray();
-		if (!failed) for (const json::Value& r : responses.asArray()) if (r.has("error")) failed = true;
+		json::Array images;
+		if (!failed) for (json::Value& r : responses.asArray()) {
+			if (r.has("error")) failed = true;
+			json::Value result = r.get("result");
+			json::Value image = TakeImage(result);
+			if (!image.isNull()) { r["result"] = result; images.push_back(image); }
+		}
 		json::Value out;
 		json::Value text;
 		text["type"] = "text";
@@ -284,6 +309,7 @@ json::Value CallTool(const json::Value& params, const RunCall& run, const std::s
 		}
 		text["text"] = display.dump(arguments.boolean("quiet", false) ? -1 : 2);
 		out["content"] = json::Array{text};
+		for (const json::Value& image : images) out["content"].push(image);
 		if (arguments.boolean("quiet", false)) out["structuredContent"]["steps"] = display;
 		out["isError"] = failed;
 		return out;
