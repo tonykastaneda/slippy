@@ -6,6 +6,7 @@
 #include "Narrate.h"
 #include "Overlay.h"
 #include "SlippySuites.h"
+#include "SuiteCompat.h"
 #include "SlippyID.h"
 #include "IAIFilePath.hpp"
 #include "IText.h"
@@ -707,6 +708,9 @@ json::Value AppInfo(const json::Value&)
 	json::Value newer = json::Value::MakeArray();
 	for (const std::string& s : SlippyNewerSuites()) newer.push(s);
 	if (newer.size()) v["newerSuites"] = newer;
+	json::Value compatible = json::Value::MakeArray();
+	for (const std::string& s : SlippyCompatibilitySuites()) compatible.push(s);
+	if (compatible.size()) v["compatibilitySuites"] = compatible;
 	v["timerSuiteVersion"] = SlippyTimerVersion();
 	if (sAIUndo && count) {
 		ai::int32 past = 0, future = 0;

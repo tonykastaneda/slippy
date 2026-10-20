@@ -14,7 +14,7 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>Slippy</string>
-	<key>CFBundlePacslippyType</key>
+	<key>CFBundlePackageType</key>
 	<string>ARPI</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.0.0</string><!-- set from VERSION at build time -->

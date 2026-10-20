@@ -68,9 +68,19 @@ if(HAVE_AI)
 set(API "${AI_SDK}/illustratorapi")
 set(COMMON "${AI_SDK}/samplecode/common")
 
+set(COMPAT_SUITES "${CMAKE_CURRENT_BINARY_DIR}/CompatSuites.cpp")
+add_custom_command(
+	OUTPUT "${COMPAT_SUITES}"
+	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/prepare_ai_suites.py"
+		"${COMMON}/source/Suites.cpp" "${COMPAT_SUITES}"
+	DEPENDS "${COMMON}/source/Suites.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/tools/prepare_ai_suites.py"
+	VERBATIM
+)
+
 add_library(SlippyIllustrator SHARED
 	illustrator/SlippyPlugin.cpp
 	illustrator/SlippySuites.cpp
+	illustrator/SuiteCompat.cpp
 	illustrator/Commands.cpp
 	illustrator/Overlay.cpp
 	illustrator/Narrate.cpp
@@ -87,7 +97,7 @@ add_library(SlippyIllustrator SHARED
 	${SHARED_SOURCES}
 	${COMMON}/source/Main.cpp
 	${COMMON}/source/Plugin.cpp
-	${COMMON}/source/Suites.cpp
+	${COMPAT_SUITES}
 	${COMMON}/source/AppContext.cpp
 	${COMMON}/source/IllustratorSDK.cpp
 	${API}/illustrator/IAIUnicodeString.cpp

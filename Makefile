@@ -36,6 +36,7 @@ COMMON     := $(SDK)/samplecode/common
 SOURCES := \
 	illustrator/SlippyPlugin.cpp \
 	illustrator/SlippySuites.cpp \
+	illustrator/SuiteCompat.cpp \
 	illustrator/Commands.cpp \
 	illustrator/Overlay.cpp \
 	shared/CrashLog.cpp \
@@ -56,7 +57,7 @@ SOURCES := \
 	illustrator/CmdDocument.cpp \
 	$(COMMON)/source/Main.cpp \
 	$(COMMON)/source/Plugin.cpp \
-	$(COMMON)/source/Suites.cpp \
+	$(BUILD)/CompatSuites.cpp \
 	$(COMMON)/source/AppContext.cpp \
 	$(COMMON)/source/IllustratorSDK.cpp \
 	$(API)/illustrator/IAIUnicodeString.cpp \
@@ -99,6 +100,21 @@ $(OBJDIR)/%.o: %.mm | $(OBJDIR)
 
 $(OBJDIR):
 	mkdir -p $@
+
+# Route Adobe's suite lifecycle through our adapters without modifying the SDK.
+$(BUILD)/CompatSuites.cpp: $(COMMON)/source/Suites.cpp tools/prepare_ai_suites.py
+	python3 tools/prepare_ai_suites.py $< $@
+
+$(OBJDIR)/CompatSuites.o: $(BUILD)/CompatSuites.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+.PHONY: test-suite-compat
+test-suite-compat: $(BUILD)/suite-compat-test
+	$(BUILD)/suite-compat-test
+	python3 -m unittest discover -s tests -p 'test_prepare_ai_suites.py'
+
+$(BUILD)/suite-compat-test: tests/suite_compat.cpp illustrator/SuiteCompat.cpp illustrator/SuiteCompat.h | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) tests/suite_compat.cpp illustrator/SuiteCompat.cpp -o $@
 
 # The version, from VERSION, for the code (kSlippyVersion) - rewritten only
 # when it changes, so a bump rebuilds what uses it and nothing else.

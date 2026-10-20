@@ -34,6 +34,24 @@ make preview         # the panel and Slippy in a plain window, with made-up call
 Quit Illustrator before installing, then restart it. Open **Window > Utilities >
 Slippy** to show the panel.
 
+### Illustrator 30.1 compatibility
+
+This branch adapts the SDK's required Notifier v5 request to the v4 table
+provided by Illustrator 30.1. The adapter exposes only `AddNotifier`, the
+operation used by Adobe's plug-in lifecycle code. The layouts differ after
+that first operation, so the older table is never cast wholesale to v5.
+Hosts that provide v5 continue to use their native table. Releases use the
+actual acquired version, including repeated acquisitions and failed releases.
+
+The build generates a copy of the SDK's suite loader with acquisition and
+release routed through the adapter; the installed SDK is never modified.
+If that loader changes shape, generation fails and requires review.
+`app.info` reports active adapters in `compatibilitySuites`, and unavailable
+optional APIs in `missingSuites`. This is not a CS6 compatibility port.
+
+Run `make test-suite-compat` to test the native path, older-host adapter,
+reference balancing, failed acquisitions/releases, and loader generation.
+
 **Windows** - Visual Studio 2022 (C++ workload), CMake and Python 3:
 
 ```sh
