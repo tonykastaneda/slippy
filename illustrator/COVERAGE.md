@@ -61,7 +61,7 @@ back in the same shape.
 | Gradients | `gradient.list`, `.create`, `.set`, `.delete` (linear / radial, stops with midpoint + opacity) | AIGradient | 🔨 |
 | Patterns | `pattern.list`, `.create` (from art, tile size), `.delete` | AIPattern | 🔨 |
 | Graphic styles | `style.list`, `.apply`, `.create`, `.redefine`, `.delete` | AIArtStyle | 🔨 |
-| Appearance | `appearance.get` (fills / strokes, effects with settings, transparency), `.add` (extra fill / stroke), `.clear`, `.copy` (eyedropper) | AIArtStyleParser | 🔨 |
+| Appearance | `appearance.get` (fills / strokes, effects with settings, transparency), `.add` (extra fill / stroke), `.visible` (the panel's eye on a fill / stroke / effect), `.clear`, `.copy` (eyedropper) | AIArtStyleParser | 🔨 |
 | Opacity / blend mode | `appearance.set`, `art.set {opacity, blendMode}` - via the blend dictionary (keys Mode / Opacity / Isolated / Knockout from older SDKs; `appearance.get` shows the raw dictionary to confirm) | AIArtStyleParser | 🔨 |
 | Live effects | `effect.list`, `effect.apply {effect, settings}` (settings read off existing art with appearance.get) | AILiveEffect | 🔨 |
 | Recolor | `color.used`, `color.replace`, `color.adjust` (invert / grayscale / brightness) | AIPathStyle | 🔨 |

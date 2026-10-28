@@ -441,6 +441,55 @@ json::Value AppearanceRemove(const json::Value& p)
 	return out;
 }
 
+// The Appearance panel's eye: show or hide one fill / stroke ('index'), or an
+// effect by name - on the art, or inside the fill / stroke 'paint'. Hidden
+// paint keeps its colour and width; it just isn't drawn.
+json::Value AppearanceVisible(const json::Value& p)
+{
+	if (!p.has("visible")) Fail(kErrInvalidParams, "pass visible=true or false");
+	AIBoolean visible = p.boolean("visible", true);
+	std::string effect = p.str("effect", "");
+	bool byIndex = p.get("index").isNumber();
+	if (byIndex == !effect.empty()) Fail(kErrInvalidParams, "pass 'index' (a fill / stroke from appearance.get) or 'effect' (a name), not both");
+	bool inPaint = p.get("paint").isNumber();
+	ai::int32 index = byIndex ? p.get("index").asInt() : inPaint ? p.get("paint").asInt() : -1;
+	json::Value out = json::Value::MakeArray();
+	for (AIArtHandle a : ArtList(p, true)) {
+		Restyle(a, [&](AIStyleParser parser) {
+			AIParserPaintField field = nullptr;
+			if (index >= 0 && (index >= sAIArtStyleParser->CountPaintFields(parser) || sAIArtStyleParser->GetNthPaintField(parser, index, &field) || !field))
+				Fail(kErrNotFound, "no paint at index " + std::to_string(index) + " - see appearance.get");
+			if (byIndex) { Check(sAIArtStyleParser->SetParserPaintFieldVisible(field, visible), "SetParserPaintFieldVisible"); return; }
+			bool found = false;
+			auto match = [&](AIParserLiveEffect e) {
+				const char* name = nullptr;
+				ai::int32 major = 0, minor = 0;
+				if (!e || sAIArtStyleParser->GetLiveEffectNameAndVersion(e, &name, &major, &minor) || !name || effect != name) return;
+				Check(sAIArtStyleParser->SetParserEffectVisible(e, visible), "SetParserEffectVisible");
+				found = true;
+			};
+			if (field) {
+				for (ai::int32 k = 0, n = sAIArtStyleParser->CountEffectsOfPaintField(field); k < n; k++) {
+					AIParserLiveEffect e = nullptr;
+					if (!sAIArtStyleParser->GetNthEffectOfPaintField(field, k, &e)) match(e);
+				}
+			}
+			else {
+				for (int pass = 0; pass < 2; pass++) {
+					ai::int32 n = pass == 0 ? sAIArtStyleParser->CountPreEffects(parser) : sAIArtStyleParser->CountPostEffects(parser);
+					for (ai::int32 k = 0; k < n; k++) {
+						AIParserLiveEffect e = nullptr;
+						if (!(pass == 0 ? sAIArtStyleParser->GetNthPreEffect(parser, k, &e) : sAIArtStyleParser->GetNthPostEffect(parser, k, &e))) match(e);
+					}
+				}
+			}
+			if (!found) Fail(kErrNotFound, "no effect '" + effect + "'" + (field ? " in that paint" : " on the art") + " - see appearance.get");
+		});
+		out.push(AppearanceOf(a));
+	}
+	return out;
+}
+
 // Remove effects (all, or those named) - and with paints=true, extra fills / strokes too.
 json::Value AppearanceClear(const json::Value& p)
 {
@@ -619,6 +668,11 @@ void AddAppearanceCommands(CommandTable& t)
 		AppearanceAdd, true};
 	t["appearance.remove"] = {"Take a fill or stroke off art's appearance: 'index' as appearance.get numbers them, or empty=true for every one "
 		"with no paint and no effects.", Params({{"ids", kIds}, {"id", "string"}, {"index", "number"}, {"empty", "boolean"}}), AppearanceRemove, true};
+	t["appearance.visible"] = {"The Appearance panel's eye: show or hide a fill / stroke ('index' as appearance.get numbers them) without "
+		"changing its colour, or a live effect by name ('effect'; with 'paint', the one inside that fill / stroke).",
+		Params({{"ids", kIds}, {"id", "string"}, {"visible", "boolean"}, {"index", "number - a fill / stroke"},
+			{"effect", "string - an effect name, as appearance.get gives it"}, {"paint", "number - look for 'effect' inside this fill / stroke"}}),
+		AppearanceVisible, true};
 	t["appearance.clear"] = {"Remove live effects (all, or one 'effect' by name); paints=true also reduces to a basic fill and stroke.",
 		Params({{"ids", kIds}, {"id", "string"}, {"effect", "string - only this effect"}, {"paints", "boolean"}}), AppearanceClear, true};
 	t["appearance.copy"] = {"Give art the whole appearance of another object (fills, strokes, effects, transparency) - the eyedropper.",
