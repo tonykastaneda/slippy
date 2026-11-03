@@ -6,6 +6,19 @@ _No open bugs right now._
 
 ## Fixed
 
+### Fixed in 1.3.3 - `effect.apply` Warp listed in the Appearance panel but drew nothing
+
+**Seen:** 2026-11-03, arching a player name with Effect > Warp > Arch (`Adobe Deform`). The call reported success, the
+panel listed the Warp, but the text stayed straight through save / reopen, pre / post stage.
+
+**Why:** `appearance.get` printed a real `0.0` as `0`, and `effect.apply` stored a bare `0` as an integer. Warp's
+`DeformHoriz` / `DeformVert` must be reals; as integers the effect can't read them and draws nothing. Measured live: the
+hand-made Warp has them as reals, the dead one as integers, every other key the same.
+
+**Fix:** effect settings from `appearance.get` give whole reals as `{"type": "real", "value": 0}`, which `effect.apply`
+already stores as a real, so settings round-trip with their types. New `effect.apply from=<art id>` clones the effect off
+art that has it (exact dictionary, only that effect, its stage). Checked live on Illustrator 30.2: both ways arch the text.
+
 ### Fixed in 1.3.3 - Illustrator 30.2: `text.format align` failed
 
 **Seen:** 2026-11-02. Illustrator 30.2 has the ATE ParaFeatures suite only up to v102 and the SDK headers ask v103, so

@@ -12,7 +12,7 @@ namespace slippy {
 
 // ---- dictionaries <-> JSON (Kit.h)
 
-json::Value DictJson(ConstAIDictionaryRef dict)
+json::Value DictJson(ConstAIDictionaryRef dict, bool typedReals)
 {
 	json::Value v = json::Value::MakeObject();
 	if (!dict || !sAIDictionary || !sAIDictionaryIterator) return v;
@@ -27,12 +27,18 @@ json::Value DictJson(ConstAIDictionaryRef dict)
 		switch (type) {
 		case IntegerType: { ai::int32 i = 0; if (!sAIDictionary->GetIntegerEntry(dict, key, &i)) v[name] = i; break; }
 		case BooleanType: { AIBoolean b = false; if (!sAIDictionary->GetBooleanEntry(dict, key, &b)) v[name] = (bool) b; break; }
-		case RealType: { AIReal r = 0; if (!sAIDictionary->GetRealEntry(dict, key, &r)) v[name] = (double) r; break; }
+		case RealType: {
+			AIReal r = 0;
+			if (sAIDictionary->GetRealEntry(dict, key, &r)) break;
+			if (typedReals && (double) r == std::floor((double) r)) { json::Value t; t["type"] = "real"; t["value"] = (double) r; v[name] = t; }
+			else v[name] = (double) r;
+			break;
+		}
 		case StringType: { const char* s = nullptr; if (!sAIDictionary->GetStringEntry(dict, key, &s) && s) v[name] = s; break; }
 		case UnicodeStringType: { ai::UnicodeString s; if (!sAIDictionary->GetUnicodeStringEntry(dict, key, s)) v[name] = S(s); break; }
 		case DictType: {
 			AIDictionaryRef sub = nullptr;
-			if (!sAIDictionary->GetDictEntry(dict, key, &sub) && sub) { v[name] = DictJson(sub); sAIDictionary->Release(sub); }
+			if (!sAIDictionary->GetDictEntry(dict, key, &sub) && sub) { v[name] = DictJson(sub, typedReals); sAIDictionary->Release(sub); }
 			break;
 		}
 		default: {
@@ -164,7 +170,7 @@ json::Value EffectJson(AIParserLiveEffect effect)
 	AIBoolean visible = true;
 	if (!sAIArtStyleParser->GetEffectVisible(effect, &visible) && !visible) v["visible"] = false;
 	AILiveEffectParameters params = nullptr;
-	if (!sAIArtStyleParser->GetLiveEffectParams(effect, &params) && params) v["settings"] = DictJson(params);
+	if (!sAIArtStyleParser->GetLiveEffectParams(effect, &params) && params) v["settings"] = DictJson(params, true);   // whole reals typed, so effect.apply gets them back as reals
 	return v;
 }
 
@@ -543,24 +549,88 @@ json::Value EffectList(const json::Value& p)
 	return list;
 }
 
+// The first effect on art named 'name' (any, when empty): pre, post, then inside fills / strokes.
+// 'stage' says where it was found ("pre" / "post" / "paint").
+AIParserLiveEffect FindEffect(AIStyleParser parser, const std::string& name, std::string& stage)
+{
+	auto named = [&](AIParserLiveEffect e) {
+		const char* n = nullptr;
+		ai::int32 major = 0, minor = 0;
+		return e && !sAIArtStyleParser->GetLiveEffectNameAndVersion(e, &n, &major, &minor) && n && (name.empty() || name == n);
+	};
+	for (int pass = 0; pass < 2; pass++) {
+		ai::int32 n = pass == 0 ? sAIArtStyleParser->CountPreEffects(parser) : sAIArtStyleParser->CountPostEffects(parser);
+		for (ai::int32 k = 0; k < n; k++) {
+			AIParserLiveEffect e = nullptr;
+			if (pass == 0 ? sAIArtStyleParser->GetNthPreEffect(parser, k, &e) : sAIArtStyleParser->GetNthPostEffect(parser, k, &e)) continue;
+			if (named(e)) { stage = pass == 0 ? "pre" : "post"; return e; }
+		}
+	}
+	ai::int32 fields = sAIArtStyleParser->CountPaintFields(parser);
+	for (ai::int32 i = 0; i < fields; i++) {
+		AIParserPaintField field = nullptr;
+		if (sAIArtStyleParser->GetNthPaintField(parser, i, &field) || !field) continue;
+		ai::int32 n = sAIArtStyleParser->CountEffectsOfPaintField(field);
+		for (ai::int32 k = 0; k < n; k++) {
+			AIParserLiveEffect e = nullptr;
+			if (!sAIArtStyleParser->GetNthEffectOfPaintField(field, k, &e) && named(e)) { stage = "paint"; return e; }
+		}
+	}
+	return nullptr;
+}
+
 json::Value EffectApply(const json::Value& p)
 {
 	Need(sAILiveEffect, "The live effect suite");
-	std::string name = ReqStr(p, "effect");
+	// 'from': clone the effect off art that already has it - every stored value, exact types included -
+	// instead of building it from 'settings' alone. Only that one effect is copied, not fills / strokes.
+	std::unique_ptr<Parser> source;
+	AIParserLiveEffect model = nullptr;
+	std::string sourceStage;
+	std::string name = p.str("effect", "");
+	if (p.has("from")) {
+		AIArtHandle from = ArtById(IdText(p.get("from")));
+		source.reset(new Parser);
+		Check(sAIArtStyleParser->ParseStyle(source->p, StyleOf(from)), "ParseStyle");
+		model = FindEffect(source->p, name, sourceStage);
+		if (!model) Fail(kErrNotFound, name.empty() ? "the 'from' art has no live effect - see appearance.get"
+			: "the 'from' art has no '" + name + "' effect - see appearance.get");
+		const char* n = nullptr;
+		ai::int32 major = 0, minor = 0;
+		if (!sAIArtStyleParser->GetLiveEffectNameAndVersion(model, &n, &major, &minor) && n) name = n;
+	}
+	else if (name.empty()) Fail(kErrInvalidParams, "pass 'effect' (a name from effect.list) or 'from' (art that has the effect)");
 	AILiveEffectHandle handle = nullptr;
-	if (sAILiveEffect->GetLiveEffectHandleByName(name.c_str(), &handle) || !handle) Fail(kErrNotFound, "no effect named '" + name + "' - see effect.list");
+	if (!model && (sAILiveEffect->GetLiveEffectHandleByName(name.c_str(), &handle) || !handle)) Fail(kErrNotFound, "no effect named '" + name + "' - see effect.list");
 	json::Value out = json::Value::MakeArray();
 	for (AIArtHandle a : ArtList(p, true)) {
 		Restyle(a, [&](AIStyleParser parser) {
-			AILiveEffectParameters params = nullptr;
-			Check(sAILiveEffect->CreateLiveEffectParameters(&params), "CreateLiveEffectParameters");
 			AIParserLiveEffect effect = nullptr;
-			try {
-				if (p.has("settings")) JsonIntoDict(p.get("settings"), params);
-				Check(sAIArtStyleParser->NewParserLiveEffect(handle, params, &effect), "NewParserLiveEffect");
+			if (model) {
+				Check(sAIArtStyleParser->CloneLiveEffect(model, &effect), "CloneLiveEffect");
+				if (p.has("settings")) {   // overrides on top of the copy; existing keys keep their types
+					AILiveEffectParameters old = nullptr, params = nullptr;
+					try {
+						Check(sAIArtStyleParser->GetLiveEffectParams(effect, &old), "GetLiveEffectParams");
+						Check(sAILiveEffect->CreateLiveEffectParameters(&params), "CreateLiveEffectParameters");
+						if (old) Check(sAIDictionary->Copy(params, old), "Copy");
+						JsonIntoDict(p.get("settings"), params);
+						Check(sAIArtStyleParser->SetLiveEffectParams(effect, params), "SetLiveEffectParams");
+					}
+					catch (...) { if (params) sAIDictionary->Release(params); sAIArtStyleParser->DisposeParserLiveEffect(effect); throw; }
+					sAIDictionary->Release(params);
+				}
 			}
-			catch (...) { sAIDictionary->Release(params); throw; }
-			sAIDictionary->Release(params);   // the parser's effect holds its own reference
+			else {
+				AILiveEffectParameters params = nullptr;
+				Check(sAILiveEffect->CreateLiveEffectParameters(&params), "CreateLiveEffectParameters");
+				try {
+					if (p.has("settings")) JsonIntoDict(p.get("settings"), params);
+					Check(sAIArtStyleParser->NewParserLiveEffect(handle, params, &effect), "NewParserLiveEffect");
+				}
+				catch (...) { sAIDictionary->Release(params); throw; }
+				sAIDictionary->Release(params);   // the parser's effect holds its own reference
+			}
 			if (p.get("paint").isNumber()) {   // inside one fill / stroke, as in the Appearance panel
 				AIParserPaintField field = nullptr;
 				if (sAIArtStyleParser->GetNthPaintField(parser, p.get("paint").asInt(), &field) || !field) {
@@ -570,7 +640,7 @@ json::Value EffectApply(const json::Value& p)
 				Check(sAIArtStyleParser->InsertNthEffectOfPaintField(parser, field, -1, effect), "InsertNthEffectOfPaintField");
 				return;
 			}
-			bool pre = p.str("stage", "post") == "pre";
+			bool pre = p.str("stage", sourceStage == "pre" ? "pre" : "post") == "pre";
 			ai::int32 n = pre ? sAIArtStyleParser->CountPreEffects(parser) : sAIArtStyleParser->CountPostEffects(parser);
 			Check(pre ? sAIArtStyleParser->InsertNthPreEffect(parser, n, effect) : sAIArtStyleParser->InsertNthPostEffect(parser, n, effect), "InsertEffect");
 		});
@@ -679,9 +749,12 @@ void AddAppearanceCommands(CommandTable& t)
 		Params({{"from", "string - art id to copy from"}, {"ids", "string[]"}, {"id", "string"}}), AppearanceCopy, true};
 	t["effect.list"] = {"Live effects Illustrator has (Drop Shadow, Offset Path, Round Corners, Gaussian Blur...). 'search' filters.",
 		Params({{"search", "string (optional)"}}), EffectList, false};
-	t["effect.apply"] = {"Add a live effect to art (default: the selection). 'settings' are the effect's own keys - read them off art that has "
-		"the effect with appearance.get, and pass the same shape.",
-		Params({{"ids", kIds}, {"id", "string"}, {"effect", "string - a name from effect.list"}, {"settings", "object (optional)"}, {"stage", "post (default) | pre"},
+	t["effect.apply"] = {"Add a live effect to art (default: the selection). Best: 'from' = art that already has the effect (made in "
+		"Illustrator) - it is cloned exactly, only that effect, not fills / strokes; 'settings' then override some of its keys. Without "
+		"'from', 'settings' are the effect's own keys - read them off art that has the effect with appearance.get and pass the same shape "
+		"(whole reals come as {type: real, value}; keep that, an effect can ignore a key with the wrong type and draw nothing).",
+		Params({{"ids", kIds}, {"id", "string"}, {"effect", "string - a name from effect.list (with 'from': which of its effects, default the first)"},
+			{"from", "string - art id to clone the effect from"}, {"settings", "object (optional)"}, {"stage", "post (default; with 'from', the source's) | pre"},
 			{"paint", "number - put it inside this fill / stroke instead (index from appearance.get)"}}),
 		EffectApply, true};
 	t["style.list"] = {"Graphic styles in the document.", Params({}), StyleList, false};

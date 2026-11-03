@@ -108,7 +108,8 @@ void SetStrokeAlign(AIArtHandle art, const std::string& align);
 void SetBlend(AIArtHandle art, const json::Value& p);
 
 // Dictionaries (effect settings, blend, metadata) as JSON, both ways (CmdAppearance.cpp).
-json::Value DictJson(ConstAIDictionaryRef dict);
+// typedReals: a real with a whole value comes out {"type": "real", "value": n}, so passing it back keeps it a real.
+json::Value DictJson(ConstAIDictionaryRef dict, bool typedReals = false);
 void JsonIntoDict(const json::Value& v, AIDictionaryRef dict);
 
 // ---- the command table
