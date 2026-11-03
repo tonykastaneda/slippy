@@ -374,7 +374,7 @@ void WriteSegments(AIArtHandle a, const std::vector<AIPathSegment>& segs)
 	bool selected = Attr(a, kArtSelected);
 	AIErr e = sAIPath->SetPathSegmentCount(a, (ai::int16) segs.size());
 	if (e == kUntouchableLayerErr)
-		Fail(kErrInvalidParams, "art " + ArtId(a) + " can't be edited right now: the document is isolated on something else (a symbol edit?) - finish that first");
+		Fail(kErrInvalidParams, "art " + ArtId(a) + " can't be edited right now: its layer is locked or hidden, or the document is isolated on something else (a symbol edit?)");
 	Check(e, "SetPathSegmentCount");
 	Check(sAIPath->SetPathSegments(a, 0, (ai::int16) segs.size(), segs.data()), "SetPathSegments");
 	sAIArt->SetArtUserAttr(a, kArtSelected, selected ? kArtSelected : 0);
