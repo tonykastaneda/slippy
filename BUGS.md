@@ -6,6 +6,17 @@ _No open bugs right now._
 
 ## Fixed
 
+### Fixed in 1.3.3 - Illustrator 30.2: `text.format align` failed
+
+**Seen:** 2026-11-02. Illustrator 30.2 has the ATE ParaFeatures suite only up to v102 and the SDK headers ask v103, so
+every paragraph call was refused.
+
+**Why not just use v102:** its table doesn't match the v103 header. Calling `SetJustification` at the header's slot 49
+hit the next function and threw the text's bounds to garbage (left 8592, right -24174).
+
+**Fix:** only for the align call, the wrapper uses v102 and calls `SetJustification` at slot 48, measured live: the frame
+centres on its anchor with its width unchanged. Other paragraph settings stay refused on this Illustrator.
+
 ### Fixed in 1.3.1 - Illustrator on Windows: `view.screenshot` crashed Illustrator
 
 **Seen:** 2026-10-09, first Windows run (Illustrator 30.8.2, Windows 11).

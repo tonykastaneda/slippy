@@ -182,11 +182,38 @@ ATE::ICharFeatures CharFeatures(const json::Value& p)
 	return f;
 }
 
-ATE::IParaFeatures ParaFeatures(const json::Value& p)
+// Illustrator 30.2 has ParaFeatures only up to v102, whose table doesn't match the SDK's v103 headers past the early
+// functions. While this is alive the wrapper's create and release calls (the early functions) use v102; only
+// SetJustification is called on it, by the slot that was measured on 30.2. Nothing else may run in this scope.
+extern "C" SPBasicSuite* sSPBasic;
+const int kOlderSetJustificationSlot = 48;   // measured on 30.2: v103's table has it at 49, see BUGS.md
+
+struct OlderParaSuite {
+	const void* suite = nullptr;
+	bool active = false;
+	OlderParaSuite()
+	{
+		if (ATE::sParaFeatures) return;
+		if (sSPBasic->AcquireSuite(kParaFeaturesSuite, kParaFeaturesSuiteVersion - 1, &suite) || !suite) return;
+		ATE::sParaFeatures = (ATE::ParaFeaturesSuite*) suite;
+		active = true;
+	}
+	~OlderParaSuite()
+	{
+		if (!active) return;
+		ATE::sParaFeatures = nullptr;
+		sSPBasic->ReleaseSuite(kParaFeaturesSuite, kParaFeaturesSuiteVersion - 1);
+	}
+};
+
+ATE::IParaFeatures ParaFeatures(const json::Value& p, const OlderParaSuite& older)
 {
 	// Illustrator 30.2 has only an older ParaFeatures suite than the SDK's
 	// (see SlippyAcquireNewerSuites); without it every paragraph call crashes.
 	Need(ATE::sParaFeatures, "The paragraph features text suite (this Illustrator's is older than Slippy's SDK)");
+	if (older.active)
+		for (const char* k : {"firstIndent", "leftIndent", "rightIndent", "spaceBefore", "spaceAfter", "hyphenate"})
+			if (p.has(k)) Fail(kErrInvalidParams, std::string("'") + k + "' isn't available on this Illustrator: only align is");
 	ATE::IParaFeatures f;
 	if (p.has("align")) {
 		std::string a = ReqStr(p, "align");
@@ -194,7 +221,11 @@ ATE::IParaFeatures ParaFeatures(const json::Value& p)
 			: a == "justify" ? ATE::kFullJustifyLastLineLeft : a == "justifyCenter" ? ATE::kFullJustifyLastLineCenter
 			: a == "justifyRight" ? ATE::kFullJustifyLastLineRight : a == "justifyAll" ? ATE::kFullJustifyLastLineFull
 			: (Fail(kErrInvalidParams, "'align' must be left, center, right, justify, justifyCenter, justifyRight or justifyAll"), ATE::kLeftJustify);
-		f.SetJustification(j);
+		if (older.active) {
+			typedef ATE::ATEErr (*SetJustificationFn)(ATE::ParaFeaturesRef, ATE::ParagraphJustification);
+			((SetJustificationFn*) older.suite)[kOlderSetJustificationSlot](f.GetRef(), j);
+		}
+		else f.SetJustification(j);
 	}
 	if (p.has("firstIndent")) f.SetFirstLineIndent((ATETextDOM::Real) ReqNum(p, "firstIndent"));
 	if (p.has("leftIndent")) f.SetStartIndent((ATETextDOM::Real) ReqNum(p, "leftIndent"));
@@ -293,7 +324,7 @@ json::Value TextFormat(const json::Value& p)
 	for (AIArtHandle a : TextFrames(p)) {
 		ATE::ITextRange range = RangeOf(a, p);
 		if (HasCharFeature(p)) range.ReplaceOrAddLocalCharFeatures(CharFeatures(p));
-		if (HasParaFeature(p)) range.ReplaceOrAddLocalParaFeatures(ParaFeatures(p));
+		if (HasParaFeature(p)) { OlderParaSuite older; range.ReplaceOrAddLocalParaFeatures(ParaFeatures(p, older)); }
 		if (p.has("case")) {
 			std::string c = ReqStr(p, "case");
 			range.ChangeCase(c == "upper" ? ATE::kUppercase : c == "lower" ? ATE::kLowercase : c == "title" ? ATE::kTitleCase
@@ -312,7 +343,7 @@ AIArtHandle NewFrameFrom(const json::Value& p, AIArtHandle frame)
 	if (HasCharFeature(p) || HasParaFeature(p)) {
 		ATE::ITextRange range = RangeOf(frame, json::Value::MakeObject());
 		if (HasCharFeature(p)) range.ReplaceOrAddLocalCharFeatures(CharFeatures(p));
-		if (HasParaFeature(p)) range.ReplaceOrAddLocalParaFeatures(ParaFeatures(p));
+		if (HasParaFeature(p)) { OlderParaSuite older; range.ReplaceOrAddLocalParaFeatures(ParaFeatures(p, older)); }
 	}
 	return frame;
 }
@@ -499,7 +530,8 @@ json::Value ParaStyleCreate(const json::Value& p)
 {
 	std::string name = ReqStr(p, "name");
 	if (HasCharFeature(p)) Fail(kErrInvalidParams, "paragraph styles take paragraph settings here; make a character style for the rest");
-	ATE::IParaStyle style = Resources().CreateParaStyleWithFeatures(W(Wide(name)), ParaFeatures(p));
+	OlderParaSuite older;
+	ATE::IParaStyle style = Resources().CreateParaStyleWithFeatures(W(Wide(name)), ParaFeatures(p, older));
 	if (style.IsNull()) Fail(kErrInvalidParams, "couldn't make the style (is the name taken?)");
 	json::Value v;
 	v["name"] = StyleName(style);
