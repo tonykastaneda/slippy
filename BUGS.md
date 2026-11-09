@@ -6,6 +6,23 @@ _No open bugs right now._
 
 ## Fixed
 
+### Fixed after 1.3.3 (unreleased) - no way to read the paint of many objects in one call
+
+**Seen:** 2026-11-09, cleaning up garment templates (GF01 baseball, then the 83 GF03-GF14 basketball files). Each file
+needed every path's fill and stroke, to tell the outside cut line (stroked, closed, outermost) from inner lines (thin or
+dashed strokes inside it) and old base fills (filled, no stroke). Slippy couldn't give that in one call, so the job fell
+back to a pile of `art.get` calls, and then to ExtendScript through `osascript`, which Slippy is meant to replace.
+
+**Why:** `art.tree` built every node with `ArtSummary`: id, type, name, bounds and flags, no paint and not whether a path
+is closed. `art.get` added `style` only for the one object asked about, only for a plain path, and always with every
+anchor in `segments`; its children came back without style. Eight `art.get` calls on jersey outlines ran to ~160 KB.
+
+**Fix:** `art.tree` takes `style: true` (default off, so other output is unchanged). Every path and compound path in the
+tree then carries `style` (fill, stroke, width, dash...), and every path `closed` and `length`. A compound path with no
+style of its own reports its first path's paint. `art.get` takes `segments: false` to leave out the anchors. Checked live
+on Illustrator 30.2 with GF05 L.ai: one call returns the whole tree, and the 6 pt black cut lines, the 1 pt red marks and
+the cream base fills read apart from it alone.
+
 ### Fixed in 1.3.3 - `effect.apply` Warp listed in the Appearance panel but drew nothing
 
 **Seen:** 2026-11-03, arching a player name with Effect > Warp > Arch (`Adobe Deform`). The call reported success, the

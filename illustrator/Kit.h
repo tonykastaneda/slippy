@@ -71,7 +71,7 @@ std::vector<AIArtHandle> ArtList(const json::Value& p, bool selectionIfMissing =
 short ArtType(AIArtHandle art);
 const char* TypeName(short type);
 bool Attr(AIArtHandle art, ai::int32 which);
-json::Value ArtSummary(AIArtHandle art, int depth, bool skipClipped = false);
+json::Value ArtSummary(AIArtHandle art, int depth, bool skipClipped = false, bool withStyle = false);
 std::string LayerTitle(AILayerHandle layer);
 AILayerHandle LayerByParam(const json::Value& p);
 // Where new art goes: 'parent' group, top of 'layer', or the current layer.
